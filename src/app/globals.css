@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: light; }
+
+body {
+  @apply bg-paper text-ink antialiased;
+}
+
+.tabular { font-variant-numeric: tabular-nums; }
+
+input[type="range"] {
+  @apply h-1.5 w-full cursor-pointer appearance-none rounded-full bg-line;
+}
+input[type="range"]::-webkit-slider-thumb {
+  @apply h-4 w-4 appearance-none rounded-full bg-accent;
+  box-shadow: 0 0 0 4px rgba(91, 140, 123, 0.15);
+}
+input[type="range"]::-moz-range-thumb {
+  @apply h-4 w-4 rounded-full border-0 bg-accent;
+}
+
+input[type="checkbox"] {
+  @apply accent-accent;
+}
+
+input[type="color"] {
+  @apply cursor-pointer p-0.5;
+}
+
+::selection { background: #DCE9E3; }
