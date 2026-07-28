@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { CsvImport } from "@/components/csv-import";
 import {
   createImportRule, deleteImportRule, applyRulesToUncategorized, seedImportRules,
+  createTransferRule, deleteTransferRule,
 } from "@/lib/actions";
 import { Button, Card, CardTitle, Input, Label, Select, Badge, Empty } from "@/components/ui";
 import type { Account, Category, ImportRule } from "@/lib/types";
@@ -10,15 +11,22 @@ export const dynamic = "force-dynamic";
 
 export default async function ImportPage() {
   const supabase = await createClient();
-  const [{ data: accs }, { data: cats }, { data: rules }] = await Promise.all([
-    supabase.from("accounts").select("*").eq("archived", false).order("sort_order"),
-    supabase.from("categories").select("*").eq("archived", false).order("kind").order("name"),
-    supabase.from("import_rules").select("*").order("priority"),
-  ]);
+  const [{ data: accs }, { data: cats }, { data: rules }, { data: transferRules }] =
+    await Promise.all([
+      supabase.from("accounts").select("*").eq("archived", false).order("sort_order"),
+      supabase.from("categories").select("*").eq("archived", false).order("kind").order("name"),
+      supabase.from("import_rules").select("*").order("priority"),
+      supabase.from("transfer_rules").select("*").order("created_at"),
+    ]);
 
+  const accounts = (accs ?? []) as Account[];
   const categories = (cats ?? []) as Category[];
   const ruleList = (rules ?? []) as ImportRule[];
   const catById = new Map(categories.map((c) => [c.id, c]));
+  const accById = new Map(accounts.map((a) => [a.id, a]));
+  const umbuchungen = (transferRules ?? []) as {
+    id: string; pattern: string; target_account_id: string;
+  }[];
 
   return (
     <div className="space-y-6">
@@ -32,7 +40,57 @@ export default async function ImportPage() {
         </p>
       </div>
 
-      <CsvImport accounts={(accs ?? []) as Account[]} />
+      <CsvImport accounts={accounts} />
+
+      {/* Umbuchungen: aus einer Seite werden zwei */}
+      <Card>
+        <CardTitle>Umbuchungs-Regeln</CardTitle>
+        <p className="mb-4 max-w-2xl text-sm text-ink-muted">
+          Alles läuft übers Privatkonto. Steht in einer Buchung eines dieser Textstücke,
+          legt KerimOS beim Import automatisch die Gegenbuchung auf dem Zielkonto an —
+          gleicher Tag, gleicher Betrag, umgekehrtes Vorzeichen. Beide Seiten gelten als
+          Umbuchung und verfälschen damit weder Einnahmen noch Ausgaben.
+        </p>
+
+        <form action={createTransferRule} className="mb-4 flex flex-wrap items-end gap-3">
+          <div className="min-w-48 flex-1">
+            <Label htmlFor="pattern-t">Text in der Buchung</Label>
+            <Input id="pattern-t" name="pattern" required placeholder="z.B. Sparkonto" />
+          </div>
+          <div className="min-w-48">
+            <Label htmlFor="target">Zielkonto</Label>
+            <Select id="target" name="target_account_id" required>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+              ))}
+            </Select>
+          </div>
+          <Button type="submit">Regel anlegen</Button>
+        </form>
+
+        {umbuchungen.length === 0 ? (
+          <Empty>
+            Noch keine Regel. Typisch wären „Sparkonto&quot;, „Fonddepot&quot; oder
+            der Name deines Trading-Brokers.
+          </Empty>
+        ) : (
+          <ul className="divide-y divide-line">
+            {umbuchungen.map((r) => (
+              <li key={r.id} className="flex flex-wrap items-center gap-3 py-2.5 text-sm">
+                <span className="font-mono text-ink">{r.pattern}</span>
+                <span className="text-ink-muted">→</span>
+                <span className="text-ink-soft">
+                  {accById.get(r.target_account_id)?.name ?? "unbekanntes Konto"}
+                </span>
+                <form action={deleteTransferRule} className="ml-auto">
+                  <input type="hidden" name="id" value={r.id} />
+                  <button className="text-xs text-ink-faint transition hover:text-bad">✕</button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
         <Card>

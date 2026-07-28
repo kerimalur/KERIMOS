@@ -26,6 +26,7 @@ const ZEIT = {
   home: { href: "/kalender", label: "Kalender" },
   primary: [
     { href: "/woche", label: "Woche" },
+    { href: "/termine", label: "Termine" },
     { href: "/rueckblick", label: "Rückblick" },
   ],
   secondary: [
@@ -54,7 +55,8 @@ const TRADING = {
 
 const GELD_PATHS = ["/geld", "/analyse", "/runway", "/transaktionen", "/konten",
   "/fixkosten", "/kategorien", "/import"];
-const ZEIT_PATHS = ["/zeit", "/kalender", "/woche", "/aktivitaeten", "/ziele", "/rueckblick", "/schichten"];
+const ZEIT_PATHS = ["/zeit", "/kalender", "/woche", "/aktivitaeten", "/ziele",
+  "/rueckblick", "/schichten", "/termine"];
 const GYM_PATHS = ["/gym"];
 const TRADING_PATHS = ["/trading"];
 // "/" und "/links" gehören zu keinem Bereich - dort zeigt die Navigation nichts.

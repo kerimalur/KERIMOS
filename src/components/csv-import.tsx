@@ -34,6 +34,8 @@ export function CsvImport({ accounts }: { accounts: Account[] }) {
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ImportOutcome | null>(null);
+  // Schlusssaldo vom Auszug - setzt danach die Kontostand-Basis
+  const [saldo, setSaldo] = useState("");
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -73,6 +75,11 @@ export function CsvImport({ accounts }: { accounts: Account[] }) {
     const fd = new FormData();
     fd.set("rows", JSON.stringify(readyRows));
     fd.set("account_id", accountId);
+    if (saldo.trim()) {
+      fd.set("closing_balance", saldo.trim());
+      // Stichtag ist die jüngste Buchung des Auszugs
+      fd.set("closing_date", readyRows.map((r) => r.occurred_on).sort().at(-1) ?? "");
+    }
     let result: ImportOutcome;
     try {
       result = await importTransactions(fd);
@@ -323,9 +330,23 @@ export function CsvImport({ accounts }: { accounts: Account[] }) {
               ))}
             </Select>
           </div>
+          <div className="w-44">
+            <Label htmlFor="saldo">Schlusssaldo laut Auszug</Label>
+            <input id="saldo" value={saldo} onChange={(e) => setSaldo(e.target.value)}
+              inputMode="decimal" placeholder="optional"
+              className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink
+                         outline-none transition placeholder:text-ink-faint
+                         hover:border-line-strong focus:border-accent focus:ring-2 focus:ring-accent/15" />
+          </div>
           <Button onClick={submit} disabled={busy}>
             {busy ? "Importiere…" : `${readyRows.length} Buchungen importieren`}
           </Button>
+          <p className="w-full text-xs text-ink-muted">
+            Den ganzen Auszug einlesen — bereits bekannte Buchungen werden übersprungen.
+            Trägst du den Schlusssaldo ein, setzt KerimOS ihn als neue Kontostand-Basis
+            auf die jüngste Buchung: danach stimmt das Konto exakt, auch wenn eine
+            Zeile fehlt.
+          </p>
         </div>
       )}
     </Card>

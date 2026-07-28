@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { FocusPrompt } from "@/components/focus-prompt";
 import { TradingCard } from "@/components/trading-card";
 import { TodayCard } from "@/components/today-card";
+import { AppointmentsCard } from "@/components/appointments-card";
 import { QuickSearch } from "@/components/quick-search";
 import { Button, Card } from "@/components/ui";
 import { seedLinks } from "@/lib/actions";
@@ -39,6 +40,7 @@ export default async function Start({
   const [
     { data: linkRows }, { data: focusRows }, { data: actRows }, { data: lastReview },
     { data: inputsRows }, { data: weekDaily }, { data: weekBuckets },
+    { data: letzteBuchung },
   ] = await Promise.all([
     supabase.from("links").select("*").eq("archived", false)
       .order("group_name").order("sort_order"),
@@ -50,6 +52,8 @@ export default async function Start({
     supabase.from("v_daily_time").select("*")
       .gte("entry_date", woche).lte("entry_date", addDays(woche, 6)),
     supabase.from("v_weekly_buckets").select("*").eq("week_start", woche),
+    supabase.from("transactions").select("occurred_on")
+      .order("occurred_on", { ascending: false }).limit(1),
   ]);
 
   const links = (linkRows ?? []) as NavLink[];
@@ -75,6 +79,17 @@ export default async function Start({
   // Sonntag (0) und Montag (1): sanft erinnern, solange der Rückblick fehlt
   const wochentag = heuteWochentag();
   const reviewFehlt = !lastReview && (wochentag === 0 || wochentag === 1);
+
+  // Kontoauszug: ab einer Woche ohne neue Buchung erinnern. Der Import
+  // überspringt Bekanntes von selbst - man darf den ganzen Auszug reinziehen.
+  const letzterTag = (letzteBuchung?.[0]?.occurred_on as string | undefined) ?? null;
+  const tageOhneImport = letzterTag
+    ? Math.floor(
+        (new Date(heuteISO() + "T12:00:00").getTime() -
+          new Date(letzterTag + "T12:00:00").getTime()) / 86400000
+      )
+    : null;
+  const importFaellig = tageOhneImport === null || tageOhneImport >= 7;
 
   // Modi = Kachel-Gruppen
   const gruppen = new Map<string, NavLink[]>();
@@ -139,6 +154,7 @@ export default async function Start({
       </div>
 
       <div className="space-y-5">
+        <AppointmentsCard />
         <TradingCard />
         <TodayCard />
 
@@ -147,6 +163,16 @@ export default async function Start({
             className="block rounded-2xl border border-warn/30 bg-warn-tint px-5 py-3 text-sm text-ink-soft transition hover:border-warn/60">
             Der Wochenrückblick für letzte Woche fehlt noch — 5 Minuten, die Felder
             sind schon vorbefüllt. →
+          </Link>
+        )}
+
+        {importFaellig && (
+          <Link href="/import"
+            className="block rounded-2xl border border-warn/30 bg-warn-tint px-5 py-3 text-sm text-ink-soft transition hover:border-warn/60">
+            {tageOhneImport === null
+              ? "Noch keine Buchungen erfasst — Kontoauszug importieren. →"
+              : `Letzte Buchung vor ${tageOhneImport} Tagen — Kontoauszug holen und
+                 komplett importieren, Bekanntes wird übersprungen. →`}
           </Link>
         )}
 
@@ -161,41 +187,67 @@ export default async function Start({
             // Geld und Zeit springen direkt in ihren Bereich - der
             // Arbeitsplatz dazwischen bringt dort nichts.
             const ziel = MODE_DIRECT[name] ?? `/m/${encodeURIComponent(name)}`;
+            // Das Modus-Bild ist das Bild der ersten Kachel, die eines hat -
+            // hochgeladen wird es wie gewohnt unter "Kacheln verwalten".
+            const mitBild = ls.find((l) => l.image_url);
+            const farbe = ls[0]?.color ?? "#8A8478";
 
             return (
               <Link key={name} href={ziel}
-                className="group rounded-2xl border border-line/70 bg-card p-5 transition hover:border-line-strong">
-                <div className="flex items-center gap-3">
-                  <span className="grid h-10 w-10 place-items-center rounded-xl text-base text-white"
-                    style={{ background: ls[0]?.color ?? "#8A8478" }}>
-                    {ls[0]?.icon ?? name[0]}
-                  </span>
-                  <div className="min-w-0">
-                    <div className="text-base font-medium text-ink">{name}</div>
-                    <div className="text-xs text-ink-muted">
-                      {zahlen ? "direkt öffnen"
-                        : `${ls.length} ${ls.length === 1 ? "Kachel" : "Kacheln"}`}
-                    </div>
-                  </div>
-                </div>
-
-                {zahlen ? (
-                  <dl className="mt-3 flex flex-wrap gap-x-5 gap-y-1">
-                    {zahlen.map((k) => (
-                      <div key={k.label}>
-                        <dt className="text-[10px] uppercase tracking-[0.1em] text-ink-muted">
-                          {k.label}
-                        </dt>
-                        <dd className="tabular text-sm text-ink">{k.wert}</dd>
-                      </div>
-                    ))}
-                  </dl>
+                className="group relative flex aspect-[16/10] flex-col justify-end overflow-hidden
+                           rounded-2xl border border-line/70 transition hover:border-line-strong">
+                {mitBild?.image_url ? (
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={mitBild.image_url} alt=""
+                      style={{ objectPosition: mitBild.image_position ?? "50% 50%" }}
+                      className="absolute inset-0 h-full w-full object-cover transition
+                                 duration-300 group-hover:scale-[1.03]" />
+                    {/* Verlauf, damit die Schrift auf jedem Bild lesbar bleibt */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-ink/85 via-ink/35 to-ink/5" />
+                  </>
                 ) : (
-                  <p className="mt-3 truncate text-xs text-ink-muted">
-                    {ls.slice(0, 3).map((l) => l.title).join(" · ")}
-                    {ls.length > 3 && " · …"}
-                  </p>
+                  <div className="absolute inset-0" style={{ background: farbe + "1F" }}>
+                    <span className="absolute right-4 top-3 text-5xl opacity-25"
+                      style={{ color: farbe }}>
+                      {ls[0]?.icon ?? name[0]}
+                    </span>
+                  </div>
                 )}
+
+                <div className="relative p-4">
+                  <div className={mitBild?.image_url
+                    ? "text-2xl font-medium leading-tight text-white drop-shadow"
+                    : "text-2xl font-medium leading-tight text-ink"}>
+                    {name}
+                  </div>
+
+                  {zahlen ? (
+                    <dl className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5">
+                      {zahlen.map((k) => (
+                        <div key={k.label}>
+                          <dt className={mitBild?.image_url
+                            ? "text-[10px] uppercase tracking-[0.1em] text-white/70"
+                            : "text-[10px] uppercase tracking-[0.1em] text-ink-muted"}>
+                            {k.label}
+                          </dt>
+                          <dd className={mitBild?.image_url
+                            ? "tabular text-sm text-white"
+                            : "tabular text-sm text-ink"}>
+                            {k.wert}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  ) : (
+                    <p className={mitBild?.image_url
+                      ? "mt-1 truncate text-xs text-white/75"
+                      : "mt-1 truncate text-xs text-ink-muted"}>
+                      {ls.slice(0, 3).map((l) => l.title).join(" · ")}
+                      {ls.length > 3 && " · …"}
+                    </p>
+                  )}
+                </div>
               </Link>
             );
           })}

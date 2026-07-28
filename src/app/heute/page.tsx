@@ -5,6 +5,7 @@ import { TodayEntries, type HeuteEintrag } from "@/components/today-entries";
 import { FocusPrompt } from "@/components/focus-prompt";
 import { TradingCard } from "@/components/trading-card";
 import { TodayCard } from "@/components/today-card";
+import { AppointmentsCard } from "@/components/appointments-card";
 import { heuteISO, ZONE } from "@/lib/time";
 import type { Activity, FocusSession } from "@/lib/types";
 
@@ -49,6 +50,12 @@ export default async function HeutePage() {
         </div>
       </div>
 
+      {/* Erst der Überblick, dann das Erfassen - unterwegs schaut man
+          häufiger, als man eintippt. */}
+      <AppointmentsCard />
+      <TodayCard />
+      <TradingCard />
+
       <QuickTrack sessions={sessions} activities={activities} />
 
       <TodayEntries
@@ -60,14 +67,12 @@ export default async function HeutePage() {
         activities={activities}
       />
 
-      {/* Kachel-Sitzungen ohne Aktivität klärt weiterhin der Prompt */}
+      {/* Von Kacheln gestartete Sitzungen ohne Aktivität klärt der Prompt;
+          alles andere führt QuickTrack. */}
       <FocusPrompt
-        sessions={sessions.filter((s) => !s.activity_id)}
+        sessions={sessions.filter((s) => !s.activity_id && s.link_id)}
         activities={activities}
       />
-
-      <TradingCard />
-      <TodayCard />
 
       <div className="flex items-center justify-between border-t border-line pt-3">
         <Link href="/?voll=1" className="text-xs text-ink-muted transition hover:text-ink-soft">

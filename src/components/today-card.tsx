@@ -3,6 +3,7 @@ import { addBodyWeight } from "@/lib/actions";
 import { createGymClient, gymConfigured, type BodyWeightEntry } from "@/lib/supabase/gym";
 import { fetchTodayMenu, menuConfigured, MEAL_LABEL } from "@/lib/supabase/menu";
 import { fetchWeather } from "@/lib/weather";
+import { WeatherIcon } from "@/components/weather-icon";
 import { Button, Card, Input } from "@/components/ui";
 import { dateLabel } from "@/lib/format";
 import { weekStart, heuteISO } from "@/lib/time";
@@ -209,13 +210,18 @@ export async function TodayCard() {
             <p className="mt-2 text-xs text-ink-muted">Gerade nicht abrufbar.</p>
           ) : (
             <>
-              <p className="tabular mt-2 text-sm text-ink">
-                {wetter.jetzt}°
-                <span className="ml-1.5 text-xs text-ink-muted">
-                  {wetter.min}–{wetter.max}°
-                </span>
-              </p>
-              <p className="mt-0.5 text-xs text-ink-soft">{wetter.text}</p>
+              <div className="mt-1 flex items-center gap-2">
+                <WeatherIcon name={wetter.icon} className="h-10 w-10 shrink-0" />
+                <div className="min-w-0">
+                  <p className="tabular text-sm text-ink">
+                    {wetter.jetzt}°
+                    <span className="ml-1.5 text-xs text-ink-muted">
+                      {wetter.min}–{wetter.max}°
+                    </span>
+                  </p>
+                  <p className="truncate text-xs text-ink-soft">{wetter.text}</p>
+                </div>
+              </div>
               <p className={cxRegen(wetter.regenChance)}>
                 {wetter.regenChance >= 30
                   ? `Regen ${wetter.regenChance} %${wetter.regenMm > 0 ? ` · ${wetter.regenMm} mm` : ""}`

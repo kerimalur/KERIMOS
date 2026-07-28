@@ -10,6 +10,11 @@
 const LAT = 47.2088;
 const LON = 7.5323;
 
+/** Welches Symbol gezeichnet wird. */
+export type WeatherIconName =
+  | "sonne" | "mond" | "wolke" | "wolke-sonne" | "wolke-mond"
+  | "regen" | "schnee" | "gewitter" | "nebel";
+
 export interface Weather {
   /** Temperatur jetzt, gerundet. */
   jetzt: number;
@@ -19,31 +24,45 @@ export interface Weather {
   regenChance: number;
   /** Erwartete Regenmenge in mm. */
   regenMm: number;
-  /** Kurztext aus dem WMO-Code, z.B. "wechselnd bewölkt". */
+  /** Kurztext aus dem WMO-Code, z.B. "leicht bewölkt". */
   text: string;
   /** Grobe Einordnung für die Farbe. */
   nass: boolean;
+  icon: WeatherIconName;
+  /** Tag oder Nacht - entscheidet zwischen Sonne und Mond. */
+  tag: boolean;
 }
 
-/** WMO-Wettercodes, zusammengefasst auf das, was man wissen will. */
-function codeText(code: number): { text: string; nass: boolean } {
-  if (code === 0) return { text: "klar", nass: false };
-  if (code <= 2) return { text: "leicht bewölkt", nass: false };
-  if (code === 3) return { text: "bedeckt", nass: false };
-  if (code <= 48) return { text: "Nebel", nass: false };
-  if (code <= 57) return { text: "Nieselregen", nass: true };
-  if (code <= 67) return { text: "Regen", nass: true };
-  if (code <= 77) return { text: "Schnee", nass: true };
-  if (code <= 82) return { text: "Regenschauer", nass: true };
-  if (code <= 86) return { text: "Schneeschauer", nass: true };
-  return { text: "Gewitter", nass: true };
+/**
+ * WMO-Wettercodes, zusammengefasst auf das, was man wissen will.
+ * Bei klarem und leicht bewölktem Himmel hängt das Symbol davon ab,
+ * ob gerade Tag oder Nacht ist.
+ */
+function codeText(code: number, tag: boolean): {
+  text: string; nass: boolean; icon: WeatherIconName;
+} {
+  if (code === 0) return { text: "klar", nass: false, icon: tag ? "sonne" : "mond" };
+  if (code <= 2) {
+    return {
+      text: "leicht bewölkt", nass: false,
+      icon: tag ? "wolke-sonne" : "wolke-mond",
+    };
+  }
+  if (code === 3) return { text: "bedeckt", nass: false, icon: "wolke" };
+  if (code <= 48) return { text: "Nebel", nass: false, icon: "nebel" };
+  if (code <= 57) return { text: "Nieselregen", nass: true, icon: "regen" };
+  if (code <= 67) return { text: "Regen", nass: true, icon: "regen" };
+  if (code <= 77) return { text: "Schnee", nass: true, icon: "schnee" };
+  if (code <= 82) return { text: "Regenschauer", nass: true, icon: "regen" };
+  if (code <= 86) return { text: "Schneeschauer", nass: true, icon: "schnee" };
+  return { text: "Gewitter", nass: true, icon: "gewitter" };
 }
 
 export async function fetchWeather(): Promise<Weather | null> {
   const url =
     "https://api.open-meteo.com/v1/forecast" +
     `?latitude=${LAT}&longitude=${LON}` +
-    "&current=temperature_2m,weather_code" +
+    "&current=temperature_2m,weather_code,is_day" +
     "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max," +
     "precipitation_sum,weather_code" +
     "&timezone=Europe%2FZurich&forecast_days=1";
@@ -56,7 +75,7 @@ export async function fetchWeather(): Promise<Weather | null> {
     if (!res.ok) return null;
 
     const d = (await res.json()) as {
-      current?: { temperature_2m?: number; weather_code?: number };
+      current?: { temperature_2m?: number; weather_code?: number; is_day?: number };
       daily?: {
         temperature_2m_max?: number[];
         temperature_2m_min?: number[];
@@ -66,8 +85,11 @@ export async function fetchWeather(): Promise<Weather | null> {
       };
     };
 
-    const tagesCode = d.daily?.weather_code?.[0] ?? d.current?.weather_code ?? 3;
-    const { text, nass } = codeText(tagesCode);
+    // Das Symbol folgt dem aktuellen Wetter, der Text dem Tagesverlauf -
+    // nachts eine Sonne zu zeigen wäre schlicht falsch.
+    const tag = (d.current?.is_day ?? 1) === 1;
+    const jetztCode = d.current?.weather_code ?? d.daily?.weather_code?.[0] ?? 3;
+    const tagesCode = d.daily?.weather_code?.[0] ?? jetztCode;
 
     return {
       jetzt: Math.round(d.current?.temperature_2m ?? 0),
@@ -75,8 +97,10 @@ export async function fetchWeather(): Promise<Weather | null> {
       max: Math.round(d.daily?.temperature_2m_max?.[0] ?? 0),
       regenChance: Math.round(d.daily?.precipitation_probability_max?.[0] ?? 0),
       regenMm: Math.round((d.daily?.precipitation_sum?.[0] ?? 0) * 10) / 10,
-      text,
-      nass,
+      text: codeText(tagesCode, tag).text,
+      nass: codeText(tagesCode, tag).nass,
+      icon: codeText(jetztCode, tag).icon,
+      tag,
     };
   } catch {
     // Kein Wetter ist kein Fehler - die Karte lässt die Spalte dann leer.

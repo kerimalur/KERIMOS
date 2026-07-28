@@ -106,6 +106,48 @@ export async function deleteShoppingItem(fd: FormData) {
   revalidateEssen();
 }
 
+/* --------------------------------------------------------------- Termine */
+
+const zuMinute = (wert: string): number | null => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(wert);
+  if (!m) return null;
+  const v = Number(m[1]) * 60 + Number(m[2]);
+  return v >= 0 && v <= 1439 ? v : null;
+};
+
+const revalidateTermine = () => {
+  ["/termine", "/heute", "/"].forEach((p) => revalidatePath(p));
+};
+
+export async function createAppointment(fd: FormData) {
+  const { supabase, userId } = await requireUser();
+  const title = str(fd, "title");
+  const startsOn = str(fd, "starts_on");
+  if (!title || !startsOn) return;
+
+  const start = zuMinute(str(fd, "start"));
+  const ende = zuMinute(str(fd, "end"));
+
+  check(await supabase.from("appointments").insert({
+    user_id: userId,
+    title,
+    starts_on: startsOn,
+    start_minute: start,
+    // Ende nur übernehmen, wenn es nach dem Start liegt
+    end_minute: start !== null && ende !== null && ende > start ? ende : null,
+    location: str(fd, "location") || null,
+    note: str(fd, "note") || null,
+  }), "Termin anlegen");
+  revalidateTermine();
+}
+
+export async function deleteAppointment(fd: FormData) {
+  const { supabase, userId } = await requireUser();
+  await supabase.from("appointments")
+    .delete().eq("id", str(fd, "id")).eq("user_id", userId);
+  revalidateTermine();
+}
+
 /* ---------------------------------------------------------------- Konten */
 
 export async function createAccount(fd: FormData) {
@@ -415,6 +457,66 @@ export async function importTransactions(fd: FormData): Promise<ImportOutcome> {
     };
   }
 
+  // Gegenbuchungen für Umbuchungen auf eigene Konten. Aus einem Auszug
+  // werden so beide Seiten - das Vermögen bleibt vollständig.
+  if (inserted > 0) {
+    const { data: transferRules } = await supabase.from("transfer_rules")
+      .select("pattern, target_account_id").eq("active", true);
+
+    const regeln = (transferRules ?? []) as {
+      pattern: string; target_account_id: string;
+    }[];
+
+    if (regeln.length > 0) {
+      const gegen = payload.flatMap((p) => {
+        const text = `${p.description} ${p.counterparty ?? ""}`.toLowerCase();
+        const regel = regeln.find(
+          (r) => r.pattern.trim() && text.includes(r.pattern.trim().toLowerCase())
+        );
+        // Nur wenn das Zielkonto ein anderes ist als das Quellkonto
+        if (!regel || regel.target_account_id === accountId) return [];
+        return [{
+          user_id: userId,
+          account_id: regel.target_account_id,
+          category_id: null,
+          occurred_on: p.occurred_on,
+          amount: -p.amount,
+          description: `Gegenbuchung: ${p.description}`,
+          counterparty: p.counterparty,
+          is_transfer: true,
+          source: "csv" as const,
+          external_ref: `gegen:${p.external_ref}`,
+        }];
+      });
+
+      if (gegen.length > 0) {
+        // Quellbuchungen ebenfalls als Umbuchung markieren
+        await supabase.from("transactions")
+          .update({ is_transfer: true })
+          .eq("user_id", userId)
+          .in("external_ref", gegen.map((g) => g.external_ref.replace(/^gegen:/, "")));
+
+        await supabase.from("transactions").upsert(gegen, {
+          onConflict: "user_id,external_ref", ignoreDuplicates: true,
+        });
+      }
+    }
+  }
+
+  // Schlusssaldo: setzt eine neue Kontostand-Basis auf das Auszugsdatum.
+  // Danach stimmt das Konto auf den Rappen, auch wenn einzelne Buchungen
+  // fehlen oder doppelt wären - die Basis sticht die Rechnerei.
+  const saldo = numOrNull(fd, "closing_balance");
+  const saldoDatum = str(fd, "closing_date")
+    || rows.map((r) => r.occurred_on).sort().at(-1)
+    || heuteISO();
+  if (saldo !== null && accountId) {
+    await supabase.from("account_snapshots").upsert(
+      { user_id: userId, account_id: accountId, snapshot_date: saldoDatum, balance: saldo },
+      { onConflict: "account_id,snapshot_date" }
+    );
+  }
+
   revalidatePath("/transaktionen"); revalidatePath("/"); revalidatePath("/geld"); revalidatePath("/runway");
   revalidatePath("/konten");
 
@@ -427,6 +529,26 @@ export async function importTransactions(fd: FormData): Promise<ImportOutcome> {
 
 function safeRegex(pattern: string): RegExp {
   try { return new RegExp(pattern, "i"); } catch { return /$^/; }
+}
+
+/* ------------------------------------------------------- Umbuchungsregeln */
+
+export async function createTransferRule(fd: FormData) {
+  const { supabase, userId } = await requireUser();
+  const pattern = str(fd, "pattern");
+  const target = str(fd, "target_account_id");
+  if (!pattern || !target) return;
+  check(await supabase.from("transfer_rules").insert({
+    user_id: userId, pattern, target_account_id: target,
+  }), "Umbuchungsregel anlegen");
+  revalidatePath("/import");
+}
+
+export async function deleteTransferRule(fd: FormData) {
+  const { supabase, userId } = await requireUser();
+  await supabase.from("transfer_rules")
+    .delete().eq("id", str(fd, "id")).eq("user_id", userId);
+  revalidatePath("/import");
 }
 
 export async function createImportRule(fd: FormData) {
@@ -1377,6 +1499,25 @@ export async function startFocus(linkId: string) {
   revalidatePath("/"); revalidatePath("/fokus");
 }
 
+/**
+ * Startet eine Sitzung mit frei getipptem Text - für alles, wofür es keine
+ * Aktivität gibt. Die Zuordnung passiert beim Beenden; der Text landet als
+ * Notiz am Zeiteintrag.
+ */
+export async function startCustomFocus(label: string) {
+  const { supabase, userId } = await requireUser();
+  const text = label.trim().slice(0, 80);
+  if (!text) return;
+
+  check(await supabase.from("focus_sessions").insert({
+    user_id: userId,
+    label: text,
+    link_id: null,
+    activity_id: null,
+  }), "Sitzung starten");
+  revalidatePath("/heute"); revalidatePath("/"); revalidatePath("/fokus");
+}
+
 /** Startet eine Sitzung ohne Kachel, direkt aus dem Zen-Modus. */
 export interface FocusTarget {
   id: string;
@@ -1471,6 +1612,8 @@ export async function logFocus(fd: FormData) {
     entry_date: entryDate,
     minutes: Math.min(minutes, 1440),
     start_minute: Math.min(Math.max(startMinute, 0), 1439),
+    // Frei getippter Text der Sitzung bleibt am Eintrag erhalten
+    note: str(fd, "note") || null,
     source: "manual",
     confirmed: true,
   }).select("id").single();

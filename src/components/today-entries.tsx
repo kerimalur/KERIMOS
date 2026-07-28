@@ -32,6 +32,9 @@ export function TodayEntries({
 }) {
   const router = useRouter();
   const [offen, setOffen] = useState(false);
+  // Zwei Blickwinkel auf denselben Tag: Liste zum Bearbeiten,
+  // Verlauf zum Sehen, wo die Zeit geblieben ist.
+  const [ansicht, setAnsicht] = useState<"liste" | "verlauf">("liste");
   const [aktivitaet, setAktivitaet] = useState("");
   const [von, setVon] = useState("");
   const [bis, setBis] = useState("");
@@ -41,6 +44,7 @@ export function TodayEntries({
   const sortiert = [...entries].sort(
     (a, b) => (a.start_minute ?? 9999) - (b.start_minute ?? 9999)
   );
+  const gesamt = entries.reduce((s, e) => s + e.minutes, 0);
 
   const toMin = (t: string) => {
     const m = /^(\d{1,2}):(\d{2})$/.exec(t);
@@ -105,14 +109,25 @@ export function TodayEntries({
 
   return (
     <Card className="p-4">
-      <div className="mb-2.5 flex items-center justify-between">
+      <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
         <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted">
           Heute erfasst
+          {gesamt > 0 && (
+            <span className="ml-1.5 normal-case tracking-normal text-ink-soft">
+              · {fmtMin(gesamt)}
+            </span>
+          )}
         </span>
-        <button onClick={() => setOffen(!offen)}
-          className="rounded-lg bg-sand px-2.5 py-1 text-xs font-medium text-ink-soft transition hover:text-ink">
-          {offen ? "Schliessen" : "+ Nachtragen"}
-        </button>
+        <span className="flex items-center gap-1.5">
+          <button onClick={() => setAnsicht(ansicht === "liste" ? "verlauf" : "liste")}
+            className="rounded-lg bg-sand px-2.5 py-1 text-xs font-medium text-ink-soft transition hover:text-ink">
+            {ansicht === "liste" ? "Verlauf" : "Liste"}
+          </button>
+          <button onClick={() => setOffen(!offen)}
+            className="rounded-lg bg-sand px-2.5 py-1 text-xs font-medium text-ink-soft transition hover:text-ink">
+            {offen ? "Schliessen" : "+ Nachtragen"}
+          </button>
+        </span>
       </div>
 
       {/* Nachtragen: Aktivität + von/bis - für Vergessenes */}
@@ -149,6 +164,31 @@ export function TodayEntries({
 
       {sortiert.length === 0 ? (
         <p className="text-sm text-ink-muted">Noch nichts verbucht.</p>
+      ) : ansicht === "verlauf" ? (
+        /* Verlauf: farbige Balken in Grösse der Dauer - man sieht auf einen
+           Blick, was den Tag gefüllt hat und wo Lücken sind. */
+        <ol className="space-y-1.5">
+          {sortiert.map((e) => {
+            const a = byId.get(e.activity_id);
+            const anteil = gesamt > 0 ? Math.max(6, (e.minutes / gesamt) * 100) : 6;
+            return (
+              <li key={e.id} className="flex items-center gap-2.5">
+                <span className="tabular w-11 shrink-0 text-[11px] text-ink-muted">
+                  {e.start_minute !== null ? hhmm(e.start_minute) : "—"}
+                </span>
+                <span className="h-6 shrink-0 rounded-md"
+                  style={{ width: `${anteil}%`, background: (a?.color ?? "#A8A093") + "40",
+                    borderLeft: `3px solid ${a?.color ?? "#A8A093"}` }} />
+                <span className="min-w-0 flex-1 truncate text-xs text-ink-soft">
+                  {a?.name ?? "Unbekannt"}
+                </span>
+                <span className="tabular shrink-0 text-[11px] text-ink-muted">
+                  {fmtMin(e.minutes)}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
       ) : (
         <ul className="divide-y divide-line/70">
           {sortiert.map((e) => {
