@@ -124,7 +124,7 @@ export default async function TradingPage() {
       <div>
         <h1 className="text-xl font-medium text-ink">Trading</h1>
         <p className="mt-1 max-w-2xl text-sm text-ink-muted">
-          GVA-Board live vom Screener, Backtest-Fortschritt aus dem Journal.
+          GVA-Board live vom Screener, Backtest-Fortschritt aus der Trading-Datenbank.
           Roadmap-Schritt 2: {BACKTEST_ZIEL} dokumentierte Trades, bevor FTMO ein Thema ist.
         </p>
       </div>
@@ -208,13 +208,14 @@ export default async function TradingPage() {
       {/* Backtest-Fortschritt */}
       {!tradingConfigured() ? (
         <Card>
-          <CardTitle>Backtest &amp; Journal</CardTitle>
+          <CardTitle>Backtest &amp; News</CardTitle>
           <p className="text-sm text-ink-muted">
-            Journal-Zugang noch nicht eingerichtet. In Vercel und{" "}
+            Trading-Datenbank noch nicht verbunden — das ist dieselbe Supabase, die der
+            GVA-Screener nutzt (dort liegen Backtests, Hit-Historie und der
+            Wirtschaftskalender). In Vercel und{" "}
             <code className="rounded bg-sand px-1 py-0.5 text-xs">.env.local</code> setzen:{" "}
             <code className="rounded bg-sand px-1.5 py-0.5 text-xs">TRADING_SUPABASE_URL</code> und{" "}
-            <code className="rounded bg-sand px-1.5 py-0.5 text-xs">TRADING_SUPABASE_SERVICE_ROLE_KEY</code>{" "}
-            — Werte aus dem Supabase-Projekt des Trading-Journals, gleiches Prinzip wie beim Gym.
+            <code className="rounded bg-sand px-1.5 py-0.5 text-xs">TRADING_SUPABASE_SERVICE_ROLE_KEY</code>.
           </p>
         </Card>
       ) : (
