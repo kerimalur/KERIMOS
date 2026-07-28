@@ -1,35 +1,31 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { Launcher } from "@/components/launcher";
 import { FocusPrompt } from "@/components/focus-prompt";
+import { TradingCard } from "@/components/trading-card";
+import { TodayCard } from "@/components/today-card";
+import { QuickSearch } from "@/components/quick-search";
 import { Button, Card } from "@/components/ui";
 import { seedLinks } from "@/lib/actions";
-import { chf } from "@/lib/format";
-import { fmtHours, pct, summarizeWeek, weekStart as toWeekStart, addDays } from "@/lib/time";
-import type {
-  Activity, DailyTime, FocusSession, NavLink, RunwayInputs, WeeklyBucket,
-} from "@/lib/types";
+import { MODE_ORDER } from "@/lib/modes";
+import { addDays, weekStart as toWeekStart } from "@/lib/time";
+import type { Activity, FocusSession, NavLink } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 export default async function Start() {
   const supabase = await createClient();
-  const week = toWeekStart(new Date());
+  const vorwoche = addDays(toWeekStart(new Date()), -7);
 
   const [
-    { data: linkRows }, { data: inputsRows }, { data: weekDaily }, { data: weekBuckets },
-    { data: focusRows }, { data: actRows },
+    { data: linkRows }, { data: focusRows }, { data: actRows }, { data: lastReview },
   ] = await Promise.all([
-      supabase.from("links").select("*").eq("archived", false)
-        .order("group_name").order("sort_order"),
-      supabase.rpc("runway_inputs", { months_lookback: 3 }),
-      supabase.from("v_daily_time").select("*")
-        .gte("entry_date", week).lte("entry_date", addDays(week, 6)),
-      supabase.from("v_weekly_buckets").select("*").eq("week_start", week),
-      supabase.from("focus_sessions").select("*").eq("status", "open")
-        .order("started_at", { ascending: false }),
-      supabase.from("activities").select("*").eq("archived", false).order("name"),
-    ]);
+    supabase.from("links").select("*").eq("archived", false)
+      .order("group_name").order("sort_order"),
+    supabase.from("focus_sessions").select("*").eq("status", "open")
+      .order("started_at", { ascending: false }),
+    supabase.from("activities").select("*").eq("archived", false).order("name"),
+    supabase.from("weekly_reviews").select("id").eq("week_start", vorwoche).maybeSingle(),
+  ]);
 
   const links = (linkRows ?? []) as NavLink[];
 
@@ -39,9 +35,9 @@ export default async function Start() {
         <Card>
           <h1 className="text-lg font-medium text-ink">Navigator einrichten</h1>
           <p className="mt-2 text-sm text-ink-muted">
-            KerimOS legt dir Kacheln für deine Bereiche, deine deployten Apps, deine
-            Werkzeuge und deine Projektordner an. Alles danach änderbar — Kacheln
-            verwaltest du in der App, nicht im Code.
+            KerimOS legt dir Kacheln für deine Modi an — Traden, Programmieren,
+            Gym, Essen, Geld, Zeit. Alles danach änderbar — Kacheln verwaltest
+            du in der App, nicht im Code.
           </p>
           <form action={seedLinks} className="mt-5">
             <Button type="submit" className="w-full">Kacheln anlegen</Button>
@@ -51,66 +47,78 @@ export default async function Start() {
     );
   }
 
-  const inputs = (inputsRows as RunwayInputs[] | null)?.[0];
-  const liquid = Number(inputs?.liquid ?? 0);
+  // Sonntag (0) und Montag (1): sanft erinnern, solange der Rückblick fehlt
+  const wochentag = new Date().getDay();
+  const reviewFehlt = !lastReview && (wochentag === 0 || wochentag === 1);
 
-  const days = ((weekDaily ?? []) as DailyTime[]).map((d) => ({
-    ...d,
-    logged_minutes: Number(d.logged_minutes),
-    ziel_minutes: Number(d.ziel_minutes),
-    arbeit_minutes: Number(d.arbeit_minutes),
-    pflicht_minutes: Number(d.pflicht_minutes),
-    regeneration_minutes: Number(d.regeneration_minutes),
-    sozial_minutes: Number(d.sozial_minutes),
-    spass_minutes: Number(d.spass_minutes),
-    leerlauf_minutes: Number(d.leerlauf_minutes),
-    sleep_hours: d.sleep_hours === null ? null : Number(d.sleep_hours),
-    waking_minutes: Number(d.waking_minutes),
-    unaccounted_minutes: Number(d.unaccounted_minutes),
-  }));
-  const summary = summarizeWeek(days, (weekBuckets ?? []) as WeeklyBucket[]);
+  // Modi = Kachel-Gruppen
+  const gruppen = new Map<string, NavLink[]>();
+  for (const l of links) {
+    const list = gruppen.get(l.group_name) ?? [];
+    list.push(l);
+    gruppen.set(l.group_name, list);
+  }
+  const modi = [...gruppen.entries()].sort(
+    (a, b) =>
+      ((MODE_ORDER.indexOf(a[0]) + 1) || 99) - ((MODE_ORDER.indexOf(b[0]) + 1) || 99) ||
+      a[0].localeCompare(b[0])
+  );
 
   return (
     <div className="py-6">
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
           <span className="grid h-11 w-11 place-items-center rounded-2xl bg-accent text-lg font-medium text-white">
             K
           </span>
           <div>
             <h1 className="text-2xl font-medium leading-tight text-ink">KerimOS</h1>
-            <p className="text-sm text-ink-muted">Wo willst du arbeiten?</p>
+            <p className="text-sm text-ink-muted">Was willst du jetzt tun?</p>
           </div>
         </div>
-
-        <dl className="flex gap-8 text-sm">
-          <div>
-            <dt className="text-[11px] uppercase tracking-[0.1em] text-ink-muted">Liquide</dt>
-            <dd className="tabular mt-1 text-ink">{chf(liquid)}</dd>
-          </div>
-          <div>
-            <dt className="text-[11px] uppercase tracking-[0.1em] text-ink-muted">
-              Woche an Zielen
-            </dt>
-            <dd className="tabular mt-1 text-ink">
-              {days.length > 0 ? pct(summary.goalShare) : "—"}
-            </dd>
-          </div>
-          <div className="hidden sm:block">
-            <dt className="text-[11px] uppercase tracking-[0.1em] text-ink-muted">Unerfasst</dt>
-            <dd className="tabular mt-1 text-ink">
-              {days.length > 0 ? fmtHours(summary.totalUnaccounted) : "—"}
-            </dd>
-          </div>
-        </dl>
+        <QuickSearch links={links} />
       </div>
 
       <div className="space-y-5">
+        <TradingCard />
+        <TodayCard />
+
+        {reviewFehlt && (
+          <Link href={`/rueckblick?w=${vorwoche}`}
+            className="block rounded-2xl border border-warn/30 bg-warn-tint px-5 py-3 text-sm text-ink-soft transition hover:border-warn/60">
+            Der Wochenrückblick für letzte Woche fehlt noch — 5 Minuten, die Felder
+            sind schon vorbefüllt. →
+          </Link>
+        )}
+
         <FocusPrompt
           sessions={(focusRows ?? []) as FocusSession[]}
           activities={(actRows ?? []) as Activity[]}
         />
-        <Launcher links={links} />
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {modi.map(([name, ls]) => (
+            <Link key={name} href={`/m/${encodeURIComponent(name)}`}
+              className="group rounded-2xl border border-line/70 bg-card p-5 transition hover:border-line-strong">
+              <div className="flex items-center gap-3">
+                <span className="grid h-10 w-10 place-items-center rounded-xl text-base text-white"
+                  style={{ background: ls[0]?.color ?? "#8A8478" }}>
+                  {ls[0]?.icon ?? name[0]}
+                </span>
+                <div className="min-w-0">
+                  <div className="text-base font-medium text-ink">{name}</div>
+                  <div className="text-xs text-ink-muted">
+                    {ls.length} {ls.length === 1 ? "Kachel" : "Kacheln"}
+                  </div>
+                </div>
+              </div>
+              <p className="mt-3 truncate text-xs text-ink-muted">
+                {ls.slice(0, 3).map((l) => l.title).join(" · ")}
+                {ls.length > 3 && " · …"}
+              </p>
+            </Link>
+          ))}
+        </div>
       </div>
 
       <div className="mt-10 flex items-center justify-between border-t border-line pt-4">

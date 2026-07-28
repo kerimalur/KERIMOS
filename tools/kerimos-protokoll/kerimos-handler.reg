@@ -1,0 +1,15 @@
+Windows Registry Editor Version 5.00
+
+; Registriert das kerimos://-Protokoll für den angemeldeten Benutzer (kein Admin nötig).
+; Danach öffnen Ordner-Kacheln in KerimOS den Explorer direkt.
+
+[HKEY_CURRENT_USER\Software\Classes\kerimos]
+@="URL:KerimOS Protokoll"
+"URL Protocol"=""
+
+[HKEY_CURRENT_USER\Software\Classes\kerimos\shell]
+
+[HKEY_CURRENT_USER\Software\Classes\kerimos\shell\open]
+
+[HKEY_CURRENT_USER\Software\Classes\kerimos\shell\open\command]
+@="powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"C:\\Projekte\\Claude Cowork\\Kompass\\tools\\kerimos-protokoll\\kerimos-open.ps1\" \"%1\""

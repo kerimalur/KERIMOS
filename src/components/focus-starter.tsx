@@ -6,7 +6,7 @@ import { startFocusForActivity } from "@/lib/actions";
 import { Button, Card, Select, cx } from "@/components/ui";
 import { BUCKET_LABEL, BUCKET_ORDER, type Activity, type NavLink } from "@/lib/types";
 
-const PICKABLE = ["Projekte", "Werkzeuge", "Bereiche"];
+import { MODE_ORDER as PICKABLE } from "@/lib/modes";
 
 /**
  * Startet eine Fokus-Sitzung. Auswählbar sind beliebig viele Kacheln —

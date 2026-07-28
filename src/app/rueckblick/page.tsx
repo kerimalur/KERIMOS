@@ -75,6 +75,34 @@ export default async function RueckblickPage({
   const review = (existing ?? null) as WeeklyReview | null;
   const past = (history ?? []) as WeeklyReview[];
 
+  // Vorbefüllung aus den Kennzahlen - nur beim ersten Schreiben, nie beim
+  // Bearbeiten. Startpunkt zum Anpassen, kein fertiger Text.
+  let wellVorschlag = "";
+  let poorlyVorschlag = "";
+  if (!review && days.length > 0) {
+    const gut: string[] = [];
+    const schlecht: string[] = [];
+
+    if (goalHours >= 1) {
+      gut.push(`${fmtHours(goalHours * 60)} an Zielen (${pct(summary.goalShare)} der Wachzeit)`);
+    } else {
+      schlecht.push("unter 1 h an Zielen gearbeitet");
+    }
+
+    const leerlaufMin = summary.byBucket.find((b) => b.bucket === "leerlauf")?.minutes ?? 0;
+    if (leerlaufMin >= 120) schlecht.push(`${fmtHours(leerlaufMin)} Leerlauf`);
+
+    if (summary.totalUnaccounted > summary.totalLogged) {
+      schlecht.push(`${fmtHours(summary.totalUnaccounted)} unerfasst - mehr als erfasst`);
+    } else if (summary.totalWaking > 0 &&
+        summary.totalUnaccounted / summary.totalWaking > 0.25) {
+      schlecht.push(`${fmtHours(summary.totalUnaccounted)} unerfasst`);
+    }
+
+    wellVorschlag = gut.join(" · ");
+    poorlyVorschlag = schlecht.join(" · ");
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -137,14 +165,14 @@ export default async function RueckblickPage({
           <div>
             <Label htmlFor="went_well">Was lief gut?</Label>
             <textarea id="went_well" name="went_well" rows={2}
-              defaultValue={review?.went_well ?? ""}
+              defaultValue={review?.went_well ?? wellVorschlag}
               className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none transition placeholder:text-ink-faint hover:border-line-strong focus:border-accent focus:ring-2 focus:ring-accent/15"
               placeholder="Konkret — nicht „war ok“" />
           </div>
           <div>
             <Label htmlFor="went_poorly">Was nicht?</Label>
             <textarea id="went_poorly" name="went_poorly" rows={2}
-              defaultValue={review?.went_poorly ?? ""}
+              defaultValue={review?.went_poorly ?? poorlyVorschlag}
               className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none transition placeholder:text-ink-faint hover:border-line-strong focus:border-accent focus:ring-2 focus:ring-accent/15" />
           </div>
           <div>

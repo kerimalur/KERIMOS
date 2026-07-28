@@ -6,7 +6,7 @@ import { cx } from "@/components/ui";
 import { TileCard } from "@/components/tile-card";
 import type { NavLink } from "@/lib/types";
 
-const GROUP_ORDER = ["Bereiche", "Projekte", "Werkzeuge", "Ordner"];
+import { MODE_ORDER as GROUP_ORDER } from "@/lib/modes";
 
 export function Launcher({ links }: { links: NavLink[] }) {
   const router = useRouter();
@@ -67,6 +67,10 @@ export function Launcher({ links }: { links: NavLink[] }) {
       window.open(link.target, "_blank", "noopener,noreferrer");
       return;
     }
+    // Ordner: erst den kerimos://-Handler versuchen (öffnet den Explorer
+    // direkt, wenn er per tools/kerimos-protokoll installiert ist). Der Pfad
+    // landet zusätzlich in der Zwischenablage - als Fallback ohne Handler.
+    window.location.href = `kerimos://open?path=${encodeURIComponent(link.target)}`;
     navigator.clipboard.writeText(link.target).then(
       () => { setCopied(link.id); setTimeout(() => setCopied(null), 2200); },
       () => setCopied(null)

@@ -1,6 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createGymClient } from "@/lib/supabase/gym";
 import { type RecurrenceInterval } from "@/lib/types";
 
 async function requireUser() {
@@ -24,6 +25,45 @@ const numOrNull = (fd: FormData, k: string) => {
 };
 const numOr = (fd: FormData, k: string, fallback: number) => numOrNull(fd, k) ?? fallback;
 const bool = (fd: FormData, k: string) => fd.get(k) === "on" || fd.get(k) === "true";
+
+/* ------------------------------------------------------ Schnellerfassung */
+
+/**
+ * Trägt das Körpergewicht in die Gym-Datenbank ein. Läuft serverseitig über
+ * den Gym-Schlüssel; GYM_USER_ID gehört dazu, weil die Gym-DB eine eigene
+ * Anmeldung hat und die Zeile sonst niemandem gehören würde.
+ */
+export async function addBodyWeight(fd: FormData) {
+  await requireUser();
+  const gym = createGymClient();
+  if (!gym) throw new Error("Gym-Zugang nicht eingerichtet");
+
+  const weight = numOrNull(fd, "weight_kg");
+  if (weight === null || weight < 30 || weight > 250) return;
+
+  // Besitzer der Zeile: bevorzugt aus GYM_USER_ID, sonst vom letzten
+  // bestehenden Eintrag übernehmen (Ein-Personen-Datenbank).
+  let gymUserId = process.env.GYM_USER_ID ?? null;
+  if (!gymUserId) {
+    const { data } = await gym.from("body_weight_entries")
+      .select("user_id").not("user_id", "is", null).limit(1);
+    gymUserId = (data?.[0]?.user_id as string | undefined) ?? null;
+  }
+  if (!gymUserId) {
+    throw new Error(
+      "Gewicht speichern: GYM_USER_ID fehlt in den Umgebungsvariablen " +
+      "und es gibt noch keinen bestehenden Eintrag zum Übernehmen."
+    );
+  }
+
+  check(await gym.from("body_weight_entries").insert({
+    entry_date: new Date().toISOString().slice(0, 10),
+    weight_kg: weight,
+    source: "kerimos",
+    user_id: gymUserId,
+  }), "Gewicht speichern");
+  revalidatePath("/gym"); revalidatePath("/quick"); revalidatePath("/");
+}
 
 /* ---------------------------------------------------------------- Konten */
 
@@ -961,71 +1001,86 @@ export async function registerLinkOpen(id: string) {
 export async function seedLinks() {
   const { supabase, userId } = await requireUser();
 
+  // Gruppen sind Modi: die Startseite zeigt pro Gruppe einen Einstieg,
+  // /m/[gruppe] ist der Arbeitsplatz mit allen Kacheln des Modus.
   const seed: {
     title: string; subtitle: string; kind: string; target: string;
     group_name: string; icon: string; color: string; sort_order: number;
   }[] = [
-    // Bereiche in KerimOS
-    { title: "Geld", subtitle: "Runway, Konten, Buchungen", kind: "section",
-      target: "/geld", group_name: "Bereiche", icon: "₣", color: "#5B8C7B", sort_order: 1 },
-    { title: "Zeit", subtitle: "Kalender, Woche, Stundenwert", kind: "section",
-      target: "/zeit", group_name: "Bereiche", icon: "◷", color: "#8FA6B8", sort_order: 2 },
-
-    // Eigene Apps
-    { title: "Menüplan", subtitle: "Meal Prep, Rezepte, Einkauf", kind: "web",
-      target: "https://men-plan-kerim-alurs-projects.vercel.app",
-      group_name: "Projekte", icon: "▤", color: "#C4A882", sort_order: 1 },
-    { title: "Gym-Tracker", subtitle: "Training, Fortschritt, Erholung", kind: "web",
-      target: "https://gymapp-vereinfacht-kerim-alurs-projects.vercel.app",
-      group_name: "Projekte", icon: "▲", color: "#6E9B76", sort_order: 2 },
+    // Traden
+    { title: "Trading", subtitle: "GVA-Board, Backtest", kind: "section",
+      target: "/trading", group_name: "Traden", icon: "◈", color: "#8B94B8", sort_order: 1 },
     { title: "GVA Screener", subtitle: "Aktive Setups, London und New York", kind: "web",
       target: "https://gva-screener-kerim-alurs-projects.vercel.app",
-      group_name: "Projekte", icon: "◈", color: "#8B94B8", sort_order: 3 },
-    { title: "Trading Journal", subtitle: "Trades, Backtest, Auswertung", kind: "web",
-      target: "https://trading-journal-krbd-kerim-alurs-projects.vercel.app",
-      group_name: "Projekte", icon: "◉", color: "#BE8DA4", sort_order: 4 },
-
-    // Werkzeuge
+      group_name: "Traden", icon: "◈", color: "#8B94B8", sort_order: 2 },
     { title: "TradingView", subtitle: "Charts", kind: "web",
       target: "https://www.tradingview.com/chart/",
-      group_name: "Werkzeuge", icon: "◔", color: "#8FA6B8", sort_order: 1 },
-    { title: "Vercel", subtitle: "Deployments", kind: "web",
-      target: "https://vercel.com/kerim-alurs-projects",
-      group_name: "Werkzeuge", icon: "△", color: "#A8A093", sort_order: 2 },
-    { title: "Supabase", subtitle: "Datenbanken", kind: "web",
-      target: "https://supabase.com/dashboard/org/qxzrvonguaeewuxwspwg",
-      group_name: "Werkzeuge", icon: "◭", color: "#6E9B76", sort_order: 3 },
-    { title: "GitHub", subtitle: "Repositories", kind: "web",
-      target: "https://github.com/kerimalur",
-      group_name: "Werkzeuge", icon: "◐", color: "#8A8478", sort_order: 4 },
+      group_name: "Traden", icon: "◔", color: "#8FA6B8", sort_order: 3 },
+    { title: "GVA Screener Code", subtitle: "Quellcode", kind: "folder",
+      target: "C:\\Projekte\\Claude Cowork\\GVA-Screener",
+      group_name: "Traden", icon: "▭", color: "#A8A093", sort_order: 4 },
+
+    // Programmieren
     { title: "Claude", subtitle: "claude.ai", kind: "web",
       target: "https://claude.ai",
-      group_name: "Werkzeuge", icon: "✳", color: "#C68D6B", sort_order: 5 },
-
-    // Lokale Ordner - der Browser darf sie nicht öffnen, nur den Pfad kopieren
+      group_name: "Programmieren", icon: "✳", color: "#C68D6B", sort_order: 1 },
+    { title: "Vercel", subtitle: "Deployments", kind: "web",
+      target: "https://vercel.com/kerim-alurs-projects",
+      group_name: "Programmieren", icon: "△", color: "#A8A093", sort_order: 2 },
+    { title: "Supabase", subtitle: "Datenbanken", kind: "web",
+      target: "https://supabase.com/dashboard/org/qxzrvonguaeewuxwspwg",
+      group_name: "Programmieren", icon: "◭", color: "#6E9B76", sort_order: 3 },
+    { title: "GitHub", subtitle: "Repositories", kind: "web",
+      target: "https://github.com/kerimalur",
+      group_name: "Programmieren", icon: "◐", color: "#8A8478", sort_order: 4 },
     { title: "Projekte", subtitle: "Hauptordner", kind: "folder",
       target: "C:\\Projekte\\Claude Cowork",
-      group_name: "Ordner", icon: "▭", color: "#A8A093", sort_order: 1 },
-    { title: "KerimOS", subtitle: "diese App", kind: "folder",
+      group_name: "Programmieren", icon: "▭", color: "#A8A093", sort_order: 5 },
+    { title: "KerimOS Code", subtitle: "diese App", kind: "folder",
       target: "C:\\Projekte\\Claude Cowork\\Kompass",
-      group_name: "Ordner", icon: "▭", color: "#A8A093", sort_order: 2 },
-    { title: "Menüplan", subtitle: "Quellcode", kind: "folder",
+      group_name: "Programmieren", icon: "▭", color: "#A8A093", sort_order: 6 },
+
+    // Gym
+    { title: "Gym", subtitle: "Fortschritt je Übung", kind: "section",
+      target: "/gym", group_name: "Gym", icon: "▲", color: "#C68D6B", sort_order: 1 },
+    { title: "Gym-Tracker", subtitle: "Training, Fortschritt, Erholung", kind: "web",
+      target: "https://gymapp-vereinfacht-kerim-alurs-projects.vercel.app",
+      group_name: "Gym", icon: "▲", color: "#6E9B76", sort_order: 2 },
+
+    // Essen
+    { title: "Menüplan", subtitle: "Meal Prep, Rezepte, Einkauf", kind: "web",
+      target: "https://men-plan-kerim-alurs-projects.vercel.app",
+      group_name: "Essen", icon: "▤", color: "#C4A882", sort_order: 1 },
+    { title: "Menüplan Code", subtitle: "Quellcode", kind: "folder",
       target: "C:\\Projekte\\Claude Cowork\\Men-plan",
-      group_name: "Ordner", icon: "▭", color: "#A8A093", sort_order: 3 },
-    { title: "Gym-Tracker", subtitle: "Quellcode", kind: "folder",
-      target: "C:\\Projekte\\Claude Cowork\\Gymapp-vereinfacht",
-      group_name: "Ordner", icon: "▭", color: "#A8A093", sort_order: 4 },
-    { title: "GVA Screener", subtitle: "Quellcode", kind: "folder",
-      target: "C:\\Projekte\\Claude Cowork\\GVA-Screener",
-      group_name: "Ordner", icon: "▭", color: "#A8A093", sort_order: 5 },
+      group_name: "Essen", icon: "▭", color: "#A8A093", sort_order: 2 },
+
+    // Geld
+    { title: "Geld", subtitle: "Runway, Konten, Buchungen", kind: "section",
+      target: "/geld", group_name: "Geld", icon: "₣", color: "#5B8C7B", sort_order: 1 },
+
+    // Zeit
+    { title: "Zeit", subtitle: "Kalender, Woche, Stundenwert", kind: "section",
+      target: "/zeit", group_name: "Zeit", icon: "◷", color: "#8FA6B8", sort_order: 1 },
+
+    // Lernen
     { title: "Berufsmatura 27", subtitle: "Unterlagen", kind: "folder",
       target: "C:\\Projekte\\Claude Cowork\\Berufsmatura27",
-      group_name: "Ordner", icon: "▭", color: "#A8A093", sort_order: 6 },
+      group_name: "Lernen", icon: "▭", color: "#A8A093", sort_order: 1 },
   ];
 
-  check(await supabase.from("links").insert(
-    seed.map((l) => ({ ...l, user_id: userId }))
-  ), "Kacheln anlegen");
+  // Nur anlegen, was noch fehlt. Ein zweiter Aufruf soll nichts verdoppeln -
+  // sonst stehen Bilder und Nutzungszähler plötzlich auf einer Kopie.
+  const { data: vorhanden } = await supabase
+    .from("links").select("target").eq("user_id", userId);
+  const bekannt = new Set((vorhanden ?? []).map((l) => String(l.target)));
+
+  const neu = seed.filter((l) => !bekannt.has(l.target));
+  if (neu.length > 0) {
+    check(await supabase.from("links").insert(
+      neu.map((l) => ({ ...l, user_id: userId }))
+    ), "Kacheln anlegen");
+  }
   revalidatePath("/"); revalidatePath("/links");
 }
 
