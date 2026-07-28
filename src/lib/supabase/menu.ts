@@ -24,13 +24,23 @@ export function menuConfigured(): boolean {
   );
 }
 
+/** Eine Zutat einer Mahlzeit bzw. einer Prep-Box (Menge pro Portion). */
+export interface MenuItem {
+  name: string;
+  amount: number | null;
+  unit: string | null;
+  eaten?: boolean | null;
+}
+
 export interface MenuMeal {
   meal_type: string; // fruehstueck | mittagessen | abendessen | snack
   name: string;
   kcal_total: number | null;
   protein_total: number | null;
-  /** In der Menü-App abgehakt ("gegessen"). Prep-Boxen haben kein Flag. */
+  /** In der Menü-App abgehakt ("gegessen"). Bei Boxen = consumed. */
   eaten?: boolean | null;
+  /** Nur für heute geladen - dort will man sehen, was drin ist. */
+  items?: MenuItem[];
 }
 
 export interface TodayMenu {
@@ -94,7 +104,7 @@ type MenuClient = NonNullable<ReturnType<typeof createMenuClient>>;
  * → recipes (Name). Bewusst flache Abfragen ohne eingebettete Joins.
  */
 async function fetchPrepMeals(
-  supabase: MenuClient, von: string, bis: string
+  supabase: MenuClient, von: string, bis: string, itemsForDate?: string
 ): Promise<Map<string, MenuMeal[]>> {
   const result = new Map<string, MenuMeal[]>();
 
@@ -127,6 +137,31 @@ async function fetchPrepMeals(
     }
   }
 
+  // Zutaten nur für den angeforderten Tag - Mengen sind pro Portion,
+  // also genau das, was in einer Box liegt.
+  const itemsByRecipe = new Map<string, MenuItem[]>();
+  if (itemsForDate) {
+    const heutigeRezepte = [...new Set(
+      portions
+        .filter((p) => p.date === itemsForDate)
+        .map((p) => batches.get(p.batch_id)?.recipe_id)
+        .filter(Boolean) as string[]
+    )];
+    if (heutigeRezepte.length > 0) {
+      const { data: itemRows } = await supabase.from("recipe_items")
+        .select("recipe_id, food_name, amount_per_portion, unit, sort_order")
+        .in("recipe_id", heutigeRezepte).order("sort_order");
+      for (const i of (itemRows ?? []) as {
+        recipe_id: string; food_name: string;
+        amount_per_portion: number | null; unit: string | null;
+      }[]) {
+        const list = itemsByRecipe.get(i.recipe_id) ?? [];
+        list.push({ name: i.food_name, amount: i.amount_per_portion, unit: i.unit });
+        itemsByRecipe.set(i.recipe_id, list);
+      }
+    }
+  }
+
   for (const p of portions) {
     const b = batches.get(p.batch_id);
     const list = result.get(p.date) ?? [];
@@ -136,8 +171,31 @@ async function fetchPrepMeals(
       kcal_total: b ? Number(b.kcal_per_portion ?? 0) : null,
       protein_total: b ? Number(b.protein_per_portion ?? 0) : null,
       eaten: Boolean(p.consumed),
+      items: p.date === itemsForDate && b
+        ? itemsByRecipe.get(b.recipe_id) ?? []
+        : undefined,
     });
     result.set(p.date, list);
+  }
+  return result;
+}
+
+/** Zutaten der freien Mahlzeiten eines Tages, je Mahlzeit-Id. */
+async function fetchMealItems(
+  supabase: MenuClient, mealIds: string[]
+): Promise<Map<string, MenuItem[]>> {
+  const result = new Map<string, MenuItem[]>();
+  if (mealIds.length === 0) return result;
+
+  const { data } = await supabase.from("meal_items")
+    .select("meal_id, food_name, amount, unit, eaten").in("meal_id", mealIds);
+  for (const i of (data ?? []) as {
+    meal_id: string; food_name: string;
+    amount: number | null; unit: string | null; eaten: boolean | null;
+  }[]) {
+    const list = result.get(i.meal_id) ?? [];
+    list.push({ name: i.food_name, amount: i.amount, unit: i.unit, eaten: i.eaten });
+    result.set(i.meal_id, list);
   }
   return result;
 }
@@ -163,23 +221,33 @@ export async function fetchEssenOverview(): Promise<EssenOverview | null> {
   ]);
 
   const plans = (planRows ?? []) as PlanRow[];
+  const heuteIso = isoPlus(0);
+  const heutePlanIds = new Set(plans.filter((p) => p.date === heuteIso).map((p) => p.id));
 
   // Mahlzeiten separat holen und den Plänen zuordnen
   const mealsByPlan = new Map<string, MenuMeal[]>();
   if (plans.length > 0) {
     const { data: mealRows } = await supabase.from("meals")
-      .select("plan_id, meal_type, name, kcal_total, protein_total, eaten")
+      .select("id, plan_id, meal_type, name, kcal_total, protein_total, eaten")
       .in("plan_id", plans.map((p) => p.id));
-    for (const m of (mealRows ?? []) as (MenuMeal & { plan_id: string })[]) {
+    const meals = (mealRows ?? []) as (MenuMeal & { id: string; plan_id: string })[];
+
+    // Zutaten nur für heute - dort will man sehen, was noch zu essen ist
+    const itemsByMeal = await fetchMealItems(
+      supabase,
+      meals.filter((m) => heutePlanIds.has(m.plan_id)).map((m) => m.id)
+    );
+
+    for (const m of meals) {
       const list = mealsByPlan.get(m.plan_id) ?? [];
-      list.push(m);
+      list.push({ ...m, items: itemsByMeal.get(m.id) });
       mealsByPlan.set(m.plan_id, list);
     }
   }
 
   // Meal-Prep-Boxen: leben seit dem Umbau in batch_portions/prep_batches,
   // nicht in meals - nur die Tagessummen stehen (per Trigger) am Plan.
-  const prepByDate = await fetchPrepMeals(supabase, isoPlus(-6), isoPlus(6));
+  const prepByDate = await fetchPrepMeals(supabase, isoPlus(-6), isoPlus(6), heuteIso);
 
   // WICHTIG: Pro Datum können MEHRERE meal_plans-Zeilen existieren (die DB
   // erzwingt die Eindeutigkeit nicht überall). Deshalb alle Zeilen eines
@@ -191,7 +259,6 @@ export async function fetchEssenOverview(): Promise<EssenOverview | null> {
     list.push(p);
     byDate.set(p.date, list);
   }
-  const heuteIso = isoPlus(0);
 
   const mealsFuer = (iso: string): MenuMeal[] => {
     const direkt = (byDate.get(iso) ?? []).flatMap((p) => mealsByPlan.get(p.id) ?? []);
@@ -283,12 +350,14 @@ export async function fetchTodayMenu(): Promise<TodayMenu | null> {
   if (plans.length === 0) return null;
 
   const [{ data: meals }, prepByDate] = await Promise.all([
-    supabase.from("meals").select("meal_type, name, kcal_total, protein_total, eaten")
+    supabase.from("meals").select("id, meal_type, name, kcal_total, protein_total, eaten")
       .in("plan_id", plans.map((p) => p.id)),
-    fetchPrepMeals(supabase, today, today),
+    fetchPrepMeals(supabase, today, today, today),
   ]);
 
-  const direkt = (meals ?? []) as MenuMeal[];
+  const mealRows = (meals ?? []) as (MenuMeal & { id: string })[];
+  const itemsByMeal = await fetchMealItems(supabase, mealRows.map((m) => m.id));
+  const direkt: MenuMeal[] = mealRows.map((m) => ({ ...m, items: itemsByMeal.get(m.id) }));
   const bekannt = new Set(direkt.map((m) => `${m.meal_type}|${m.name}`));
   const prep = (prepByDate.get(today) ?? []).filter(
     (m) => !bekannt.has(`${m.meal_type}|${m.name}`)

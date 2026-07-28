@@ -6,6 +6,14 @@ import { Button, Card, Input } from "@/components/ui";
 import { dateLabel } from "@/lib/format";
 import { weekStart } from "@/lib/time";
 
+/** "300 g Reis" - Menge weggelassen, wenn sie fehlt. */
+function zutatText(i: { name: string; amount: number | null; unit: string | null }) {
+  if (i.amount === null || Number(i.amount) === 0) return i.name;
+  const menge = Number(i.amount);
+  const gerundet = Number.isInteger(menge) ? String(menge) : menge.toFixed(1);
+  return `${gerundet} ${i.unit ?? ""} ${i.name}`.replace(/\s+/g, " ").trim();
+}
+
 const heute = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -73,18 +81,31 @@ export async function TodayCard() {
             <p className="mt-2 text-sm text-ink-muted">Nichts geplant.</p>
           ) : (
             <>
-              <ul className="mt-2 space-y-1">
+              <ul className="mt-2 space-y-2">
                 {menu.meals.map((m, i) => (
-                  <li key={i} className="flex items-baseline gap-2 text-sm">
-                    <span className="w-16 shrink-0 text-xs text-ink-muted">
-                      {MEAL_LABEL[m.meal_type] ?? m.meal_type}
-                    </span>
-                    <span className={m.eaten
-                      ? "truncate text-ink-faint line-through"
-                      : "truncate text-ink"}>
-                      {m.name}
-                    </span>
-                    {m.eaten && <span className="text-xs text-good">✓</span>}
+                  <li key={i}>
+                    <div className="flex items-baseline gap-2 text-sm">
+                      <span className="w-16 shrink-0 text-xs text-ink-muted">
+                        {MEAL_LABEL[m.meal_type] ?? m.meal_type}
+                      </span>
+                      <span className={m.eaten
+                        ? "truncate text-ink-faint line-through"
+                        : "truncate text-ink"}>
+                        {m.name}
+                      </span>
+                      {m.eaten && <span className="text-xs text-good">✓</span>}
+                    </div>
+                    {m.items && m.items.length > 0 && (
+                      <ul className="ml-[4.5rem] mt-0.5 space-y-0.5">
+                        {m.items.map((it, j) => (
+                          <li key={j} className={it.eaten || m.eaten
+                            ? "text-xs text-ink-faint line-through"
+                            : "text-xs text-ink-muted"}>
+                            {zutatText(it)}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </li>
                 ))}
               </ul>
