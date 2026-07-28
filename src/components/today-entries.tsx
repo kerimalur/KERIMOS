@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { addTimedEntry, deleteTimeEntry } from "@/lib/actions";
+import { addTimedEntry, deleteTimeEntry, setEntryRange } from "@/lib/actions";
 import { Button, Card, Select, cx } from "@/components/ui";
 import type { Activity } from "@/lib/types";
 
@@ -61,6 +61,34 @@ export function TodayEntries({
     await addTimedEntry(fd);
     setBusy(false);
     setVon(""); setBis(""); setAktivitaet(""); setOffen(false);
+    router.refresh();
+  }
+
+  // Bearbeiten: Tipp auf die Zeitspanne öffnet von/bis für diesen Eintrag
+  const [edit, setEdit] = useState<string | null>(null);
+  const [eVon, setEVon] = useState("");
+  const [eBis, setEBis] = useState("");
+
+  function startEdit(e: HeuteEintrag) {
+    setEdit(e.id);
+    if (e.start_minute !== null) {
+      setEVon(hhmm(e.start_minute));
+      setEBis(hhmm(Math.min(e.start_minute + e.minutes, 1439)));
+    } else {
+      setEVon(""); setEBis("");
+    }
+  }
+
+  async function saveEdit() {
+    if (!edit || busy) return;
+    const v = toMin(eVon), b = toMin(eBis);
+    if (v === null || b === null || b <= v) return;
+    setBusy(true);
+    const fd = new FormData();
+    fd.set("id", edit); fd.set("von", eVon); fd.set("bis", eBis);
+    await setEntryRange(fd);
+    setBusy(false);
+    setEdit(null);
     router.refresh();
   }
 
@@ -125,23 +153,44 @@ export function TodayEntries({
           {sortiert.map((e) => {
             const a = byId.get(e.activity_id);
             return (
-              <li key={e.id} className="flex items-center gap-2.5 py-2">
-                <span className="h-2 w-2 shrink-0 rounded-full"
-                  style={{ background: a?.color ?? "#A8A093" }} />
-                <span className="min-w-0 flex-1 truncate text-sm text-ink">
-                  {a?.name ?? "Unbekannt"}
-                </span>
-                <span className="tabular shrink-0 text-xs text-ink-muted">
-                  {e.start_minute !== null
-                    ? `${hhmm(e.start_minute)}–${hhmm(Math.min(e.start_minute + e.minutes, 1439))}`
-                    : fmtMin(e.minutes)}
-                </span>
-                <button onClick={() => loeschen(e.id)} disabled={busy}
-                  aria-label="Eintrag löschen"
-                  className={cx("shrink-0 px-1 text-sm text-ink-faint transition hover:text-bad",
-                    busy && "opacity-50")}>
-                  ✕
-                </button>
+              <li key={e.id} className="py-2">
+                <div className="flex items-center gap-2.5">
+                  <span className="h-2 w-2 shrink-0 rounded-full"
+                    style={{ background: a?.color ?? "#A8A093" }} />
+                  <span className="min-w-0 flex-1 truncate text-sm text-ink">
+                    {a?.name ?? "Unbekannt"}
+                  </span>
+                  <button onClick={() => (edit === e.id ? setEdit(null) : startEdit(e))}
+                    className="tabular shrink-0 text-xs text-ink-muted underline decoration-dotted underline-offset-2 transition hover:text-ink-soft"
+                    title="Zeit ändern">
+                    {e.start_minute !== null
+                      ? `${hhmm(e.start_minute)}–${hhmm(Math.min(e.start_minute + e.minutes, 1439))}`
+                      : fmtMin(e.minutes)}
+                  </button>
+                  <button onClick={() => loeschen(e.id)} disabled={busy}
+                    aria-label="Eintrag löschen"
+                    className={cx("shrink-0 px-1 text-sm text-ink-faint transition hover:text-bad",
+                      busy && "opacity-50")}>
+                    ✕
+                  </button>
+                </div>
+
+                {edit === e.id && (
+                  <div className="mt-2 flex items-center gap-2 rounded-xl bg-sand/60 p-2.5">
+                    <input type="time" value={eVon} onChange={(ev) => setEVon(ev.target.value)}
+                      aria-label="Von"
+                      className="flex-1 rounded-xl border border-line bg-white px-3 py-1.5 text-sm text-ink outline-none focus:border-accent" />
+                    <span className="text-xs text-ink-muted">bis</span>
+                    <input type="time" value={eBis} onChange={(ev) => setEBis(ev.target.value)}
+                      aria-label="Bis"
+                      className="flex-1 rounded-xl border border-line bg-white px-3 py-1.5 text-sm text-ink outline-none focus:border-accent" />
+                    <Button onClick={saveEdit} className="px-3 py-1.5 text-xs"
+                      disabled={busy || toMin(eVon) === null || toMin(eBis) === null
+                        || (toMin(eBis) ?? 0) <= (toMin(eVon) ?? 0)}>
+                      {busy ? "…" : "OK"}
+                    </Button>
+                  </div>
+                )}
               </li>
             );
           })}

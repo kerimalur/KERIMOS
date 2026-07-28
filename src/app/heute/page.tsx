@@ -18,7 +18,8 @@ export const dynamic = "force-dynamic";
 export default async function HeutePage() {
   const supabase = await createClient();
 
-  const heute = new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const heute = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const [{ data: focusRows }, { data: actRows }, { data: entryRows }] = await Promise.all([
     supabase.from("focus_sessions").select("*").eq("status", "open")
       .order("started_at", { ascending: false }),

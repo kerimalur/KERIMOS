@@ -6,7 +6,9 @@ import { fmtMinutes, fmtHours, dayNameShort, addDays, toISODate } from "@/lib/ti
 import { BUCKET_COLOR, BUCKET_LABEL, UNACCOUNTED_COLOR } from "@/lib/types";
 import type { Activity, DailyTime, TimeEntry, TimeBucket } from "@/lib/types";
 import { Card, CardTitle, Badge, Button, Input, Label, cx } from "@/components/ui";
-import { setEntryStart, addTimedEntry, deleteTimeEntry, saveCheckin } from "@/lib/actions";
+import {
+  setEntryStart, setEntryRange, addTimedEntry, deleteTimeEntry, saveCheckin,
+} from "@/lib/actions";
 import { useState, useTransition } from "react";
 import { BUCKET_ORDER, BUCKET_HINT } from "@/lib/types";
 
@@ -180,12 +182,24 @@ export function DayCalendar({
           <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-line bg-sand px-3 py-2 text-sm">
             <span className="h-2 w-2 shrink-0 rounded-full"
               style={{ background: selectedBlock.entry.activity?.color ?? "#A8A093" }} />
-            <span className="text-ink">
-              {selectedBlock.entry.activity?.name ?? "Unbekannt"}
-              <span className="tabular ml-1.5 text-xs text-ink-muted">
-                {minuteToTime(selectedBlock.start)}–{minuteToTime(selectedBlock.end)}
-              </span>
-            </span>
+            <span className="text-ink">{selectedBlock.entry.activity?.name ?? "Unbekannt"}</span>
+
+            {/* Zeit direkt umstellen - Speichern schreibt Start und Dauer neu */}
+            <form key={selectedBlock.entry.id} action={setEntryRange}
+              className="flex items-center gap-1.5">
+              <input type="hidden" name="id" value={selectedBlock.entry.id} />
+              <input type="time" name="von" required
+                defaultValue={minuteToTime(selectedBlock.start)}
+                className="rounded-lg border border-line bg-white px-2 py-1 text-xs text-ink outline-none focus:border-accent" />
+              <span className="text-xs text-ink-muted">–</span>
+              <input type="time" name="bis" required
+                defaultValue={minuteToTime(Math.min(selectedBlock.end, 1439))}
+                className="rounded-lg border border-line bg-white px-2 py-1 text-xs text-ink outline-none focus:border-accent" />
+              <button className="text-xs font-medium text-accent-soft transition hover:underline">
+                Speichern
+              </button>
+            </form>
+
             <span className="ml-auto flex items-center gap-3">
               <button onClick={deleteSelected} disabled={pending}
                 className="text-xs font-medium text-bad transition hover:underline">

@@ -6,7 +6,10 @@ import { Button, Card, Input } from "@/components/ui";
 import { dateLabel } from "@/lib/format";
 import { weekStart } from "@/lib/time";
 
-const heute = () => new Date().toISOString().slice(0, 10);
+const heute = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 
 /** Wochenziel laut Plan: 4x Kraft, 1-2x Ausdauer. */
 const KRAFT_ZIEL = 4;

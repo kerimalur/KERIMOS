@@ -56,8 +56,9 @@ export async function addBodyWeight(fd: FormData) {
     );
   }
 
+  const jetzt = new Date();
   check(await gym.from("body_weight_entries").insert({
-    entry_date: new Date().toISOString().slice(0, 10),
+    entry_date: `${jetzt.getFullYear()}-${String(jetzt.getMonth() + 1).padStart(2, "0")}-${String(jetzt.getDate()).padStart(2, "0")}`,
     weight_kg: weight,
     source: "kerimos",
     user_id: gymUserId,
@@ -883,6 +884,24 @@ export async function setEntryStart(fd: FormData) {
     .update({ start_minute: startMinute })
     .eq("id", str(fd, "id"));
   revalidateTime(); revalidatePath("/kalender");
+}
+
+/** Setzt Start und Ende eines Eintrags neu - zum Korrigieren von Fehlern. */
+export async function setEntryRange(fd: FormData) {
+  const { supabase } = await requireUser();
+  const id = str(fd, "id");
+  const von = /^(\d{1,2}):(\d{2})$/.exec(str(fd, "von"));
+  const bis = /^(\d{1,2}):(\d{2})$/.exec(str(fd, "bis"));
+  if (!id || !von || !bis) return;
+
+  const start = Number(von[1]) * 60 + Number(von[2]);
+  const end = Number(bis[1]) * 60 + Number(bis[2]);
+  if (start < 0 || start > 1439 || end <= start) return;
+
+  await supabase.from("time_entries")
+    .update({ start_minute: start, minutes: Math.min(end - start, 1440 - start) })
+    .eq("id", id);
+  revalidateTime(); revalidatePath("/kalender"); revalidatePath("/heute");
 }
 
 /** Legt einen Zeiteintrag mit Uhrzeit an - für die Kalenderansicht. */

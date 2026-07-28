@@ -70,11 +70,16 @@ export interface EssenOverview {
   ziele: { kcal: number; protein: number };
 }
 
+// Lokales Datum, nicht UTC - sonst verrutscht "heute" nach Mitternacht
 const isoPlus = (n: number) => {
   const d = new Date();
   d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
+
+/** Geplant = es gibt Mahlzeiten - unabhängig davon, ob kcal berechnet sind. */
+const istGeplant = (p?: PlanRow) =>
+  Boolean(p && ((p.meals?.length ?? 0) > 0 || Number(p.kcal_total ?? 0) > 0));
 
 const sortMeals = (meals: MenuMeal[] | null) =>
   [...(meals ?? [])].sort(
@@ -109,14 +114,13 @@ export async function fetchEssenOverview(): Promise<EssenOverview | null> {
   const ungeplant: string[] = [];
   for (let i = 0; i < 7; i++) {
     const iso = isoPlus(i);
-    const p = byDate.get(iso);
-    if (!p || Number(p.kcal_total ?? 0) === 0) {
+    if (!istGeplant(byDate.get(iso))) {
       ungeplant.push(i === 0 ? "heute" : i === 1 ? "morgen"
         : new Date(iso + "T12:00:00").toLocaleDateString("de-CH", { weekday: "short" }));
     }
   }
 
-  // Ø der letzten 7 Tage (nur geplante)
+  // Ø der letzten 7 Tage (nur geplante mit berechneten Kalorien)
   const vergangene = plans.filter(
     (p) => p.date <= heuteIso && Number(p.kcal_total ?? 0) > 0
   );
@@ -146,7 +150,7 @@ export async function fetchTodayMenu(): Promise<TodayMenu | null> {
   const supabase = createMenuClient();
   if (!supabase) return null;
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = isoPlus(0);
   const { data: plan } = await supabase
     .from("meal_plans").select("id, kcal_total, protein_total")
     .eq("date", today).maybeSingle();
