@@ -2,6 +2,7 @@ import Link from "next/link";
 import { addBodyWeight } from "@/lib/actions";
 import { createGymClient, gymConfigured, type BodyWeightEntry } from "@/lib/supabase/gym";
 import { fetchTodayMenu, menuConfigured, MEAL_LABEL } from "@/lib/supabase/menu";
+import { fetchWeather } from "@/lib/weather";
 import { Button, Card, Input } from "@/components/ui";
 import { dateLabel } from "@/lib/format";
 import { weekStart, heuteISO } from "@/lib/time";
@@ -16,6 +17,12 @@ function zutatText(i: { name: string; amount: number | null; unit: string | null
 
 const heute = () => heuteISO();
 
+/** Ab 30 % lohnt der Blick, ab 60 % nimmt man die Jacke mit. */
+const cxRegen = (chance: number) =>
+  chance >= 60 ? "mt-0.5 text-xs text-warn"
+    : chance >= 30 ? "mt-0.5 text-xs text-ink-soft"
+      : "mt-0.5 text-xs text-ink-faint";
+
 /** Wochenziel laut Plan: 4x Kraft, 1-2x Ausdauer. */
 const KRAFT_ZIEL = 4;
 const AUSDAUER_ZIEL = "1–2";
@@ -28,7 +35,7 @@ const AUSDAUER_ZIEL = "1–2";
 export async function TodayCard() {
   const gym = gymConfigured() ? createGymClient() : null;
 
-  const [menu, weight, training, woche] = await Promise.all([
+  const [menu, weight, training, woche, wetter] = await Promise.all([
     menuConfigured() ? fetchTodayMenu() : Promise.resolve(null),
     (async () => {
       if (!gym) return null;
@@ -59,11 +66,12 @@ export async function TodayCard() {
         ).size,
       };
     })(),
+    fetchWeather(),
   ]);
 
   return (
     <Card className="p-5">
-      <div className="grid gap-5 sm:grid-cols-3">
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
         {/* Menü heute - Klick führt in den Essen-Modus */}
         <div className="min-w-0">
           <Link href="/m/Essen"
@@ -190,6 +198,31 @@ export async function TodayCard() {
           <Link href="/m/Gym" className="mt-1.5 inline-block text-xs text-accent-soft hover:underline">
             Zum Gym-Modus →
           </Link>
+        </div>
+
+        {/* Wetter - kommt ohne Schlüssel von Open-Meteo */}
+        <div>
+          <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted">
+            Wetter
+          </div>
+          {!wetter ? (
+            <p className="mt-2 text-xs text-ink-muted">Gerade nicht abrufbar.</p>
+          ) : (
+            <>
+              <p className="tabular mt-2 text-sm text-ink">
+                {wetter.jetzt}°
+                <span className="ml-1.5 text-xs text-ink-muted">
+                  {wetter.min}–{wetter.max}°
+                </span>
+              </p>
+              <p className="mt-0.5 text-xs text-ink-soft">{wetter.text}</p>
+              <p className={cxRegen(wetter.regenChance)}>
+                {wetter.regenChance >= 30
+                  ? `Regen ${wetter.regenChance} %${wetter.regenMm > 0 ? ` · ${wetter.regenMm} mm` : ""}`
+                  : "kein nennenswerter Regen"}
+              </p>
+            </>
+          )}
         </div>
       </div>
     </Card>

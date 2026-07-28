@@ -1194,9 +1194,6 @@ export async function seedLinks() {
     { title: "TradingView", subtitle: "Charts", kind: "web",
       target: "https://www.tradingview.com/chart/",
       group_name: "Traden", icon: "◔", color: "#8FA6B8", sort_order: 3 },
-    { title: "GVA Screener Code", subtitle: "Quellcode", kind: "folder",
-      target: "C:\\Projekte\\Claude Cowork\\GVA-Screener",
-      group_name: "Traden", icon: "▭", color: "#A8A093", sort_order: 4 },
 
     // Programmieren
     { title: "Claude", subtitle: "claude.ai", kind: "web",
@@ -1214,9 +1211,20 @@ export async function seedLinks() {
     { title: "Projekte", subtitle: "Hauptordner", kind: "folder",
       target: "C:\\Projekte\\Claude Cowork",
       group_name: "Programmieren", icon: "▭", color: "#A8A093", sort_order: 5 },
+    // Quellcode-Ordner gehören ausschliesslich hierher - in den Sach-Modi
+    // (Traden, Essen, Gym) will man arbeiten, nicht programmieren.
     { title: "KerimOS Code", subtitle: "diese App", kind: "folder",
       target: "C:\\Projekte\\Claude Cowork\\Kompass",
       group_name: "Programmieren", icon: "▭", color: "#A8A093", sort_order: 6 },
+    { title: "GVA Screener Code", subtitle: "Quellcode", kind: "folder",
+      target: "C:\\Projekte\\Claude Cowork\\GVA-Screener",
+      group_name: "Programmieren", icon: "▭", color: "#A8A093", sort_order: 7 },
+    { title: "Menüplan Code", subtitle: "Quellcode", kind: "folder",
+      target: "C:\\Projekte\\Claude Cowork\\Men-plan\\Men-plan",
+      group_name: "Programmieren", icon: "▭", color: "#A8A093", sort_order: 8 },
+    { title: "Gym-Tracker Code", subtitle: "Quellcode", kind: "folder",
+      target: "C:\\Projekte\\Claude Cowork\\Gymapp-vereinfacht",
+      group_name: "Programmieren", icon: "▭", color: "#A8A093", sort_order: 9 },
 
     // Gym
     { title: "Gym", subtitle: "Fortschritt je Übung", kind: "section",
@@ -1229,9 +1237,6 @@ export async function seedLinks() {
     { title: "Menüplan", subtitle: "Meal Prep, Rezepte, Einkauf", kind: "web",
       target: "https://men-plan-kerim-alurs-projects.vercel.app",
       group_name: "Essen", icon: "▤", color: "#C4A882", sort_order: 1 },
-    { title: "Menüplan Code", subtitle: "Quellcode", kind: "folder",
-      target: "C:\\Projekte\\Claude Cowork\\Men-plan",
-      group_name: "Essen", icon: "▭", color: "#A8A093", sort_order: 2 },
 
     // Geld
     { title: "Geld", subtitle: "Runway, Konten, Buchungen", kind: "section",

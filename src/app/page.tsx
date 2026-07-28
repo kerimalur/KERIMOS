@@ -8,9 +8,15 @@ import { TodayCard } from "@/components/today-card";
 import { QuickSearch } from "@/components/quick-search";
 import { Button, Card } from "@/components/ui";
 import { seedLinks } from "@/lib/actions";
-import { MODE_ORDER } from "@/lib/modes";
-import { addDays, weekStart as toWeekStart, heuteISO, heuteWochentag } from "@/lib/time";
-import type { Activity, FocusSession, NavLink } from "@/lib/types";
+import { MODE_ORDER, MODE_DIRECT } from "@/lib/modes";
+import { chf } from "@/lib/format";
+import {
+  addDays, weekStart as toWeekStart, heuteISO, heuteWochentag,
+  fmtHours, pct, summarizeWeek,
+} from "@/lib/time";
+import type {
+  Activity, DailyTime, FocusSession, NavLink, RunwayInputs, WeeklyBucket,
+} from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -27,10 +33,12 @@ export default async function Start({
   if (!sp.voll && /Android.*Mobile|iPhone/i.test(ua)) redirect("/heute");
 
   const supabase = await createClient();
-  const vorwoche = addDays(toWeekStart(heuteISO()), -7);
+  const woche = toWeekStart(heuteISO());
+  const vorwoche = addDays(woche, -7);
 
   const [
     { data: linkRows }, { data: focusRows }, { data: actRows }, { data: lastReview },
+    { data: inputsRows }, { data: weekDaily }, { data: weekBuckets },
   ] = await Promise.all([
     supabase.from("links").select("*").eq("archived", false)
       .order("group_name").order("sort_order"),
@@ -38,6 +46,10 @@ export default async function Start({
       .order("started_at", { ascending: false }),
     supabase.from("activities").select("*").eq("archived", false).order("name"),
     supabase.from("weekly_reviews").select("id").eq("week_start", vorwoche).maybeSingle(),
+    supabase.rpc("runway_inputs", { months_lookback: 3 }),
+    supabase.from("v_daily_time").select("*")
+      .gte("entry_date", woche).lte("entry_date", addDays(woche, 6)),
+    supabase.from("v_weekly_buckets").select("*").eq("week_start", woche),
   ]);
 
   const links = (linkRows ?? []) as NavLink[];
@@ -71,6 +83,40 @@ export default async function Start({
     list.push(l);
     gruppen.set(l.group_name, list);
   }
+  // Kennzahlen für die Kacheln "Geld" und "Zeit" - sie ersetzen den
+  // Zwischenschritt über den Arbeitsplatz.
+  const geld = (inputsRows as RunwayInputs[] | null)?.[0];
+  const tage = ((weekDaily ?? []) as DailyTime[]).map((d) => ({
+    ...d,
+    logged_minutes: Number(d.logged_minutes), ziel_minutes: Number(d.ziel_minutes),
+    arbeit_minutes: Number(d.arbeit_minutes), pflicht_minutes: Number(d.pflicht_minutes),
+    regeneration_minutes: Number(d.regeneration_minutes),
+    sozial_minutes: Number(d.sozial_minutes), spass_minutes: Number(d.spass_minutes),
+    leerlauf_minutes: Number(d.leerlauf_minutes),
+    sleep_hours: d.sleep_hours === null ? null : Number(d.sleep_hours),
+    waking_minutes: Number(d.waking_minutes),
+    unaccounted_minutes: Number(d.unaccounted_minutes),
+  }));
+  const zeit = tage.length > 0
+    ? summarizeWeek(tage, (weekBuckets ?? []) as WeeklyBucket[])
+    : null;
+
+  const kennzahlen: Record<string, { label: string; wert: string }[]> = {};
+  if (geld) {
+    kennzahlen.Geld = [
+      { label: "Liquide", wert: chf(Number(geld.liquid ?? 0)) },
+      { label: "Ø ein", wert: chf(Number(geld.avg_income ?? 0)) },
+      { label: "Ø aus", wert: chf(Number(geld.avg_expenses ?? 0)) },
+    ];
+  }
+  if (zeit) {
+    kennzahlen.Zeit = [
+      { label: "An Zielen", wert: pct(zeit.goalShare) },
+      { label: "Erfasst", wert: fmtHours(zeit.totalLogged) },
+      { label: "Unerfasst", wert: fmtHours(zeit.totalUnaccounted) },
+    ];
+  }
+
   const modi = [...gruppen.entries()].sort(
     (a, b) =>
       ((MODE_ORDER.indexOf(a[0]) + 1) || 99) - ((MODE_ORDER.indexOf(b[0]) + 1) || 99) ||
@@ -110,27 +156,49 @@ export default async function Start({
         />
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {modi.map(([name, ls]) => (
-            <Link key={name} href={`/m/${encodeURIComponent(name)}`}
-              className="group rounded-2xl border border-line/70 bg-card p-5 transition hover:border-line-strong">
-              <div className="flex items-center gap-3">
-                <span className="grid h-10 w-10 place-items-center rounded-xl text-base text-white"
-                  style={{ background: ls[0]?.color ?? "#8A8478" }}>
-                  {ls[0]?.icon ?? name[0]}
-                </span>
-                <div className="min-w-0">
-                  <div className="text-base font-medium text-ink">{name}</div>
-                  <div className="text-xs text-ink-muted">
-                    {ls.length} {ls.length === 1 ? "Kachel" : "Kacheln"}
+          {modi.map(([name, ls]) => {
+            const zahlen = kennzahlen[name];
+            // Geld und Zeit springen direkt in ihren Bereich - der
+            // Arbeitsplatz dazwischen bringt dort nichts.
+            const ziel = MODE_DIRECT[name] ?? `/m/${encodeURIComponent(name)}`;
+
+            return (
+              <Link key={name} href={ziel}
+                className="group rounded-2xl border border-line/70 bg-card p-5 transition hover:border-line-strong">
+                <div className="flex items-center gap-3">
+                  <span className="grid h-10 w-10 place-items-center rounded-xl text-base text-white"
+                    style={{ background: ls[0]?.color ?? "#8A8478" }}>
+                    {ls[0]?.icon ?? name[0]}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-base font-medium text-ink">{name}</div>
+                    <div className="text-xs text-ink-muted">
+                      {zahlen ? "direkt öffnen"
+                        : `${ls.length} ${ls.length === 1 ? "Kachel" : "Kacheln"}`}
+                    </div>
                   </div>
                 </div>
-              </div>
-              <p className="mt-3 truncate text-xs text-ink-muted">
-                {ls.slice(0, 3).map((l) => l.title).join(" · ")}
-                {ls.length > 3 && " · …"}
-              </p>
-            </Link>
-          ))}
+
+                {zahlen ? (
+                  <dl className="mt-3 flex flex-wrap gap-x-5 gap-y-1">
+                    {zahlen.map((k) => (
+                      <div key={k.label}>
+                        <dt className="text-[10px] uppercase tracking-[0.1em] text-ink-muted">
+                          {k.label}
+                        </dt>
+                        <dd className="tabular text-sm text-ink">{k.wert}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                ) : (
+                  <p className="mt-3 truncate text-xs text-ink-muted">
+                    {ls.slice(0, 3).map((l) => l.title).join(" · ")}
+                    {ls.length > 3 && " · …"}
+                  </p>
+                )}
+              </Link>
+            );
+          })}
         </div>
       </div>
 
