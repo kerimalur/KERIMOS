@@ -6,7 +6,9 @@ import { dateLabel } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
-export interface Appointment {
+// Bewusst nicht exportiert: Next.js erlaubt in einer Seite nur bestimmte
+// Exporte (default, dynamic, metadata …) und bricht den Build sonst ab.
+interface Appointment {
   id: string;
   title: string;
   starts_on: string;
@@ -16,11 +18,11 @@ export interface Appointment {
   note: string | null;
 }
 
-export const hhmm = (m: number) =>
+const hhmm = (m: number) =>
   `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 
 /** "09:00–11:30" · "09:00" · "ganztägig" */
-export function zeitText(a: Appointment): string {
+function zeitText(a: Appointment): string {
   if (a.start_minute === null) return "ganztägig";
   return a.end_minute === null
     ? hhmm(a.start_minute)
