@@ -1,7 +1,9 @@
 "use client";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { registerLinkOpen, reorderLinks, startFocus } from "@/lib/actions";
+import {
+  registerLinkOpen, reorderLinks, startFocus, startFocusForActivity,
+} from "@/lib/actions";
 import { cx } from "@/components/ui";
 import { TileCard } from "@/components/tile-card";
 import type { NavLink } from "@/lib/types";
@@ -17,6 +19,8 @@ export function Launcher({ links }: { links: NavLink[] }) {
   const [order, setOrder] = useState<NavLink[]>(links);
   const [dragged, setDragged] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Vor dem Öffnen fragen, ob eine Fokus-Sitzung mitlaufen soll
+  const [pendingLink, setPendingLink] = useState<NavLink | null>(null);
 
   // Nach dem Neuladen der Serverdaten die lokale Reihenfolge übernehmen
   const source = arranging ? order : links;
@@ -56,25 +60,49 @@ export function Launcher({ links }: { links: NavLink[] }) {
 
   function open(link: NavLink) {
     if (arranging) return;
-    void registerLinkOpen(link.id);
-    // Kacheln mit hinterlegter Aktivität starten eine Fokus-Sitzung
-    if (link.track_time) {
-      void startFocus(link.id).then(() => router.refresh());
-    }
 
-    if (link.kind === "section") { router.push(link.target); return; }
-    if (link.kind === "web") {
-      window.open(link.target, "_blank", "noopener,noreferrer");
+    if (link.kind === "folder") {
+      void registerLinkOpen(link.id);
+      // Ordner: erst den kerimos://-Handler versuchen (öffnet den Explorer
+      // direkt, wenn er per tools/kerimos-protokoll installiert ist). Der Pfad
+      // landet zusätzlich in der Zwischenablage - als Fallback ohne Handler.
+      window.location.href = `kerimos://open?path=${encodeURIComponent(link.target)}`;
+      navigator.clipboard.writeText(link.target).then(
+        () => { setCopied(link.id); setTimeout(() => setCopied(null), 2200); },
+        () => setCopied(null)
+      );
       return;
     }
-    // Ordner: erst den kerimos://-Handler versuchen (öffnet den Explorer
-    // direkt, wenn er per tools/kerimos-protokoll installiert ist). Der Pfad
-    // landet zusätzlich in der Zwischenablage - als Fallback ohne Handler.
-    window.location.href = `kerimos://open?path=${encodeURIComponent(link.target)}`;
-    navigator.clipboard.writeText(link.target).then(
-      () => { setCopied(link.id); setTimeout(() => setCopied(null), 2200); },
-      () => setCopied(null)
-    );
+
+    // Web und Bereiche: zuerst fragen, ob die Zeit mitlaufen soll
+    setPendingLink(link);
+  }
+
+  function proceed(mitFokus: boolean) {
+    const link = pendingLink;
+    if (!link) return;
+    setPendingLink(null);
+    void registerLinkOpen(link.id);
+
+    // Web-Ziele synchron öffnen - nach einem await blockt der Popup-Schutz
+    if (link.kind === "web") {
+      window.open(link.target, "_blank", "noopener,noreferrer");
+    }
+
+    if (mitFokus) {
+      void (async () => {
+        if (link.track_time) {
+          await startFocus(link.id);
+        } else {
+          const fd = new FormData();
+          fd.set("link_ids", link.id);
+          await startFocusForActivity(fd);
+        }
+        router.refresh();
+      })();
+    }
+
+    if (link.kind === "section") router.push(link.target);
   }
 
   /* ---------------- Anordnen ---------------- */
@@ -161,6 +189,28 @@ export function Launcher({ links }: { links: NavLink[] }) {
         <p className="rounded-xl bg-accent-tint px-4 py-2.5 text-sm text-accent-soft">
           Kacheln ziehen und fallen lassen — auch in eine andere Gruppe. „Fertig“ speichert.
         </p>
+      )}
+
+      {pendingLink && (
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-accent bg-accent-tint px-4 py-3">
+          <span className="text-sm text-ink">
+            <span className="font-medium">{pendingLink.title}</span> öffnen — Fokus starten?
+          </span>
+          <span className="ml-auto flex items-center gap-2">
+            <button onClick={() => proceed(true)}
+              className="rounded-xl bg-accent px-3.5 py-1.5 text-sm font-medium text-white transition hover:bg-accent-soft">
+              Mit Fokus
+            </button>
+            <button onClick={() => proceed(false)}
+              className="rounded-xl border border-line bg-card px-3.5 py-1.5 text-sm text-ink-soft transition hover:border-line-strong">
+              Nur öffnen
+            </button>
+            <button onClick={() => setPendingLink(null)}
+              className="px-1 text-xs text-ink-muted transition hover:text-ink-soft">
+              Abbrechen
+            </button>
+          </span>
+        </div>
       )}
 
       {!query && !arranging && recent.length > 0 && (

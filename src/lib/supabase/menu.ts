@@ -46,10 +46,10 @@ export const MEAL_LABEL: Record<string, string> = {
 };
 
 interface PlanRow {
+  id: string;
   date: string;
   kcal_total: number | null;
   protein_total: number | null;
-  meals: MenuMeal[] | null;
 }
 
 export interface EssenTag {
@@ -77,28 +77,25 @@ const isoPlus = (n: number) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
-/** Geplant = es gibt Mahlzeiten - unabhängig davon, ob kcal berechnet sind. */
-const istGeplant = (p?: PlanRow) =>
-  Boolean(p && ((p.meals?.length ?? 0) > 0 || Number(p.kcal_total ?? 0) > 0));
 
 const sortMeals = (meals: MenuMeal[] | null) =>
   [...(meals ?? [])].sort(
     (a, b) => MEAL_ORDER.indexOf(a.meal_type) - MEAL_ORDER.indexOf(b.meal_type)
   );
 
-const zuTag = (p: PlanRow | undefined): EssenTag | null =>
-  p && (p.meals?.length ?? 0) > 0
-    ? { meals: sortMeals(p.meals), kcal: Number(p.kcal_total ?? 0), protein: Number(p.protein_total ?? 0) }
-    : null;
-
-/** Alles für die Essen-Modus-Karte in einem Rutsch. Null ohne DB-Zugang. */
+/**
+ * Alles für die Essen-Modus-Karte in einem Rutsch. Null ohne DB-Zugang.
+ * Mahlzeiten werden bewusst in einer ZWEITEN Abfrage geholt (wie bei
+ * fetchTodayMenu) statt als eingebetteter Join - der lieferte in der Praxis
+ * leere Ergebnisse und liess geplante Tage als ungeplant erscheinen.
+ */
 export async function fetchEssenOverview(): Promise<EssenOverview | null> {
   const supabase = createMenuClient();
   if (!supabase) return null;
 
   const [{ data: planRows }, { count: offene }, { data: settingRows }] = await Promise.all([
     supabase.from("meal_plans")
-      .select("date, kcal_total, protein_total, meals(meal_type, name, kcal_total, protein_total)")
+      .select("id, date, kcal_total, protein_total")
       .gte("date", isoPlus(-6)).lte("date", isoPlus(6)),
     supabase.from("shopping_list")
       .select("id", { count: "exact", head: true }).eq("checked", false),
@@ -107,10 +104,38 @@ export async function fetchEssenOverview(): Promise<EssenOverview | null> {
   ]);
 
   const plans = (planRows ?? []) as PlanRow[];
+
+  // Mahlzeiten separat holen und den Plänen zuordnen
+  const mealsByPlan = new Map<string, MenuMeal[]>();
+  if (plans.length > 0) {
+    const { data: mealRows } = await supabase.from("meals")
+      .select("plan_id, meal_type, name, kcal_total, protein_total")
+      .in("plan_id", plans.map((p) => p.id));
+    for (const m of (mealRows ?? []) as (MenuMeal & { plan_id: string })[]) {
+      const list = mealsByPlan.get(m.plan_id) ?? [];
+      list.push(m);
+      mealsByPlan.set(m.plan_id, list);
+    }
+  }
+
   const byDate = new Map(plans.map((p) => [p.date, p]));
   const heuteIso = isoPlus(0);
 
-  // Ungeplante Tage der nächsten Woche
+  const zuTag = (p: PlanRow | undefined): EssenTag | null => {
+    const meals = p ? mealsByPlan.get(p.id) ?? [] : [];
+    if (!p || meals.length === 0) return null;
+    // kcal-Summe notfalls aus den Mahlzeiten, falls der Tages-Total 0 ist
+    const kcal = Number(p.kcal_total ?? 0)
+      || meals.reduce((s, m) => s + Number(m.kcal_total ?? 0), 0);
+    const protein = Number(p.protein_total ?? 0)
+      || meals.reduce((s, m) => s + Number(m.protein_total ?? 0), 0);
+    return { meals: sortMeals(meals), kcal, protein };
+  };
+
+  // Geplant = es gibt Mahlzeiten, egal ob Kalorien berechnet sind
+  const istGeplant = (p?: PlanRow) =>
+    Boolean(p && ((mealsByPlan.get(p.id)?.length ?? 0) > 0 || Number(p.kcal_total ?? 0) > 0));
+
   const ungeplant: string[] = [];
   for (let i = 0; i < 7; i++) {
     const iso = isoPlus(i);
@@ -143,6 +168,14 @@ export async function fetchEssenOverview(): Promise<EssenOverview | null> {
       protein: parseInt(settings.get("protein_ziel") ?? "") || 150,
     },
   };
+}
+
+/** Eine Zeile der Einkaufsliste. */
+export interface ShoppingItem {
+  id: string;
+  item: string;
+  quantity: string | null;
+  checked: boolean;
 }
 
 /** Heutiges Menü aus meal_plans + meals. Null, wenn nichts geplant ist. */

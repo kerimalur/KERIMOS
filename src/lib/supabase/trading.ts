@@ -125,6 +125,28 @@ export async function fetchTodayEvents(): Promise<EconEvent[]> {
   return (data ?? []) as EconEvent[];
 }
 
+/** High-Impact-Termine der laufenden Woche (Mo-So). */
+export async function fetchWeekEvents(): Promise<EconEvent[]> {
+  const supabase = createTradingClient();
+  if (!supabase) return [];
+
+  const start = new Date();
+  const offset = (start.getDay() + 6) % 7; // Montag = 0
+  start.setDate(start.getDate() - offset);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+
+  const { data } = await supabase.from("calendar_events")
+    .select("title, currency, event_time, impact, forecast, previous, actual")
+    .gte("event_time", start.toISOString())
+    .lte("event_time", end.toISOString())
+    .eq("impact", "High")
+    .order("event_time");
+  return (data ?? []) as EconEvent[];
+}
+
 // ---------------------------------------------------------------------------
 // GVA-Screener Live-API (FastAPI auf Render)
 // ---------------------------------------------------------------------------

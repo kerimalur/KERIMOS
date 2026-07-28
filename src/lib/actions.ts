@@ -2,6 +2,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createGymClient } from "@/lib/supabase/gym";
+import { createMenuClient } from "@/lib/supabase/menu";
 import { type RecurrenceInterval } from "@/lib/types";
 
 async function requireUser() {
@@ -64,6 +65,45 @@ export async function addBodyWeight(fd: FormData) {
     user_id: gymUserId,
   }), "Gewicht speichern");
   revalidatePath("/gym"); revalidatePath("/quick"); revalidatePath("/");
+}
+
+/* -------------------------------------------------------- Einkaufsliste */
+// Schreibt in die shopping_list der Menü-Datenbank - gleiche Liste wie in
+// der Menü-App, nur von KerimOS aus bedienbar.
+
+const revalidateEssen = () => { revalidatePath("/m/Essen"); revalidatePath("/"); };
+
+export async function toggleShoppingItem(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  check(await menu.from("shopping_list")
+    .update({ checked: fd.get("checked") === "true" })
+    .eq("id", str(fd, "id")), "Einkauf abhaken");
+  revalidateEssen();
+}
+
+export async function addShoppingItem(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  const item = str(fd, "item");
+  if (!item) return;
+  check(await menu.from("shopping_list").insert({
+    item,
+    quantity: str(fd, "quantity") || null,
+    checked: false,
+  }), "Einkauf hinzufügen");
+  revalidateEssen();
+}
+
+export async function deleteShoppingItem(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  check(await menu.from("shopping_list")
+    .delete().eq("id", str(fd, "id")), "Einkauf löschen");
+  revalidateEssen();
 }
 
 /* ---------------------------------------------------------------- Konten */
@@ -620,6 +660,101 @@ export async function deleteTimeEntry(fd: FormData) {
   const { supabase } = await requireUser();
   await supabase.from("time_entries").delete().eq("id", str(fd, "id"));
   revalidateTime();
+}
+
+/* ------------------------------------------------------------- Schichten */
+// Eine Schicht = benannte Arbeitsblöcke (mit oder ohne Zimmerstunde) plus
+// optionaler Arbeitsweg. "Eintragen" materialisiert sie als normale
+// Zeiteinträge - danach wie gewohnt änderbar und löschbar.
+
+const timeToMin = (s: string): number | null => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s);
+  if (!m) return null;
+  const v = Number(m[1]) * 60 + Number(m[2]);
+  return v >= 0 && v <= 1439 ? v : null;
+};
+
+export async function createShift(fd: FormData) {
+  const { supabase, userId } = await requireUser();
+  const name = str(fd, "name");
+  const activityId = str(fd, "activity_id");
+  if (!name || !activityId) return;
+
+  const blocks: { start: number; minutes: number }[] = [];
+  for (const i of [1, 2]) {
+    const von = timeToMin(str(fd, `von${i}`));
+    const bis = timeToMin(str(fd, `bis${i}`));
+    if (von !== null && bis !== null && bis > von) {
+      blocks.push({ start: von, minutes: bis - von });
+    }
+  }
+  if (blocks.length === 0) return;
+
+  check(await supabase.from("shifts").insert({
+    user_id: userId,
+    name,
+    activity_id: activityId,
+    blocks,
+    weg_minutes: Math.max(0, Math.round(numOr(fd, "weg_minutes", 0))),
+    weg_activity_id: str(fd, "weg_activity_id") || null,
+  }), "Schicht anlegen");
+  revalidatePath("/schichten");
+}
+
+export async function deleteShift(fd: FormData) {
+  const { supabase } = await requireUser();
+  await supabase.from("shifts").delete().eq("id", str(fd, "id"));
+  revalidatePath("/schichten");
+}
+
+/** Trägt eine Schicht an einem Tag ein - Blöcke + optionaler Arbeitsweg. */
+export async function applyShift(fd: FormData) {
+  const { supabase, userId } = await requireUser();
+  const shiftId = str(fd, "shift_id");
+  const date = str(fd, "entry_date");
+  if (!shiftId || !date) return;
+
+  const { data: shift } = await supabase.from("shifts")
+    .select("*").eq("id", shiftId).maybeSingle();
+  if (!shift?.activity_id) return;
+
+  const blocks = ((shift.blocks ?? []) as { start: number; minutes: number }[])
+    .filter((b) => b.minutes > 0)
+    .sort((a, b) => a.start - b.start);
+  if (blocks.length === 0) return;
+
+  const base = {
+    user_id: userId, entry_date: date,
+    source: "manual" as const, confirmed: true,
+  };
+  const rows: Record<string, unknown>[] = blocks.map((b) => ({
+    ...base,
+    activity_id: shift.activity_id,
+    start_minute: b.start,
+    minutes: Math.min(b.minutes, 1440 - b.start),
+    note: shift.name,
+  }));
+
+  // Arbeitsweg: vor dem ersten und nach dem letzten Block
+  const weg = Number(shift.weg_minutes ?? 0);
+  if (weg > 0 && shift.weg_activity_id) {
+    const first = blocks[0];
+    const last = blocks[blocks.length - 1];
+    const hinStart = Math.max(0, first.start - weg);
+    if (first.start - hinStart > 0) {
+      rows.push({ ...base, activity_id: shift.weg_activity_id,
+        start_minute: hinStart, minutes: first.start - hinStart, note: "Arbeitsweg" });
+    }
+    const endeLast = Math.min(last.start + last.minutes, 1439);
+    const rueckMin = Math.min(weg, 1440 - endeLast);
+    if (rueckMin > 0) {
+      rows.push({ ...base, activity_id: shift.weg_activity_id,
+        start_minute: endeLast, minutes: rueckMin, note: "Arbeitsweg" });
+    }
+  }
+
+  check(await supabase.from("time_entries").insert(rows), "Schicht eintragen");
+  revalidateTime(); revalidatePath("/kalender"); revalidatePath("/schichten");
 }
 
 export async function saveCheckin(fd: FormData) {

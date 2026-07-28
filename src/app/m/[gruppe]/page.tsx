@@ -8,7 +8,11 @@ import { Card, Stat, Empty } from "@/components/ui";
 import { chf, dateLabel } from "@/lib/format";
 import { fmtHours, pct, summarizeWeek, weekStart as toWeekStart, addDays } from "@/lib/time";
 import { createGymClient, gymConfigured, type BodyWeightEntry } from "@/lib/supabase/gym";
-import { fetchEssenOverview, MEAL_LABEL, type EssenTag } from "@/lib/supabase/menu";
+import {
+  createMenuClient, fetchEssenOverview, MEAL_LABEL,
+  type EssenTag, type ShoppingItem,
+} from "@/lib/supabase/menu";
+import { ShoppingList } from "@/components/shopping-list";
 import type {
   Activity, DailyTime, FocusSession, NavLink, RunwayInputs, WeeklyBucket,
 } from "@/lib/types";
@@ -155,6 +159,16 @@ async function EssenKarte() {
   );
 }
 
+/** Einkaufsliste aus der Menü-DB, in KerimOS bedienbar. */
+async function EinkaufKarte() {
+  const menu = createMenuClient();
+  if (!menu) return null;
+  const { data } = await menu.from("shopping_list")
+    .select("id, item, quantity, checked")
+    .order("checked").order("created_at", { ascending: false });
+  return <ShoppingList items={(data ?? []) as ShoppingItem[]} />;
+}
+
 export default async function ModusPage({
   params,
 }: {
@@ -197,6 +211,7 @@ export default async function ModusPage({
         {n.includes("zeit") && <ZeitKarte />}
         {n.includes("gym") && <GymKarte />}
         {n.includes("essen") && <EssenKarte />}
+        {n.includes("essen") && <EinkaufKarte />}
 
         <FocusPrompt
           sessions={(focusRows ?? []) as FocusSession[]}
@@ -213,8 +228,16 @@ export default async function ModusPage({
           </Empty>
         ) : (
           <>
-            <FocusStarter activities={activities} links={links} />
             <Launcher links={links} />
+            {/* Bewusst zuunterst: der Hauptweg ist die Fokus-Abfrage beim Kachel-Klick */}
+            <details className="rounded-2xl border border-line/70 bg-card px-5 py-4">
+              <summary className="cursor-pointer text-xs text-ink-muted transition hover:text-ink-soft">
+                Fokus manuell starten (mehrere Kacheln kombinieren)
+              </summary>
+              <div className="mt-4">
+                <FocusStarter activities={activities} links={links} />
+              </div>
+            </details>
           </>
         )}
       </div>

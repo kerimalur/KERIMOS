@@ -1,8 +1,9 @@
 import Link from "next/link";
 import {
   createTradingClient, tradingConfigured, computeBacktestStats, fetchScreener,
-  BACKTEST_ZIEL,
-  type BacktestSessionRow, type BacktestTrade, type GvaSignal, type ScreenerPair,
+  fetchWeekEvents, BACKTEST_ZIEL,
+  type BacktestSessionRow, type BacktestTrade, type EconEvent,
+  type GvaSignal, type ScreenerPair,
 } from "@/lib/supabase/trading";
 import { Card, CardTitle, Stat, Badge, Empty } from "@/components/ui";
 import { dateLabel } from "@/lib/format";
@@ -18,9 +19,78 @@ function fmtUpdated(unix: number | null): string {
   });
 }
 
+const CH_TIME = { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Zurich" } as const;
+
+/** Wochen-News gruppiert nach Tag, heutiger Tag hervorgehoben. */
+function WeekNews({ events }: { events: EconEvent[] }) {
+  const heute = new Date().toDateString();
+  const proTag = new Map<string, EconEvent[]>();
+  for (const e of events) {
+    const key = new Date(e.event_time).toDateString();
+    const list = proTag.get(key) ?? [];
+    list.push(e);
+    proTag.set(key, list);
+  }
+
+  return (
+    <Card>
+      <CardTitle>High-Impact-News diese Woche</CardTitle>
+      {events.length === 0 ? (
+        <Empty>Diese Woche stehen keine High-Impact-Termine an.</Empty>
+      ) : (
+        <div className="space-y-2.5">
+          {[...proTag.entries()].map(([tag, list]) => {
+            const istHeute = tag === heute;
+            const vorbei = new Date(list[0].event_time).setHours(23, 59) < Date.now() && !istHeute;
+            return (
+              <div key={tag}
+                className={istHeute
+                  ? "rounded-xl border border-accent bg-accent-tint px-3 py-2.5"
+                  : "px-3"}>
+                <div className={istHeute
+                  ? "mb-1.5 text-xs font-medium uppercase tracking-wide text-accent-soft"
+                  : "mb-1.5 text-xs font-medium uppercase tracking-wide text-ink-muted"}>
+                  {new Date(list[0].event_time).toLocaleDateString("de-CH",
+                    { weekday: "long", day: "numeric", month: "short", timeZone: "Europe/Zurich" })}
+                  {istHeute && " · heute"}
+                </div>
+                <ul className="space-y-1">
+                  {list.map((e, i) => {
+                    const erledigt = new Date(e.event_time) < new Date();
+                    return (
+                      <li key={i} className={cxNews(erledigt, vorbei)}>
+                        <span className="tabular font-medium">
+                          {new Date(e.event_time).toLocaleTimeString("de-CH", CH_TIME)}
+                        </span>
+                        {e.currency && <span className="ml-1.5 font-medium">{e.currency}</span>}
+                        <span className="ml-1.5">{e.title}</span>
+                        {erledigt && e.actual && (
+                          <span className="ml-1.5 text-ink-muted">
+                            → {e.actual}{e.forecast ? ` (erw. ${e.forecast})` : ""}
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function cxNews(erledigt: boolean, tagVorbei: boolean): string {
+  if (tagVorbei || erledigt) return "text-xs text-ink-faint";
+  return "text-xs text-ink-soft";
+}
+
 export default async function TradingPage() {
-  const [screener, journal] = await Promise.all([
+  const [screener, weekEvents, journal] = await Promise.all([
     fetchScreener(),
+    fetchWeekEvents(),
     (async () => {
       const supabase = createTradingClient();
       if (!supabase) return null;
@@ -132,6 +202,8 @@ export default async function TradingPage() {
           </div>
         )}
       </Card>
+
+      <WeekNews events={weekEvents} />
 
       {/* Backtest-Fortschritt */}
       {!tradingConfigured() ? (
