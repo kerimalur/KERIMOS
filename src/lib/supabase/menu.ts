@@ -83,6 +83,46 @@ const sortMeals = (meals: MenuMeal[] | null) =>
     (a, b) => MEAL_ORDER.indexOf(a.meal_type) - MEAL_ORDER.indexOf(b.meal_type)
   );
 
+type MenuClient = NonNullable<ReturnType<typeof createMenuClient>>;
+
+/**
+ * Verteilte Meal-Prep-Boxen je Datum. Bewusst flache Abfragen ohne
+ * eingebettete Joins - die haben sich hier als unzuverlässig erwiesen.
+ */
+async function fetchPrepMeals(
+  supabase: MenuClient, von: string, bis: string
+): Promise<Map<string, MenuMeal[]>> {
+  const result = new Map<string, MenuMeal[]>();
+
+  const { data: log } = await supabase.from("menu_distribution_log")
+    .select("menu_id, date").gte("date", von).lte("date", bis);
+  const rows = (log ?? []) as { menu_id: string; date: string }[];
+  if (rows.length === 0) return result;
+
+  const menuIds = [...new Set(rows.map((r) => r.menu_id))];
+  const { data: menuMeals } = await supabase.from("grosse_menu_meals")
+    .select("menu_id, meal_type, name").in("menu_id", menuIds);
+
+  const mealsByMenu = new Map<string, { meal_type: string; name: string }[]>();
+  for (const m of (menuMeals ?? []) as { menu_id: string; meal_type: string; name: string }[]) {
+    const list = mealsByMenu.get(m.menu_id) ?? [];
+    list.push(m);
+    mealsByMenu.set(m.menu_id, list);
+  }
+
+  for (const r of rows) {
+    for (const m of mealsByMenu.get(r.menu_id) ?? []) {
+      const list = result.get(r.date) ?? [];
+      list.push({
+        meal_type: m.meal_type, name: m.name,
+        kcal_total: null, protein_total: null,
+      });
+      result.set(r.date, list);
+    }
+  }
+  return result;
+}
+
 /**
  * Alles für die Essen-Modus-Karte in einem Rutsch. Null ohne DB-Zugang.
  * Mahlzeiten werden bewusst in einer ZWEITEN Abfrage geholt (wie bei
@@ -118,6 +158,11 @@ export async function fetchEssenOverview(): Promise<EssenOverview | null> {
     }
   }
 
+  // Meal-Prep-Verteilungen: seit der Umstellung landen verteilte Boxen NICHT
+  // mehr in meals - nur das Kalorien-Total steht am Plan. Die Mahlzeiten-Namen
+  // kommen deshalb aus menu_distribution_log + grosse_menus.
+  const prepByDate = await fetchPrepMeals(supabase, isoPlus(-6), isoPlus(6));
+
   // WICHTIG: Pro Datum können MEHRERE meal_plans-Zeilen existieren (die DB
   // erzwingt die Eindeutigkeit nicht überall). Deshalb alle Zeilen eines
   // Datums zusammenführen - sonst erwischt man die leere Kopie und ein voll
@@ -130,8 +175,15 @@ export async function fetchEssenOverview(): Promise<EssenOverview | null> {
   }
   const heuteIso = isoPlus(0);
 
-  const mealsFuer = (iso: string): MenuMeal[] =>
-    (byDate.get(iso) ?? []).flatMap((p) => mealsByPlan.get(p.id) ?? []);
+  const mealsFuer = (iso: string): MenuMeal[] => {
+    const direkt = (byDate.get(iso) ?? []).flatMap((p) => mealsByPlan.get(p.id) ?? []);
+    // Prep-Mahlzeiten ergänzen die normalen (ohne Dopplung nach Typ+Name)
+    const bekannt = new Set(direkt.map((m) => `${m.meal_type}|${m.name}`));
+    const prep = (prepByDate.get(iso) ?? []).filter(
+      (m) => !bekannt.has(`${m.meal_type}|${m.name}`)
+    );
+    return [...direkt, ...prep];
+  };
   const totalsFuer = (iso: string) => {
     const list = byDate.get(iso) ?? [];
     return {
@@ -212,11 +264,18 @@ export async function fetchTodayMenu(): Promise<TodayMenu | null> {
   const plans = planRows ?? [];
   if (plans.length === 0) return null;
 
-  const { data: meals } = await supabase
-    .from("meals").select("meal_type, name, kcal_total, protein_total")
-    .in("plan_id", plans.map((p) => p.id));
+  const [{ data: meals }, prepByDate] = await Promise.all([
+    supabase.from("meals").select("meal_type, name, kcal_total, protein_total")
+      .in("plan_id", plans.map((p) => p.id)),
+    fetchPrepMeals(supabase, today, today),
+  ]);
 
-  const sorted = ((meals ?? []) as MenuMeal[]).sort(
+  const direkt = (meals ?? []) as MenuMeal[];
+  const bekannt = new Set(direkt.map((m) => `${m.meal_type}|${m.name}`));
+  const prep = (prepByDate.get(today) ?? []).filter(
+    (m) => !bekannt.has(`${m.meal_type}|${m.name}`)
+  );
+  const sorted = [...direkt, ...prep].sort(
     (a, b) => MEAL_ORDER.indexOf(a.meal_type) - MEAL_ORDER.indexOf(b.meal_type)
   );
 
