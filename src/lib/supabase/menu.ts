@@ -29,6 +29,8 @@ export interface MenuMeal {
   name: string;
   kcal_total: number | null;
   protein_total: number | null;
+  /** In der Menü-App abgehakt ("gegessen"). Prep-Boxen haben kein Flag. */
+  eaten?: boolean | null;
 }
 
 export interface TodayMenu {
@@ -149,7 +151,7 @@ export async function fetchEssenOverview(): Promise<EssenOverview | null> {
   const mealsByPlan = new Map<string, MenuMeal[]>();
   if (plans.length > 0) {
     const { data: mealRows } = await supabase.from("meals")
-      .select("plan_id, meal_type, name, kcal_total, protein_total")
+      .select("plan_id, meal_type, name, kcal_total, protein_total, eaten")
       .in("plan_id", plans.map((p) => p.id));
     for (const m of (mealRows ?? []) as (MenuMeal & { plan_id: string })[]) {
       const list = mealsByPlan.get(m.plan_id) ?? [];
@@ -265,7 +267,7 @@ export async function fetchTodayMenu(): Promise<TodayMenu | null> {
   if (plans.length === 0) return null;
 
   const [{ data: meals }, prepByDate] = await Promise.all([
-    supabase.from("meals").select("meal_type, name, kcal_total, protein_total")
+    supabase.from("meals").select("meal_type, name, kcal_total, protein_total, eaten")
       .in("plan_id", plans.map((p) => p.id)),
     fetchPrepMeals(supabase, today, today),
   ]);

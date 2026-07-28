@@ -114,12 +114,26 @@ function EssenTagSpalte({ titel, tag }: { titel: string; tag: EssenTag | null })
                 <span className="w-16 shrink-0 text-xs text-ink-muted">
                   {MEAL_LABEL[m.meal_type] ?? m.meal_type}
                 </span>
-                <span className="truncate text-ink">{m.name}</span>
+                <span className={m.eaten
+                  ? "truncate text-ink-faint line-through"
+                  : "truncate text-ink"}>
+                  {m.name}
+                </span>
+                {m.eaten && <span className="text-xs text-good">✓</span>}
               </li>
             ))}
           </ul>
           <p className="tabular mt-2 text-xs text-ink-muted">
             {Math.round(tag.kcal)} kcal · {Math.round(tag.protein)} g Protein
+            {tag.meals.some((m) => m.eaten) && (() => {
+              const offen = tag.meals.filter((m) => !m.eaten);
+              const offenKcal = offen.reduce((s, m) => s + Number(m.kcal_total ?? 0), 0);
+              return (
+                <span className="text-ink-soft">
+                  {" "}· noch {offen.length} offen{offenKcal > 0 ? ` (${Math.round(offenKcal)} kcal)` : ""}
+                </span>
+              );
+            })()}
           </p>
         </>
       )}
