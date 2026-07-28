@@ -8,6 +8,7 @@ import { Card, Stat, Empty } from "@/components/ui";
 import { chf, dateLabel } from "@/lib/format";
 import { fmtHours, pct, summarizeWeek, weekStart as toWeekStart, addDays } from "@/lib/time";
 import { createGymClient, gymConfigured, type BodyWeightEntry } from "@/lib/supabase/gym";
+import { fetchEssenOverview, MEAL_LABEL, type EssenTag } from "@/lib/supabase/menu";
 import type {
   Activity, DailyTime, FocusSession, NavLink, RunwayInputs, WeeklyBucket,
 } from "@/lib/types";
@@ -93,6 +94,67 @@ async function GymKarte() {
   );
 }
 
+function EssenTagSpalte({ titel, tag }: { titel: string; tag: EssenTag | null }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted">
+        {titel}
+      </div>
+      {!tag ? (
+        <p className="mt-2 text-sm text-ink-muted">Nichts geplant.</p>
+      ) : (
+        <>
+          <ul className="mt-2 space-y-1">
+            {tag.meals.map((m, i) => (
+              <li key={i} className="flex items-baseline gap-2 text-sm">
+                <span className="w-16 shrink-0 text-xs text-ink-muted">
+                  {MEAL_LABEL[m.meal_type] ?? m.meal_type}
+                </span>
+                <span className="truncate text-ink">{m.name}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="tabular mt-2 text-xs text-ink-muted">
+            {Math.round(tag.kcal)} kcal · {Math.round(tag.protein)} g Protein
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Live-Karte für den Essen-Modus: heute + morgen, Einkauf, Lücken, Schnitt. */
+async function EssenKarte() {
+  const e = await fetchEssenOverview();
+  if (!e) return null;
+
+  return (
+    <Card>
+      <div className="grid gap-5 sm:grid-cols-2">
+        <EssenTagSpalte titel="Heute" tag={e.heute} />
+        <EssenTagSpalte titel="Morgen" tag={e.morgen} />
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1.5 border-t border-line/70 pt-3 text-xs">
+        <span className={e.offeneEinkaeufe > 0 ? "text-ink-soft" : "text-ink-faint"}>
+          Einkaufsliste: {e.offeneEinkaeufe === 0 ? "nichts offen"
+            : `${e.offeneEinkaeufe} offene${e.offeneEinkaeufe === 1 ? "r Posten" : " Posten"}`}
+        </span>
+        <span className={e.ungeplant.length > 0 ? "text-warn" : "text-ink-faint"}>
+          Nächste 7 Tage: {e.ungeplant.length === 0 ? "alles geplant"
+            : `${e.ungeplant.length} ungeplant (${e.ungeplant.join(", ")})`}
+        </span>
+        {e.schnitt && (
+          <span className="tabular text-ink-faint">
+            Ø letzte {e.schnitt.tage} Tage: {Math.round(e.schnitt.kcal)} kcal /{" "}
+            {e.ziele.kcal} · {Math.round(e.schnitt.protein)} g P / {e.ziele.protein}
+          </span>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 export default async function ModusPage({
   params,
 }: {
@@ -134,6 +196,7 @@ export default async function ModusPage({
         {n.includes("geld") && <GeldKarte />}
         {n.includes("zeit") && <ZeitKarte />}
         {n.includes("gym") && <GymKarte />}
+        {n.includes("essen") && <EssenKarte />}
 
         <FocusPrompt
           sessions={(focusRows ?? []) as FocusSession[]}

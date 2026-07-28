@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { FocusPrompt } from "@/components/focus-prompt";
 import { TradingCard } from "@/components/trading-card";
@@ -12,7 +14,18 @@ import type { Activity, FocusSession, NavLink } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-export default async function Start() {
+export default async function Start({
+  searchParams,
+}: {
+  searchParams: Promise<{ voll?: string }>;
+}) {
+  // Handys landen auf /heute - ausser sie wollen ausdrücklich die volle
+  // Ansicht (?voll=1, der "Alle Modi"-Link). Erkennung über den User-Agent;
+  // iPads zählen bewusst als Desktop.
+  const sp = await searchParams;
+  const ua = (await headers()).get("user-agent") ?? "";
+  if (!sp.voll && /Android.*Mobile|iPhone/i.test(ua)) redirect("/heute");
+
   const supabase = await createClient();
   const vorwoche = addDays(toWeekStart(new Date()), -7);
 

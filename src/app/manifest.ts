@@ -9,7 +9,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "KerimOS",
     short_name: "KerimOS",
     description: "Zeit, Geld und Ziele an einem Ort.",
-    start_url: "/",
+    start_url: "/heute",
     display: "standalone",
     background_color: "#FAF8F3",
     theme_color: "#FAF8F3",
@@ -18,7 +18,7 @@ export default function manifest(): MetadataRoute.Manifest {
       { src: "/app-icon.svg", sizes: "any", type: "image/svg+xml", purpose: "maskable" },
     ],
     shortcuts: [
-      { name: "Schnellerfassung", url: "/quick" },
+      { name: "Heute", url: "/heute" },
       { name: "Zeit erfassen", url: "/kalender" },
       { name: "Trading", url: "/trading" },
     ],
