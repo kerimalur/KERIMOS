@@ -4,7 +4,7 @@ import { createGymClient, gymConfigured, type BodyWeightEntry } from "@/lib/supa
 import { fetchTodayMenu, menuConfigured, MEAL_LABEL } from "@/lib/supabase/menu";
 import { Button, Card, Input } from "@/components/ui";
 import { dateLabel } from "@/lib/format";
-import { weekStart } from "@/lib/time";
+import { weekStart, heuteISO } from "@/lib/time";
 
 /** "300 g Reis" - Menge weggelassen, wenn sie fehlt. */
 function zutatText(i: { name: string; amount: number | null; unit: string | null }) {
@@ -14,10 +14,7 @@ function zutatText(i: { name: string; amount: number | null; unit: string | null
   return `${gerundet} ${i.unit ?? ""} ${i.name}`.replace(/\s+/g, " ").trim();
 }
 
-const heute = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
+const heute = () => heuteISO();
 
 /** Wochenziel laut Plan: 4x Kraft, 1-2x Ausdauer. */
 const KRAFT_ZIEL = 4;
@@ -49,7 +46,7 @@ export async function TodayCard() {
     // Wochenstand: Krafttage + Ausdauertage seit Montag
     (async () => {
       if (!gym) return null;
-      const wk = weekStart(new Date());
+      const wk = weekStart(heuteISO());
       const [{ data: kraft }, { data: cardio }] = await Promise.all([
         gym.from("v_exercise_progress").select("day").gte("day", wk),
         gym.from("cardio_logs").select("completed_at")

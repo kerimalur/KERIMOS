@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createGymClient } from "@/lib/supabase/gym";
 import { createMenuClient } from "@/lib/supabase/menu";
+import { heuteISO } from "@/lib/time";
 import { type RecurrenceInterval } from "@/lib/types";
 
 async function requireUser() {
@@ -57,9 +58,8 @@ export async function addBodyWeight(fd: FormData) {
     );
   }
 
-  const jetzt = new Date();
   check(await gym.from("body_weight_entries").insert({
-    entry_date: `${jetzt.getFullYear()}-${String(jetzt.getMonth() + 1).padStart(2, "0")}-${String(jetzt.getDate()).padStart(2, "0")}`,
+    entry_date: heuteISO(),
     weight_kg: weight,
     source: "kerimos",
     user_id: gymUserId,
@@ -115,7 +115,7 @@ export async function createAccount(fd: FormData) {
     name: str(fd, "name"),
     type: str(fd, "type") || "checking",
     opening_balance: numOr(fd, "opening_balance", 0),
-    opening_date: str(fd, "opening_date") || new Date().toISOString().slice(0, 10),
+    opening_date: str(fd, "opening_date") || heuteISO(),
     include_in_runway: bool(fd, "include_in_runway"),
     note: str(fd, "note") || null,
   }), "Konto anlegen");
@@ -126,7 +126,7 @@ export async function updateAccountBalance(fd: FormData) {
   const { supabase, userId } = await requireUser();
   const accountId = str(fd, "account_id");
   const balance = numOr(fd, "balance", 0);
-  const date = str(fd, "snapshot_date") || new Date().toISOString().slice(0, 10);
+  const date = str(fd, "snapshot_date") || heuteISO();
   // Snapshot setzt den Kontostand an diesem Datum neu - ältere Transaktionen bleiben
   // in der Historie, zählen aber nicht mehr doppelt in den Saldo.
   await supabase.from("account_snapshots").upsert(
@@ -174,7 +174,7 @@ export async function createTransaction(fd: FormData) {
     user_id: userId,
     account_id: str(fd, "account_id") || null,
     category_id: str(fd, "category_id") || null,
-    occurred_on: str(fd, "occurred_on") || new Date().toISOString().slice(0, 10),
+    occurred_on: str(fd, "occurred_on") || heuteISO(),
     amount: kind === "income" ? raw : -raw,
     description: str(fd, "description"),
     counterparty: str(fd, "counterparty") || null,
@@ -213,7 +213,7 @@ export async function createRecurring(fd: FormData) {
     amount: kind === "income" ? raw : -raw,
     interval: (str(fd, "interval") || "monthly") as RecurrenceInterval,
     day_of_month: Math.min(31, Math.max(1, numOr(fd, "day_of_month", 1))),
-    start_date: str(fd, "start_date") || new Date().toISOString().slice(0, 10),
+    start_date: str(fd, "start_date") || heuteISO(),
     end_date: str(fd, "end_date") || null,
   }), "Fixkosten anlegen");
   revalidatePath("/fixkosten"); revalidatePath("/"); revalidatePath("/geld"); revalidatePath("/runway");
@@ -262,7 +262,7 @@ export async function runSetup(fd: FormData) {
   const { supabase, userId } = await requireUser();
   const liquid = numOr(fd, "liquid", 0);
   const fixedCosts = Math.abs(numOr(fd, "fixed_costs", 0));
-  const today = new Date().toISOString().slice(0, 10);
+  const today = heuteISO();
 
   const expenses: [string, boolean, string][] = [
     ["Wohnen", true, "#B9847A"], ["Krankenkasse", true, "#C68D6B"],
@@ -607,7 +607,7 @@ export async function archiveActivity(fd: FormData) {
 export async function addTime(fd: FormData) {
   const { supabase, userId } = await requireUser();
   const activityId = str(fd, "activity_id");
-  const date = str(fd, "entry_date") || new Date().toISOString().slice(0, 10);
+  const date = str(fd, "entry_date") || heuteISO();
   const delta = Math.round(numOr(fd, "minutes", 0));
   if (!activityId || delta === 0) return;
 
@@ -715,11 +715,20 @@ export async function applyShift(fd: FormData) {
   if (!shiftId || !date) return;
 
   const { data: shift } = await supabase.from("shifts")
-    .select("*").eq("id", shiftId).maybeSingle();
+    .select("*").eq("id", shiftId).eq("user_id", userId).maybeSingle();
   if (!shift?.activity_id) return;
 
-  const blocks = ((shift.blocks ?? []) as { start: number; minutes: number }[])
-    .filter((b) => b.minutes > 0)
+  // blocks ist jsonb - was von Hand in der DB geändert wurde, könnte alles
+  // sein. Deshalb hier prüfen statt blind zu vertrauen: sonst landen NaN oder
+  // negative Minuten als Zeiteintrag.
+  const blocks = ((shift.blocks ?? []) as unknown[])
+    .map((b) => b as { start?: unknown; minutes?: unknown })
+    .filter((b) =>
+      typeof b.start === "number" && Number.isFinite(b.start) &&
+      b.start >= 0 && b.start <= 1439 &&
+      typeof b.minutes === "number" && Number.isFinite(b.minutes) && b.minutes > 0
+    )
+    .map((b) => ({ start: b.start as number, minutes: b.minutes as number }))
     .sort((a, b) => a.start - b.start);
   if (blocks.length === 0) return;
 
@@ -753,13 +762,28 @@ export async function applyShift(fd: FormData) {
     }
   }
 
-  check(await supabase.from("time_entries").insert(rows), "Schicht eintragen");
+  // Doppelklick-Schutz: Blöcke überspringen, die an diesem Tag schon mit
+  // derselben Startzeit stehen - zweimal eingetragen hiesse doppelte
+  // Arbeitszeit in jeder Auswertung.
+  const { data: vorhanden } = await supabase.from("time_entries")
+    .select("start_minute, activity_id")
+    .eq("user_id", userId).eq("entry_date", date);
+  const belegt = new Set(
+    (vorhanden ?? []).map((e) => `${e.activity_id}|${e.start_minute}`)
+  );
+  const neu = rows.filter((r) => !belegt.has(`${r.activity_id}|${r.start_minute}`));
+
+  if (neu.length === 0) {
+    throw new Error("Diese Schicht steht an diesem Tag bereits im Kalender.");
+  }
+
+  check(await supabase.from("time_entries").insert(neu), "Schicht eintragen");
   revalidateTime(); revalidatePath("/kalender"); revalidatePath("/schichten");
 }
 
 export async function saveCheckin(fd: FormData) {
   const { supabase, userId } = await requireUser();
-  const date = str(fd, "entry_date") || new Date().toISOString().slice(0, 10);
+  const date = str(fd, "entry_date") || heuteISO();
   await supabase.from("day_checkins").upsert(
     {
       user_id: userId,
@@ -1087,7 +1111,7 @@ export async function adoptRecurringCandidate(fd: FormData) {
     amount: raw,
     interval,
     day_of_month: day,
-    start_date: str(fd, "start_date") || new Date().toISOString().slice(0, 10),
+    start_date: str(fd, "start_date") || heuteISO(),
   }), "Fixkosten übernehmen");
 
   if (categoryId && raw < 0) {
@@ -1493,7 +1517,7 @@ export async function createGoal(fd: FormData) {
     kind: str(fd, "kind") || "milestone",
     target_amount: numOrNull(fd, "target_amount"),
     unit: str(fd, "unit") || null,
-    start_date: str(fd, "start_date") || new Date().toISOString().slice(0, 10),
+    start_date: str(fd, "start_date") || heuteISO(),
     target_date: str(fd, "target_date") || null,
     linked_category_ids: idList(fd, "linked_category_ids"),
     linked_activity_ids: idList(fd, "linked_activity_ids"),
@@ -1539,7 +1563,8 @@ export async function toggleMilestone(fd: FormData) {
   const { supabase } = await requireUser();
   const done = str(fd, "done") === "true";
   await supabase.from("goal_milestones")
-    .update({ done_at: done ? new Date().toISOString().slice(0, 10) : null })
+    .update({ done_at: done ? heuteISO() : null })
+
     .eq("id", str(fd, "id"));
   revalidateGoals();
 }

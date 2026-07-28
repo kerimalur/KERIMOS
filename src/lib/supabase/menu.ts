@@ -1,4 +1,6 @@
+import "server-only";
 import { createClient } from "@supabase/supabase-js";
+import { heutePlus } from "@/lib/time";
 
 /**
  * Zugang zur Menüplan-Datenbank. Die Menü-Tabellen liegen im selben
@@ -82,12 +84,8 @@ export interface EssenOverview {
   ziele: { kcal: number; protein: number };
 }
 
-// Lokales Datum, nicht UTC - sonst verrutscht "heute" nach Mitternacht
-const isoPlus = (n: number) => {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
+// Zürcher Zeit, nicht UTC - sonst verrutscht "heute" nach Mitternacht
+const isoPlus = (n: number) => heutePlus(n);
 
 
 const sortMeals = (meals: MenuMeal[] | null) =>

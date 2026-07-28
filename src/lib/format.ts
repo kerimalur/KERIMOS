@@ -1,3 +1,5 @@
+import { heuteISO } from "./time";
+
 export const CHF = new Intl.NumberFormat("de-CH", {
   style: "currency", currency: "CHF", maximumFractionDigits: 0,
 });
@@ -27,8 +29,12 @@ export function dateLabel(iso: string) {
   });
 }
 
+/**
+ * Heute in Zürcher Zeit. Delegiert bewusst an time.ts - dort steht die eine
+ * Wahrheit, damit Server (UTC) und Browser nie auseinanderlaufen.
+ */
 export function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  return heuteISO();
 }
 
 export function addMonths(date: Date, months: number) {

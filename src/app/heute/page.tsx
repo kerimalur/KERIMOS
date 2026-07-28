@@ -5,6 +5,7 @@ import { TodayEntries, type HeuteEintrag } from "@/components/today-entries";
 import { FocusPrompt } from "@/components/focus-prompt";
 import { TradingCard } from "@/components/trading-card";
 import { TodayCard } from "@/components/today-card";
+import { heuteISO, ZONE } from "@/lib/time";
 import type { Activity, FocusSession } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -18,8 +19,7 @@ export const dynamic = "force-dynamic";
 export default async function HeutePage() {
   const supabase = await createClient();
 
-  const d = new Date();
-  const heute = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const heute = heuteISO();
   const [{ data: focusRows }, { data: actRows }, { data: entryRows }] = await Promise.all([
     supabase.from("focus_sessions").select("*").eq("status", "open")
       .order("started_at", { ascending: false }),
@@ -34,7 +34,7 @@ export default async function HeutePage() {
   const activities = (actRows ?? []) as Activity[];
 
   const datum = new Date().toLocaleDateString("de-CH", {
-    weekday: "long", day: "numeric", month: "long",
+    weekday: "long", day: "numeric", month: "long", timeZone: ZONE,
   });
 
   return (

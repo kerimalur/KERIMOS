@@ -4,7 +4,7 @@ import { saveWeeklyReview, deleteWeeklyReview } from "@/lib/actions";
 import { Button, Card, CardTitle, Input, Label, Stat, Empty, cx } from "@/components/ui";
 import { chf } from "@/lib/format";
 import {
-  weekStart as toWeekStart, addDays, fmtHours, pct, summarizeWeek, weekLabel,
+  weekStart as toWeekStart, addDays, fmtHours, pct, summarizeWeek, weekLabel, heuteISO,
 } from "@/lib/time";
 import { computeRunway } from "@/lib/runway";
 import type {
@@ -21,7 +21,7 @@ export default async function RueckblickPage({
   searchParams: Promise<{ w?: string }>;
 }) {
   const sp = await searchParams;
-  const current = toWeekStart(new Date());
+  const current = toWeekStart(heuteISO());
   // Standard ist die eben vergangene Woche - sonntags schaut man zurück
   const fallback = addDays(current, -7);
   const week = ISO.test(sp.w ?? "") ? toWeekStart(sp.w!) : fallback;

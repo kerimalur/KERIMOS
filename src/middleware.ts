@@ -6,5 +6,10 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  // manifest.webmanifest bleibt bewusst frei: Browser holen es teils ohne
+  // Cookies, die Anmelde-Weiterleitung würde die PWA-Installation stören.
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest" +
+    "|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+  ],
 };

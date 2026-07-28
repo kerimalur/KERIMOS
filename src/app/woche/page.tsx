@@ -6,7 +6,7 @@ import { DayBar } from "@/components/day-bar";
 import { chf } from "@/lib/format";
 import {
   weekStart as toWeekStart, addDays, fmtMinutes, fmtHours, summarizeWeek,
-  dayComposition, dayNameShort, pct, toISODate,
+  dayComposition, dayNameShort, pct, heuteISO,
 } from "@/lib/time";
 import {
   BUCKET_COLOR, BUCKET_LABEL, BUCKET_HINT, UNACCOUNTED_COLOR,
@@ -21,7 +21,7 @@ export default async function WochePage({
   searchParams: Promise<{ w?: string }>;
 }) {
   const params = await searchParams;
-  const current = toWeekStart(new Date());
+  const current = toWeekStart(heuteISO());
   const week = /^\d{4}-\d{2}-\d{2}$/.test(params.w ?? "")
     ? toWeekStart(params.w!)
     : current;
@@ -72,7 +72,7 @@ export default async function WochePage({
 
   const byDate = new Map(days.map((d) => [d.entry_date, d]));
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(week, i));
-  const today = toISODate(new Date());
+  const today = heuteISO();
 
   const prevShare = new Map(prevSummary.byBucket.map((b) => [b.bucket, b.share]));
   const maxBucket = Math.max(1, ...summary.byBucket.map((b) => b.minutes),

@@ -4,7 +4,9 @@ import { CalendarNav, type CalView } from "@/components/calendar-nav";
 import { DayCalendar, WeekCalendar, MonthCalendar } from "@/components/calendar-views";
 import { Button, Card, CardTitle, Empty, Stat } from "@/components/ui";
 import { seedActivities } from "@/lib/actions";
-import { addDays, toISODate, weekStart as toWeekStart, fmtHours, pct, summarizeWeek } from "@/lib/time";
+import {
+  addDays, toISODate, weekStart as toWeekStart, fmtHours, pct, summarizeWeek, heuteISO,
+} from "@/lib/time";
 import type { Activity, DailyTime, TimeEntry } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -36,7 +38,7 @@ export default async function KalenderPage({
   const sp = await searchParams;
   const view: CalView =
     sp.ansicht === "woche" || sp.ansicht === "monat" ? sp.ansicht : "tag";
-  const date = ISO.test(sp.d ?? "") ? sp.d! : toISODate(new Date());
+  const date = ISO.test(sp.d ?? "") ? sp.d! : heuteISO();
 
   // Zeitraum je Ansicht
   let from = date;

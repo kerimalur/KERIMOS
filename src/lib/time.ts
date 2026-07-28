@@ -3,6 +3,39 @@ import type { DailyTime, TimeBucket, WeeklyBucket } from "./types";
 
 export const MINUTES_PER_DAY = 1440;
 
+/**
+ * Zeitzone der App. Fix verdrahtet, weil KerimOS auf Vercel läuft und Node
+ * dort in UTC rechnet: ohne diese Festlegung wäre zwischen Mitternacht und
+ * zwei Uhr überall "heute" in Wahrheit gestern - auf dem Server, während der
+ * Browser daneben korrekt rechnet.
+ */
+export const ZONE = "Europe/Zurich";
+
+/** Heutiges Datum in Zürcher Zeit. "sv-SE" liefert direkt YYYY-MM-DD. */
+export function heuteISO(): string {
+  return new Intl.DateTimeFormat("sv-SE", { timeZone: ZONE }).format(new Date());
+}
+
+/** Heute plus/minus n Tage, ebenfalls in Zürcher Zeit. */
+export function heutePlus(n: number): string {
+  return addDays(heuteISO(), n);
+}
+
+/** Wochentag von heute in Zürcher Zeit: 0 = Sonntag, wie Date.getDay(). */
+export function heuteWochentag(): number {
+  const kurz = new Intl.DateTimeFormat("en-US", { timeZone: ZONE, weekday: "short" })
+    .format(new Date());
+  return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(kurz);
+}
+
+/** Aktuelle Uhrzeit in Zürich als Minuten seit Mitternacht. */
+export function heuteMinuten(): number {
+  const [h, m] = new Intl.DateTimeFormat("de-CH", {
+    timeZone: ZONE, hour: "2-digit", minute: "2-digit", hour12: false,
+  }).format(new Date()).split(":").map(Number);
+  return h * 60 + m;
+}
+
 /** "3 h 30 min" · "45 min" · "8 h" */
 export function fmtMinutes(minutes: number): string {
   const m = Math.max(0, Math.round(minutes));

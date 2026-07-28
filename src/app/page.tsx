@@ -9,7 +9,7 @@ import { QuickSearch } from "@/components/quick-search";
 import { Button, Card } from "@/components/ui";
 import { seedLinks } from "@/lib/actions";
 import { MODE_ORDER } from "@/lib/modes";
-import { addDays, weekStart as toWeekStart } from "@/lib/time";
+import { addDays, weekStart as toWeekStart, heuteISO, heuteWochentag } from "@/lib/time";
 import type { Activity, FocusSession, NavLink } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +27,7 @@ export default async function Start({
   if (!sp.voll && /Android.*Mobile|iPhone/i.test(ua)) redirect("/heute");
 
   const supabase = await createClient();
-  const vorwoche = addDays(toWeekStart(new Date()), -7);
+  const vorwoche = addDays(toWeekStart(heuteISO()), -7);
 
   const [
     { data: linkRows }, { data: focusRows }, { data: actRows }, { data: lastReview },
@@ -61,7 +61,7 @@ export default async function Start({
   }
 
   // Sonntag (0) und Montag (1): sanft erinnern, solange der Rückblick fehlt
-  const wochentag = new Date().getDay();
+  const wochentag = heuteWochentag();
   const reviewFehlt = !lastReview && (wochentag === 0 || wochentag === 1);
 
   // Modi = Kachel-Gruppen

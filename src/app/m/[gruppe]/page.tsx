@@ -6,7 +6,9 @@ import { FocusStarter } from "@/components/focus-starter";
 import { TradingCard } from "@/components/trading-card";
 import { Card, Stat, Empty } from "@/components/ui";
 import { chf, dateLabel } from "@/lib/format";
-import { fmtHours, pct, summarizeWeek, weekStart as toWeekStart, addDays } from "@/lib/time";
+import {
+  fmtHours, pct, summarizeWeek, weekStart as toWeekStart, addDays, heuteISO,
+} from "@/lib/time";
 import { createGymClient, gymConfigured, type BodyWeightEntry } from "@/lib/supabase/gym";
 import {
   createMenuClient, fetchEssenOverview, MEAL_LABEL,
@@ -39,7 +41,7 @@ async function GeldKarte() {
 /** Kleine Live-Karte für den Zeit-Modus: die laufende Woche. */
 async function ZeitKarte() {
   const supabase = await createClient();
-  const week = toWeekStart(new Date());
+  const week = toWeekStart(heuteISO());
   const [{ data: daily }, { data: buckets }] = await Promise.all([
     supabase.from("v_daily_time").select("*")
       .gte("entry_date", week).lte("entry_date", addDays(week, 6)),

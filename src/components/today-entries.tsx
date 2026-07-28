@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { addTimedEntry, deleteTimeEntry, setEntryRange } from "@/lib/actions";
 import { Button, Card, Select, cx } from "@/components/ui";
+import { heuteISO } from "@/lib/time";
 import type { Activity } from "@/lib/types";
 
 export interface HeuteEintrag {
@@ -55,7 +56,7 @@ export function TodayEntries({
     setBusy(true);
     const fd = new FormData();
     fd.set("activity_id", aktivitaet);
-    fd.set("entry_date", new Date().toISOString().slice(0, 10));
+    fd.set("entry_date", heuteISO());
     fd.set("start", von);
     fd.set("minutes", String(dauer));
     await addTimedEntry(fd);

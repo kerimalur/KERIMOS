@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { applyShift, createShift, deleteShift } from "@/lib/actions";
 import { Button, Card, CardTitle, Empty, Input, Label, Select } from "@/components/ui";
-import { toISODate } from "@/lib/time";
+import { heuteISO } from "@/lib/time";
 import type { Activity } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +29,7 @@ export default async function SchichtenPage() {
   const activities = (actRows ?? []) as Activity[];
   const byId = new Map(activities.map((a) => [a.id, a]));
   const arbeit = activities.filter((a) => a.bucket === "arbeit");
-  const heute = toISODate(new Date());
+  const heute = heuteISO();
 
   if (shiftError) {
     return (
