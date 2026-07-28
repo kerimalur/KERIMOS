@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { QuickTrack } from "@/components/quick-track";
+import { TodayEntries, type HeuteEintrag } from "@/components/today-entries";
 import { FocusPrompt } from "@/components/focus-prompt";
 import { TradingCard } from "@/components/trading-card";
 import { TodayCard } from "@/components/today-card";
@@ -17,11 +18,15 @@ export const dynamic = "force-dynamic";
 export default async function HeutePage() {
   const supabase = await createClient();
 
-  const [{ data: focusRows }, { data: actRows }] = await Promise.all([
+  const heute = new Date().toISOString().slice(0, 10);
+  const [{ data: focusRows }, { data: actRows }, { data: entryRows }] = await Promise.all([
     supabase.from("focus_sessions").select("*").eq("status", "open")
       .order("started_at", { ascending: false }),
     supabase.from("activities").select("*").eq("archived", false)
       .order("sort_order").order("name"),
+    supabase.from("time_entries")
+      .select("id, activity_id, minutes, start_minute")
+      .eq("entry_date", heute),
   ]);
 
   const sessions = (focusRows ?? []) as FocusSession[];
@@ -44,6 +49,15 @@ export default async function HeutePage() {
       </div>
 
       <QuickTrack sessions={sessions} activities={activities} />
+
+      <TodayEntries
+        entries={(entryRows ?? []).map((e) => ({
+          ...e,
+          minutes: Number(e.minutes),
+          start_minute: e.start_minute === null ? null : Number(e.start_minute),
+        })) as HeuteEintrag[]}
+        activities={activities}
+      />
 
       {/* Kachel-Sitzungen ohne Aktivität klärt weiterhin der Prompt */}
       <FocusPrompt

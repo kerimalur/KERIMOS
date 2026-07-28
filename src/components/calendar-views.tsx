@@ -30,6 +30,8 @@ export function DayCalendar({
   const [step, setStep] = useState(60);
   // Der Erfassungsblock erscheint erst, wenn eine Stunde angeklickt wird.
   const [cursor, setCursor] = useState<number | null>(null);
+  // Klick auf einen Block wählt ihn aus - zum Löschen von Fehlklicks.
+  const [selected, setSelected] = useState<string | null>(null);
 
   const blocks = layoutDay(entries);
   const untimed = entries.filter((e) => e.start_minute === null);
@@ -62,6 +64,19 @@ export function DayCalendar({
       router.refresh();
     });
   }
+
+  function deleteSelected() {
+    if (!selected) return;
+    const fd = new FormData();
+    fd.set("id", selected);
+    setSelected(null);
+    startTransition(async () => {
+      await deleteTimeEntry(fd);
+      router.refresh();
+    });
+  }
+
+  const selectedBlock = blocks.find((b) => b.entry.id === selected) ?? null;
 
   const grouped = BUCKET_ORDER.map((bucket) => ({
     bucket,
@@ -161,6 +176,29 @@ export function DayCalendar({
           </span>
         </div>
 
+        {selectedBlock && (
+          <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-line bg-sand px-3 py-2 text-sm">
+            <span className="h-2 w-2 shrink-0 rounded-full"
+              style={{ background: selectedBlock.entry.activity?.color ?? "#A8A093" }} />
+            <span className="text-ink">
+              {selectedBlock.entry.activity?.name ?? "Unbekannt"}
+              <span className="tabular ml-1.5 text-xs text-ink-muted">
+                {minuteToTime(selectedBlock.start)}–{minuteToTime(selectedBlock.end)}
+              </span>
+            </span>
+            <span className="ml-auto flex items-center gap-3">
+              <button onClick={deleteSelected} disabled={pending}
+                className="text-xs font-medium text-bad transition hover:underline">
+                Löschen
+              </button>
+              <button onClick={() => setSelected(null)}
+                className="text-xs text-ink-muted transition hover:text-ink-soft">
+                Abbrechen
+              </button>
+            </span>
+          </div>
+        )}
+
         <div className="relative" style={{ height }}>
           {hours.map((h) => (
             <button
@@ -192,8 +230,12 @@ export function DayCalendar({
               const width = 100 / columns;
               const color = entry.activity?.color ?? "#A8A093";
               return (
-                <div key={entry.id}
-                  className="absolute overflow-hidden rounded-lg px-2 py-0.5"
+                <button key={entry.id} type="button"
+                  onClick={() => setSelected(selected === entry.id ? null : entry.id)}
+                  className={cx(
+                    "pointer-events-auto absolute cursor-pointer overflow-hidden rounded-lg px-2 py-0.5 text-left",
+                    selected === entry.id && "ring-2 ring-bad/70"
+                  )}
                   style={{
                     top, height: blockHeight,
                     left: `calc(${column * width}% + 2px)`,
@@ -201,7 +243,7 @@ export function DayCalendar({
                     background: color + "26",
                     borderLeft: `3px solid ${color}`,
                   }}
-                  title={`${entry.activity?.name ?? ""} · ${minuteToTime(start)}–${minuteToTime(end)}`}>
+                  title={`${entry.activity?.name ?? ""} · ${minuteToTime(start)}–${minuteToTime(end)} — Klick zum Auswählen/Löschen`}>
                   <div className="truncate text-[12px] font-medium leading-tight text-ink">
                     {entry.activity?.name ?? "Unbekannt"}
                   </div>
@@ -210,7 +252,7 @@ export function DayCalendar({
                       {minuteToTime(start)}–{minuteToTime(end)}
                     </div>
                   )}
-                </div>
+                </button>
               );
             })}
           </div>
@@ -234,6 +276,11 @@ export function DayCalendar({
                   <button className="text-xs text-accent-soft hover:underline">
                     Uhrzeit setzen
                   </button>
+                </form>
+                <form action={deleteTimeEntry}>
+                  <input type="hidden" name="id" value={e.id} />
+                  <button aria-label="Eintrag löschen"
+                    className="text-xs text-ink-faint transition hover:text-bad">✕</button>
                 </form>
               </li>
             ))}

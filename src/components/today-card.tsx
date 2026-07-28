@@ -56,11 +56,12 @@ export async function TodayCard() {
   return (
     <Card className="p-5">
       <div className="grid gap-5 sm:grid-cols-3">
-        {/* Menü heute */}
+        {/* Menü heute - Klick führt in den Essen-Modus */}
         <div className="min-w-0">
-          <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted">
-            Essen heute
-          </div>
+          <Link href="/m/Essen"
+            className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted transition hover:text-ink-soft">
+            Essen heute →
+          </Link>
           {!menuConfigured() ? (
             <p className="mt-2 text-xs text-ink-muted">
               Menü-DB nicht verbunden (läuft über den Gym-Zugang).
@@ -86,11 +87,12 @@ export async function TodayCard() {
           )}
         </div>
 
-        {/* Gewicht */}
+        {/* Gewicht - Klick zeigt die Kurve auf der Gym-Seite */}
         <div>
-          <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted">
-            Gewicht
-          </div>
+          <Link href="/gym"
+            className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted transition hover:text-ink-soft">
+            Gewicht →
+          </Link>
           {!gym ? (
             <p className="mt-2 text-xs text-ink-muted">Gym-DB nicht verbunden.</p>
           ) : (
