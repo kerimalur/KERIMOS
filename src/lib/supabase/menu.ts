@@ -118,48 +118,69 @@ export async function fetchEssenOverview(): Promise<EssenOverview | null> {
     }
   }
 
-  const byDate = new Map(plans.map((p) => [p.date, p]));
+  // WICHTIG: Pro Datum können MEHRERE meal_plans-Zeilen existieren (die DB
+  // erzwingt die Eindeutigkeit nicht überall). Deshalb alle Zeilen eines
+  // Datums zusammenführen - sonst erwischt man die leere Kopie und ein voll
+  // geplanter Tag erscheint als "nichts geplant".
+  const byDate = new Map<string, PlanRow[]>();
+  for (const p of plans) {
+    const list = byDate.get(p.date) ?? [];
+    list.push(p);
+    byDate.set(p.date, list);
+  }
   const heuteIso = isoPlus(0);
 
-  const zuTag = (p: PlanRow | undefined): EssenTag | null => {
-    const meals = p ? mealsByPlan.get(p.id) ?? [] : [];
-    if (!p || meals.length === 0) return null;
+  const mealsFuer = (iso: string): MenuMeal[] =>
+    (byDate.get(iso) ?? []).flatMap((p) => mealsByPlan.get(p.id) ?? []);
+  const totalsFuer = (iso: string) => {
+    const list = byDate.get(iso) ?? [];
+    return {
+      kcal: Math.max(0, ...list.map((p) => Number(p.kcal_total ?? 0))),
+      protein: Math.max(0, ...list.map((p) => Number(p.protein_total ?? 0))),
+    };
+  };
+
+  const zuTag = (iso: string): EssenTag | null => {
+    const meals = mealsFuer(iso);
+    if (meals.length === 0) return null;
+    const totals = totalsFuer(iso);
     // kcal-Summe notfalls aus den Mahlzeiten, falls der Tages-Total 0 ist
-    const kcal = Number(p.kcal_total ?? 0)
+    const kcal = totals.kcal
       || meals.reduce((s, m) => s + Number(m.kcal_total ?? 0), 0);
-    const protein = Number(p.protein_total ?? 0)
+    const protein = totals.protein
       || meals.reduce((s, m) => s + Number(m.protein_total ?? 0), 0);
     return { meals: sortMeals(meals), kcal, protein };
   };
 
-  // Geplant = es gibt Mahlzeiten, egal ob Kalorien berechnet sind
-  const istGeplant = (p?: PlanRow) =>
-    Boolean(p && ((mealsByPlan.get(p.id)?.length ?? 0) > 0 || Number(p.kcal_total ?? 0) > 0));
+  // Geplant = es gibt Mahlzeiten oder erfasste Kalorien an diesem Datum
+  const istGeplant = (iso: string) =>
+    mealsFuer(iso).length > 0 || totalsFuer(iso).kcal > 0;
 
   const ungeplant: string[] = [];
   for (let i = 0; i < 7; i++) {
     const iso = isoPlus(i);
-    if (!istGeplant(byDate.get(iso))) {
+    if (!istGeplant(iso)) {
       ungeplant.push(i === 0 ? "heute" : i === 1 ? "morgen"
         : new Date(iso + "T12:00:00").toLocaleDateString("de-CH", { weekday: "short" }));
     }
   }
 
-  // Ø der letzten 7 Tage (nur geplante mit berechneten Kalorien)
-  const vergangene = plans.filter(
-    (p) => p.date <= heuteIso && Number(p.kcal_total ?? 0) > 0
-  );
+  // Ø der letzten 7 Tage (nur geplante mit berechneten Kalorien, je Datum einmal)
+  const vergangene = [...byDate.keys()]
+    .filter((iso) => iso <= heuteIso)
+    .map((iso) => totalsFuer(iso))
+    .filter((t) => t.kcal > 0);
   const schnitt = vergangene.length === 0 ? null : {
-    kcal: vergangene.reduce((s, p) => s + Number(p.kcal_total ?? 0), 0) / vergangene.length,
-    protein: vergangene.reduce((s, p) => s + Number(p.protein_total ?? 0), 0) / vergangene.length,
+    kcal: vergangene.reduce((s, t) => s + t.kcal, 0) / vergangene.length,
+    protein: vergangene.reduce((s, t) => s + t.protein, 0) / vergangene.length,
     tage: vergangene.length,
   };
 
   const settings = new Map((settingRows ?? []).map((s) => [s.key as string, s.value as string]));
 
   return {
-    heute: zuTag(byDate.get(heuteIso)),
-    morgen: zuTag(byDate.get(isoPlus(1))),
+    heute: zuTag(heuteIso),
+    morgen: zuTag(isoPlus(1)),
     offeneEinkaeufe: offene ?? 0,
     ungeplant,
     schnitt,
@@ -184,22 +205,25 @@ export async function fetchTodayMenu(): Promise<TodayMenu | null> {
   if (!supabase) return null;
 
   const today = isoPlus(0);
-  const { data: plan } = await supabase
+  // Bewusst OHNE maybeSingle: pro Datum können mehrere Plan-Zeilen existieren
+  const { data: planRows } = await supabase
     .from("meal_plans").select("id, kcal_total, protein_total")
-    .eq("date", today).maybeSingle();
-  if (!plan) return null;
+    .eq("date", today);
+  const plans = planRows ?? [];
+  if (plans.length === 0) return null;
 
   const { data: meals } = await supabase
     .from("meals").select("meal_type, name, kcal_total, protein_total")
-    .eq("plan_id", plan.id);
+    .in("plan_id", plans.map((p) => p.id));
 
   const sorted = ((meals ?? []) as MenuMeal[]).sort(
     (a, b) => MEAL_ORDER.indexOf(a.meal_type) - MEAL_ORDER.indexOf(b.meal_type)
   );
 
-  return {
-    kcal: Number(plan.kcal_total ?? 0),
-    protein: Number(plan.protein_total ?? 0),
-    meals: sorted,
-  };
+  const kcal = Math.max(0, ...plans.map((p) => Number(p.kcal_total ?? 0)))
+    || sorted.reduce((s, m) => s + Number(m.kcal_total ?? 0), 0);
+  const protein = Math.max(0, ...plans.map((p) => Number(p.protein_total ?? 0)))
+    || sorted.reduce((s, m) => s + Number(m.protein_total ?? 0), 0);
+
+  return { kcal, protein, meals: sorted };
 }
