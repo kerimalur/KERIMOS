@@ -88,39 +88,56 @@ const sortMeals = (meals: MenuMeal[] | null) =>
 type MenuClient = NonNullable<ReturnType<typeof createMenuClient>>;
 
 /**
- * Verteilte Meal-Prep-Boxen je Datum. Bewusst flache Abfragen ohne
- * eingebettete Joins - die haben sich hier als unzuverlässig erwiesen.
+ * Meal-Prep-Boxen je Datum aus dem NEUEN Datenmodell der Menü-App:
+ * batch_portions (Box je Tag+Slot, mit consumed = abgehakt)
+ * → prep_batches (eingefrorene Werte pro Portion)
+ * → recipes (Name). Bewusst flache Abfragen ohne eingebettete Joins.
  */
 async function fetchPrepMeals(
   supabase: MenuClient, von: string, bis: string
 ): Promise<Map<string, MenuMeal[]>> {
   const result = new Map<string, MenuMeal[]>();
 
-  const { data: log } = await supabase.from("menu_distribution_log")
-    .select("menu_id, date").gte("date", von).lte("date", bis);
-  const rows = (log ?? []) as { menu_id: string; date: string }[];
-  if (rows.length === 0) return result;
+  const { data: portionRows } = await supabase.from("batch_portions")
+    .select("date, meal_type, consumed, batch_id")
+    .gte("date", von).lte("date", bis);
+  const portions = (portionRows ?? []) as {
+    date: string; meal_type: string; consumed: boolean; batch_id: string;
+  }[];
+  if (portions.length === 0) return result;
 
-  const menuIds = [...new Set(rows.map((r) => r.menu_id))];
-  const { data: menuMeals } = await supabase.from("grosse_menu_meals")
-    .select("menu_id, meal_type, name").in("menu_id", menuIds);
+  const batchIds = [...new Set(portions.map((p) => p.batch_id))];
+  const { data: batchRows } = await supabase.from("prep_batches")
+    .select("id, recipe_id, kcal_per_portion, protein_per_portion")
+    .in("id", batchIds);
+  const batches = new Map(
+    ((batchRows ?? []) as {
+      id: string; recipe_id: string;
+      kcal_per_portion: number | null; protein_per_portion: number | null;
+    }[]).map((b) => [b.id, b])
+  );
 
-  const mealsByMenu = new Map<string, { meal_type: string; name: string }[]>();
-  for (const m of (menuMeals ?? []) as { menu_id: string; meal_type: string; name: string }[]) {
-    const list = mealsByMenu.get(m.menu_id) ?? [];
-    list.push(m);
-    mealsByMenu.set(m.menu_id, list);
+  const recipeIds = [...new Set([...batches.values()].map((b) => b.recipe_id))];
+  const recipeName = new Map<string, string>();
+  if (recipeIds.length > 0) {
+    const { data: recipeRows } = await supabase.from("recipes")
+      .select("id, name").in("id", recipeIds);
+    for (const r of (recipeRows ?? []) as { id: string; name: string }[]) {
+      recipeName.set(r.id, r.name);
+    }
   }
 
-  for (const r of rows) {
-    for (const m of mealsByMenu.get(r.menu_id) ?? []) {
-      const list = result.get(r.date) ?? [];
-      list.push({
-        meal_type: m.meal_type, name: m.name,
-        kcal_total: null, protein_total: null,
-      });
-      result.set(r.date, list);
-    }
+  for (const p of portions) {
+    const b = batches.get(p.batch_id);
+    const list = result.get(p.date) ?? [];
+    list.push({
+      meal_type: p.meal_type,
+      name: (b && recipeName.get(b.recipe_id)) ?? "Prep-Box",
+      kcal_total: b ? Number(b.kcal_per_portion ?? 0) : null,
+      protein_total: b ? Number(b.protein_per_portion ?? 0) : null,
+      eaten: Boolean(p.consumed),
+    });
+    result.set(p.date, list);
   }
   return result;
 }
@@ -160,9 +177,8 @@ export async function fetchEssenOverview(): Promise<EssenOverview | null> {
     }
   }
 
-  // Meal-Prep-Verteilungen: seit der Umstellung landen verteilte Boxen NICHT
-  // mehr in meals - nur das Kalorien-Total steht am Plan. Die Mahlzeiten-Namen
-  // kommen deshalb aus menu_distribution_log + grosse_menus.
+  // Meal-Prep-Boxen: leben seit dem Umbau in batch_portions/prep_batches,
+  // nicht in meals - nur die Tagessummen stehen (per Trigger) am Plan.
   const prepByDate = await fetchPrepMeals(supabase, isoPlus(-6), isoPlus(6));
 
   // WICHTIG: Pro Datum können MEHRERE meal_plans-Zeilen existieren (die DB
