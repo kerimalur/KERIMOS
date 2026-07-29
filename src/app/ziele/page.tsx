@@ -5,6 +5,7 @@ import {
 import { Button, Card, CardTitle, Input, Label, Select, Badge, Empty, cx } from "@/components/ui";
 import { goalStanding, formatProgress, TONE_LABEL } from "@/lib/goals";
 import { dateLabel, todayISO } from "@/lib/format";
+import { createTradingClient } from "@/lib/supabase/trading";
 import {
   BUCKET_LABEL, GOAL_KIND_LABEL,
   type Activity, type Category, type GoalMilestone, type GoalProgress,
@@ -21,6 +22,18 @@ export default async function ZielePage() {
       supabase.from("categories").select("*").eq("archived", false).order("name"),
       supabase.from("activities").select("*").eq("archived", false).order("name"),
     ]);
+
+  // Zählt die dokumentierten Backtest-Trades aus der Trading-Datenbank.
+  // Null bedeutet: kein Zugang eingerichtet, dann gilt der manuelle Wert.
+  const backtestTrades = await (async () => {
+    const trading = createTradingClient();
+    if (!trading) return null;
+    const { data } = await trading.from("backtest_sessions").select("trades");
+    const alle = (data ?? []).flatMap(
+      (s) => (s.trades ?? []) as { result?: string }[]
+    );
+    return alle.filter((t) => t.result === "win" || t.result === "loss" || t.result === "be").length;
+  })();
 
   const goals = (goalRows ?? []) as GoalProgress[];
   const milestones = (msRows ?? []) as GoalMilestone[];
@@ -50,7 +63,12 @@ export default async function ZielePage() {
 
       {[...active, ...rest].map((g) => {
         const target = g.target_amount === null ? null : Number(g.target_amount);
-        const progress = Number(g.progress ?? 0);
+        // Backtest-Ziele zählen sich selbst: die Trades stehen im Journal,
+        // von Hand nachtragen wäre nur eine Fehlerquelle.
+        const istBacktest = /backtest/i.test(g.title);
+        const progress = istBacktest && backtestTrades !== null
+          ? backtestTrades
+          : Number(g.progress ?? 0);
         const s = goalStanding(progress, target, g.start_date, g.target_date, g.status);
         const own = milestones.filter((m) => m.goal_id === g.id);
 

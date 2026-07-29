@@ -6,6 +6,9 @@ import { FocusPrompt } from "@/components/focus-prompt";
 import { TradingCard } from "@/components/trading-card";
 import { TodayCard } from "@/components/today-card";
 import { AppointmentsCard } from "@/components/appointments-card";
+import { MorningCard } from "@/components/morning-card";
+import { PrepCard } from "@/components/prep-card";
+import { NewsCard } from "@/components/news-card";
 import { heuteISO, ZONE } from "@/lib/time";
 import type { Activity, FocusSession } from "@/lib/types";
 
@@ -52,9 +55,12 @@ export default async function HeutePage() {
 
       {/* Erst der Überblick, dann das Erfassen - unterwegs schaut man
           häufiger, als man eintippt. */}
+      <MorningCard />
       <AppointmentsCard />
       <TodayCard />
       <TradingCard />
+      <PrepCard />
+      <NewsCard />
 
       <QuickTrack sessions={sessions} activities={activities} />
 

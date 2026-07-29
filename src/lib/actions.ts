@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createGymClient } from "@/lib/supabase/gym";
 import { createMenuClient } from "@/lib/supabase/menu";
-import { heuteISO } from "@/lib/time";
+import { heuteISO, addDays } from "@/lib/time";
 import { type RecurrenceInterval } from "@/lib/types";
 
 async function requireUser() {
@@ -104,6 +104,47 @@ export async function deleteShoppingItem(fd: FormData) {
   check(await menu.from("shopping_list")
     .delete().eq("id", str(fd, "id")), "Einkauf löschen");
   revalidateEssen();
+}
+
+/* ----------------------------------------------------------------- Schlaf */
+
+/**
+ * Trägt Schlaf als Zeiteintrag ein - üblicherweise mit dem Vorschlag vom
+ * Morgen-Bildschirm. Über Mitternacht hinweg entstehen zwei Einträge, damit
+ * beide Tage stimmen; der Schlaf zählt ohnehin nicht als Wachzeit.
+ */
+export async function logSleep(fd: FormData) {
+  const { supabase, userId } = await requireUser();
+
+  const von = str(fd, "von");
+  const bis = str(fd, "bis");
+  const vonMin = zuMinute(von);
+  const bisMin = zuMinute(bis);
+  if (vonMin === null || bisMin === null) return;
+
+  const { data: schlaf } = await supabase.from("activities")
+    .select("id").eq("is_sleep", true).eq("archived", false).limit(1).maybeSingle();
+  if (!schlaf) throw new Error("Keine Aktivität mit Schlaf-Kennzeichen gefunden");
+
+  const heute = heuteISO();
+  const gestern = addDays(heute, -1);
+  const basis = {
+    user_id: userId, activity_id: schlaf.id,
+    source: "manual" as const, confirmed: true, note: "Schlaf",
+  };
+
+  // Vor Mitternacht der Vorabend, danach der heutige Morgen
+  const zeilen = bisMin > vonMin
+    ? [{ ...basis, entry_date: heute, start_minute: vonMin, minutes: bisMin - vonMin }]
+    : [
+        { ...basis, entry_date: gestern, start_minute: vonMin, minutes: 1440 - vonMin },
+        ...(bisMin > 0
+          ? [{ ...basis, entry_date: heute, start_minute: 0, minutes: bisMin }]
+          : []),
+      ];
+
+  check(await supabase.from("time_entries").insert(zeilen), "Schlaf eintragen");
+  revalidateTime(); revalidatePath("/heute"); revalidatePath("/");
 }
 
 /* --------------------------------------------------------------- Termine */

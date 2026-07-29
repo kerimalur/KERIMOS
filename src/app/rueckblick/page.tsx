@@ -7,6 +7,8 @@ import {
   weekStart as toWeekStart, addDays, fmtHours, pct, summarizeWeek, weekLabel, heuteISO,
 } from "@/lib/time";
 import { computeRunway } from "@/lib/runway";
+import { createGymClient, gymConfigured } from "@/lib/supabase/gym";
+import { createTradingClient } from "@/lib/supabase/trading";
 import type {
   DailyTime, RunwayInputs, WeeklyBucket, WeeklyReview,
 } from "@/lib/types";
@@ -71,6 +73,28 @@ export default async function RueckblickPage({
     incomeOverride: null, expenseOverride: null,
   });
 
+  // Trainingstage und Backtest-Trades der Woche - beide liegen in eigenen
+  // Datenbanken und lassen sich deshalb nicht aus v_daily_time lesen.
+  const trainingstage = await (async () => {
+    if (!gymConfigured()) return null;
+    const gym = createGymClient();
+    const { data } = await gym!.from("v_exercise_progress")
+      .select("day").gte("day", week).lte("day", weekEnd);
+    return new Set((data ?? []).map((r) => String(r.day))).size;
+  })();
+
+  const backtestNeu = await (async () => {
+    const trading = createTradingClient();
+    if (!trading) return null;
+    const { data } = await trading.from("backtest_sessions").select("trades");
+    const alle = (data ?? []).flatMap(
+      (s) => (s.trades ?? []) as { date?: string; result?: string }[]
+    );
+    return alle.filter(
+      (t) => t.date && t.date >= week && t.date <= weekEnd && t.result
+    ).length;
+  })();
+
   const goalHours = (summary.byBucket.find((b) => b.bucket === "ziel")?.minutes ?? 0) / 60;
   const review = (existing ?? null) as WeeklyReview | null;
   const past = (history ?? []) as WeeklyReview[];
@@ -87,6 +111,24 @@ export default async function RueckblickPage({
       gut.push(`${fmtHours(goalHours * 60)} an Zielen (${pct(summary.goalShare)} der Wachzeit)`);
     } else {
       schlecht.push("unter 1 h an Zielen gearbeitet");
+    }
+
+    // Schlaf: Ø der Nächte, für die etwas erfasst ist
+    const schlafNaechte = days.filter((d) => (d.sleep_hours ?? 0) > 0);
+    if (schlafNaechte.length > 0) {
+      const schnitt =
+        schlafNaechte.reduce((s, d) => s + (d.sleep_hours ?? 0), 0) / schlafNaechte.length;
+      const text = `Ø ${schnitt.toFixed(1).replace(".", ",")} h Schlaf`;
+      if (schnitt >= 7) gut.push(text); else schlecht.push(text);
+    }
+
+    // Training und Backtest kommen aus den Fachdatenbanken
+    if (trainingstage !== null) {
+      const text = `${trainingstage} Trainingstage`;
+      if (trainingstage >= 4) gut.push(text); else schlecht.push(`nur ${text}`);
+    }
+    if (backtestNeu !== null && backtestNeu > 0) {
+      gut.push(`${backtestNeu} Backtest-Trades dokumentiert`);
     }
 
     const leerlaufMin = summary.byBucket.find((b) => b.bucket === "leerlauf")?.minutes ?? 0;

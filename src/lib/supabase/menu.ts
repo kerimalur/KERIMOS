@@ -326,6 +326,69 @@ export async function fetchEssenOverview(): Promise<EssenOverview | null> {
   };
 }
 
+/**
+ * Reichweite der vorgekochten Boxen: bis wann decken sie den Plan?
+ * Grundlage für die Frage, ob gekocht, eingekauft oder geplant werden muss.
+ */
+export interface PrepStand {
+  /** Letzter Tag, für den noch eine Box zugeordnet ist. Null = keine. */
+  bis: string | null;
+  /** Tage ab heute, die noch gedeckt sind (0 = heute ist der letzte). */
+  tage: number | null;
+  /** Offene Posten auf der Einkaufsliste. */
+  offeneEinkaeufe: number;
+  /** Ungeplante Tage in den nächsten sieben. */
+  ungeplant: number;
+}
+
+export async function fetchPrepStand(): Promise<PrepStand | null> {
+  const supabase = createMenuClient();
+  if (!supabase) return null;
+
+  const heute = isoPlus(0);
+  const [{ data: portionen }, { count: offene }, { data: plaene }] = await Promise.all([
+    supabase.from("batch_portions").select("date")
+      .gte("date", heute).order("date", { ascending: false }).limit(1),
+    supabase.from("shopping_list")
+      .select("id", { count: "exact", head: true }).eq("checked", false),
+    supabase.from("meal_plans").select("id, date, kcal_total")
+      .gte("date", heute).lte("date", isoPlus(6)),
+  ]);
+
+  const bis = (portionen?.[0]?.date as string | undefined) ?? null;
+  const tage = bis
+    ? Math.round(
+        (new Date(bis + "T12:00:00").getTime() -
+          new Date(heute + "T12:00:00").getTime()) / 86400000
+      )
+    : null;
+
+  // Ungeplant = weder Kalorien noch Mahlzeiten am Tag
+  const planIds = (plaene ?? []).map((p) => p.id as string);
+  const mitMahlzeit = new Set<string>();
+  if (planIds.length > 0) {
+    const { data: meals } = await supabase.from("meals")
+      .select("plan_id").in("plan_id", planIds);
+    for (const m of meals ?? []) mitMahlzeit.add(m.plan_id as string);
+  }
+  const mitBox = new Set<string>();
+  const { data: alleBoxen } = await supabase.from("batch_portions")
+    .select("date").gte("date", heute).lte("date", isoPlus(6));
+  for (const b of alleBoxen ?? []) mitBox.add(b.date as string);
+
+  const geplanteDaten = new Set<string>([
+    ...(plaene ?? [])
+      .filter((p) => Number(p.kcal_total ?? 0) > 0 || mitMahlzeit.has(p.id as string))
+      .map((p) => p.date as string),
+    ...mitBox,
+  ]);
+
+  let ungeplant = 0;
+  for (let i = 0; i < 7; i++) if (!geplanteDaten.has(isoPlus(i))) ungeplant++;
+
+  return { bis, tage, offeneEinkaeufe: offene ?? 0, ungeplant };
+}
+
 /** Eine Zeile der Einkaufsliste. */
 export interface ShoppingItem {
   id: string;

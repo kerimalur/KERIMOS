@@ -6,6 +6,9 @@ import { FocusPrompt } from "@/components/focus-prompt";
 import { TradingCard } from "@/components/trading-card";
 import { TodayCard } from "@/components/today-card";
 import { AppointmentsCard } from "@/components/appointments-card";
+import { MorningCard } from "@/components/morning-card";
+import { PrepCard } from "@/components/prep-card";
+import { NewsCard } from "@/components/news-card";
 import { QuickSearch } from "@/components/quick-search";
 import { Button, Card } from "@/components/ui";
 import { seedLinks } from "@/lib/actions";
@@ -154,9 +157,12 @@ export default async function Start({
       </div>
 
       <div className="space-y-5">
+        <MorningCard />
         <AppointmentsCard />
         <TradingCard />
         <TodayCard />
+        <PrepCard />
+        <NewsCard />
 
         {reviewFehlt && (
           <Link href={`/rueckblick?w=${vorwoche}`}
