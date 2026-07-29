@@ -8,14 +8,17 @@ import type { MetadataRoute } from "next";
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    id: "/heute",
+    id: "/",
     name: "KerimOS",
     short_name: "KerimOS",
     description: "Zeit, Geld, Training und Trading an einem Ort.",
-    start_url: "/heute",
+    // Bewusst die normale Startseite: am Computer die volle Ansicht, auf dem
+    // Handy leitet die Startseite anhand des User-Agents auf /heute weiter.
+    start_url: "/",
     scope: "/",
     display: "standalone",
-    orientation: "portrait",
+    // "any" statt portrait - am Desktop wäre Hochformat erzwungener Unsinn
+    orientation: "any",
     background_color: "#FAF8F3",
     theme_color: "#5B8C7B",
     icons: [
