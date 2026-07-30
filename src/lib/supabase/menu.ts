@@ -225,7 +225,7 @@ export async function fetchEssenOverview(): Promise<EssenOverview | null> {
     const { data: mealRows } = await supabase.from("meals")
       .select("id, plan_id, meal_type, name, kcal_total, protein_total, eaten")
       .in("plan_id", plans.map((p) => p.id));
-    const meals = (mealRows ?? []) as (MenuMeal & { id: string; plan_id: string })[];
+    const meals = (mealRows ?? []) as unknown as (MenuMeal & { id: string; plan_id: string })[];
 
     // Zutaten nur für heute - dort will man sehen, was noch zu essen ist
     const itemsByMeal = await fetchMealItems(
@@ -412,7 +412,9 @@ export async function fetchFoods(suche = "", limit = 300): Promise<Food[]> {
   if (suche.trim()) q = q.ilike("name", `%${suche.trim()}%`);
 
   const { data } = await q;
-  return ((data ?? []) as Food[]).map((f) => ({
+  // Über unknown, weil PostgREST bei zusammengesetzten Abfragen keinen
+  // ableitbaren Typ liefert.
+  return ((data ?? []) as unknown as Food[]).map((f) => ({
     ...f,
     calories_per_100: Number(f.calories_per_100 ?? 0),
     protein_per_100: Number(f.protein_per_100 ?? 0),
@@ -450,7 +452,7 @@ export async function fetchRecipes(): Promise<Recipe[]> {
   const { data: rez } = await supabase.from("recipes")
     .select("id, name, meal_type, status, freetext, default_portions, is_favorite")
     .order("is_favorite", { ascending: false }).order("name");
-  const rezepte = (rez ?? []) as Omit<Recipe, "items">[];
+  const rezepte = (rez ?? []) as unknown as Omit<Recipe, "items">[];
   if (rezepte.length === 0) return [];
 
   const { data: items } = await supabase.from("recipe_items")
@@ -458,13 +460,145 @@ export async function fetchRecipes(): Promise<Recipe[]> {
     .in("recipe_id", rezepte.map((r) => r.id)).order("sort_order");
 
   const nachRezept = new Map<string, RecipeItem[]>();
-  for (const i of (items ?? []) as (RecipeItem & { recipe_id: string })[]) {
+  for (const i of (items ?? []) as unknown as (RecipeItem & { recipe_id: string })[]) {
     const list = nachRezept.get(i.recipe_id) ?? [];
     list.push({ ...i, amount_per_portion: Number(i.amount_per_portion ?? 0) });
     nachRezept.set(i.recipe_id, list);
   }
 
   return rezepte.map((r) => ({ ...r, items: nachRezept.get(r.id) ?? [] }));
+}
+
+/* ------------------------------------------------------------ Prep-Zyklen */
+
+export interface PrepPortion {
+  id: string;
+  date: string;
+  meal_type: string;
+  consumed: boolean;
+}
+
+export interface PrepBatch {
+  id: string;
+  recipe_id: string;
+  recipeName: string;
+  meal_type: string;
+  portions: number;
+  kcal: number;
+  protein: number;
+  cost: number;
+  /** Zutaten hochgerechnet auf den ganzen Topf. */
+  zutaten: { name: string; proPortion: number; total: number; unit: string }[];
+  boxen: PrepPortion[];
+}
+
+export interface PrepCycle {
+  id: string;
+  name: string;
+  cook_date: string;
+  start_date: string;
+  end_date: string;
+  status: string;
+  batches: PrepBatch[];
+}
+
+export const CYCLE_STATUS = ["geplant", "eingekauft", "gekocht", "erledigt"];
+
+/**
+ * Kochzyklen samt Töpfen, Boxen und hochgerechneten Zutaten.
+ *
+ * Die eingefrorenen Werte pro Portion stehen am Topf (prep_batches) - sie
+ * ändern sich nicht mehr, wenn später ein Rezept angepasst wird. Die
+ * Zutatenliste kommt dagegen aus dem Rezept, weil sie nur zum Kochen dient.
+ */
+export async function fetchCycles(limit = 8): Promise<PrepCycle[]> {
+  const supabase = createMenuClient();
+  if (!supabase) return [];
+
+  const { data: cycles } = await supabase.from("prep_cycles")
+    .select("id, name, cook_date, start_date, end_date, status")
+    .order("cook_date", { ascending: false }).limit(limit);
+  if (!cycles || cycles.length === 0) return [];
+
+  const { data: batches } = await supabase.from("prep_batches")
+    .select("id, cycle_id, recipe_id, meal_type, portions, kcal_per_portion, " +
+            "protein_per_portion, cost_per_portion")
+    .in("cycle_id", cycles.map((c) => c.id as string));
+
+  const batchIds = (batches ?? []).map((b) => b.id as string);
+  const recipeIds = [...new Set((batches ?? []).map((b) => b.recipe_id as string))];
+
+  const [{ data: portions }, { data: recipes }, { data: items }] = await Promise.all([
+    batchIds.length > 0
+      ? supabase.from("batch_portions")
+          .select("id, batch_id, date, meal_type, consumed")
+          .in("batch_id", batchIds).order("date")
+      : Promise.resolve({ data: [] }),
+    recipeIds.length > 0
+      ? supabase.from("recipes").select("id, name").in("id", recipeIds)
+      : Promise.resolve({ data: [] }),
+    recipeIds.length > 0
+      ? supabase.from("recipe_items")
+          .select("recipe_id, food_name, amount_per_portion, unit, sort_order")
+          .in("recipe_id", recipeIds).order("sort_order")
+      : Promise.resolve({ data: [] }),
+  ]);
+
+  const namen = new Map((recipes ?? []).map((r) => [r.id as string, r.name as string]));
+  const boxenNachBatch = new Map<string, PrepPortion[]>();
+  for (const p of portions ?? []) {
+    const list = boxenNachBatch.get(p.batch_id as string) ?? [];
+    list.push({
+      id: p.id as string, date: p.date as string,
+      meal_type: p.meal_type as string, consumed: Boolean(p.consumed),
+    });
+    boxenNachBatch.set(p.batch_id as string, list);
+  }
+  const zutatenNachRezept = new Map<string, { name: string; menge: number; unit: string }[]>();
+  for (const i of items ?? []) {
+    const list = zutatenNachRezept.get(i.recipe_id as string) ?? [];
+    list.push({
+      name: i.food_name as string,
+      menge: Number(i.amount_per_portion ?? 0),
+      unit: (i.unit as string) ?? "g",
+    });
+    zutatenNachRezept.set(i.recipe_id as string, list);
+  }
+
+  const batchesNachCycle = new Map<string, PrepBatch[]>();
+  for (const b of batches ?? []) {
+    const portionen = Number(b.portions ?? 0);
+    const recipeId = b.recipe_id as string;
+    const list = batchesNachCycle.get(b.cycle_id as string) ?? [];
+    list.push({
+      id: b.id as string,
+      recipe_id: recipeId,
+      recipeName: namen.get(recipeId) ?? "Unbekanntes Rezept",
+      meal_type: b.meal_type as string,
+      portions: portionen,
+      kcal: Number(b.kcal_per_portion ?? 0),
+      protein: Number(b.protein_per_portion ?? 0),
+      cost: Number(b.cost_per_portion ?? 0),
+      zutaten: (zutatenNachRezept.get(recipeId) ?? []).map((z) => ({
+        name: z.name,
+        proPortion: z.menge,
+        total: Math.round(z.menge * portionen * 100) / 100,
+        unit: z.unit,
+      })),
+      boxen: boxenNachBatch.get(b.id as string) ?? [],
+    });
+    batchesNachCycle.set(b.cycle_id as string, list);
+  }
+
+  return cycles.map((c) => ({
+    id: c.id as string,
+    name: (c.name as string) ?? "",
+    cook_date: c.cook_date as string,
+    start_date: c.start_date as string,
+    end_date: c.end_date as string,
+    status: c.status as string,
+    batches: batchesNachCycle.get(c.id as string) ?? [],
+  }));
 }
 
 /* ------------------------------------------------------------ Tagesplan */
@@ -661,7 +795,7 @@ export async function fetchTodayMenu(): Promise<TodayMenu | null> {
     fetchPrepMeals(supabase, today, today, today),
   ]);
 
-  const mealRows = (meals ?? []) as (MenuMeal & { id: string })[];
+  const mealRows = (meals ?? []) as unknown as (MenuMeal & { id: string })[];
   const itemsByMeal = await fetchMealItems(supabase, mealRows.map((m) => m.id));
   const direkt: MenuMeal[] = mealRows.map((m) => ({ ...m, items: itemsByMeal.get(m.id) }));
   const bekannt = new Set(direkt.map((m) => `${m.meal_type}|${m.name}`));

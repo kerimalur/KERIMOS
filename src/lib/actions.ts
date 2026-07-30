@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createGymClient } from "@/lib/supabase/gym";
 import { createMenuClient } from "@/lib/supabase/menu";
 import { heuteISO, addDays } from "@/lib/time";
+import { rechne, summe } from "@/lib/nutrition";
 import { type RecurrenceInterval } from "@/lib/types";
 
 async function requireUser() {
@@ -95,6 +96,223 @@ export async function addShoppingItem(fd: FormData) {
     checked: false,
   }), "Einkauf hinzufügen");
   revalidateEssen();
+}
+
+/* ------------------------------------------------ Menüplan: Prep-Zyklen */
+
+const revalidatePrep = () => {
+  ["/m/Essen/prep", "/m/Essen/plan", "/m/Essen", "/heute", "/"]
+    .forEach((p) => revalidatePath(p));
+};
+
+/** Alle Tage von start bis ende, einschliesslich. */
+function tageZwischen(start: string, ende: string): string[] {
+  const out: string[] = [];
+  let cursor = start;
+  // Sicherheitsnetz gegen kaputte Eingaben
+  for (let i = 0; i < 60 && cursor <= ende; i++) {
+    out.push(cursor);
+    cursor = addDays(cursor, 1);
+  }
+  return out;
+}
+
+type MenuClientTyp = NonNullable<ReturnType<typeof createMenuClient>>;
+
+/** Nährwerte und Kosten für eine Portion eines Rezepts. */
+async function werteProPortion(menu: MenuClientTyp, recipeId: string) {
+  const { data: items } = await menu.from("recipe_items")
+    .select("food_id, amount_per_portion, unit").eq("recipe_id", recipeId);
+
+  const foodIds = (items ?? [])
+    .map((i) => i.food_id as string | null).filter(Boolean) as string[];
+  const { data: foods } = foodIds.length > 0
+    ? await menu.from("foods")
+        .select("id, calories_per_100, protein_per_100, carbs_per_100, fat_per_100, cost_per_100")
+        .in("id", foodIds)
+    : { data: [] };
+
+  const byId = new Map((foods ?? []).map((f) => [f.id as string, f]));
+  const teile = (items ?? []).map((i) => {
+    const f = i.food_id ? byId.get(i.food_id as string) : undefined;
+    if (!f) return { kcal: 0, protein: 0, carbs: 0, fat: 0, cost: 0 };
+    return rechne(
+      {
+        calories_per_100: Number(f.calories_per_100 ?? 0),
+        protein_per_100: Number(f.protein_per_100 ?? 0),
+        carbs_per_100: Number(f.carbs_per_100 ?? 0),
+        fat_per_100: Number(f.fat_per_100 ?? 0),
+        cost_per_100: Number(f.cost_per_100 ?? 0),
+      },
+      Number(i.amount_per_portion ?? 0),
+      String(i.unit ?? "g")
+    );
+  });
+  return summe(teile);
+}
+
+/** Stellt sicher, dass für jeden Tag ein Tagesplan existiert. */
+async function tagesplaeneSichern(menu: MenuClientTyp, tage: string[]) {
+  if (tage.length === 0) return;
+  const { data } = await menu.from("meal_plans").select("date").in("date", tage);
+  const vorhanden = new Set((data ?? []).map((p) => p.date as string));
+  const fehlend = tage.filter((t) => !vorhanden.has(t));
+  if (fehlend.length > 0) {
+    await menu.from("meal_plans").insert(fehlend.map((date) => ({ date })));
+  }
+}
+
+export interface BatchEingabe {
+  recipe_id: string;
+  meal_type: string;
+  portions: number;
+}
+
+/**
+ * Legt einen Kochzyklus an: Töpfe mit eingefrorenen Werten pro Portion,
+ * Boxen automatisch je ein Stück pro Tag und Slot. Als frei markierte Tage
+ * bleiben aussen vor; überzählige Portionen bleiben unverteilt und lassen
+ * sich später im Plan von Hand zuweisen.
+ */
+export async function createCycle(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+
+  const cookDate = str(fd, "cook_date");
+  const start = str(fd, "start_date");
+  const ende = str(fd, "end_date");
+  const batches = JSON.parse(String(fd.get("batches") ?? "[]")) as BatchEingabe[];
+  if (!cookDate || !start || !ende || ende < start || batches.length === 0) return;
+
+  const { data: cycle, error } = await menu.from("prep_cycles").insert({
+    name: str(fd, "name") || "",
+    cook_date: cookDate, start_date: start, end_date: ende, status: "geplant",
+  }).select("id").single();
+  if (error) throw new Error(`Zyklus anlegen: ${error.message}`);
+
+  const alle = tageZwischen(start, ende);
+  const { data: freie } = await menu.from("day_markers")
+    .select("date").in("date", alle).eq("is_free", true);
+  const gesperrt = new Set((freie ?? []).map((d) => d.date as string));
+  const nutzbar = alle.filter((d) => !gesperrt.has(d));
+
+  for (const b of batches) {
+    const portionen = Math.min(14, Math.max(1, Math.round(b.portions)));
+    const w = await werteProPortion(menu, b.recipe_id);
+
+    const { data: batch, error: bError } = await menu.from("prep_batches").insert({
+      cycle_id: cycle.id,
+      recipe_id: b.recipe_id,
+      meal_type: b.meal_type,
+      portions: portionen,
+      kcal_per_portion: w.kcal,
+      protein_per_portion: w.protein,
+      carbs_per_portion: w.carbs,
+      fat_per_portion: w.fat,
+      cost_per_portion: w.cost,
+    }).select("id").single();
+    if (bError) throw new Error(`Topf anlegen: ${bError.message}`);
+
+    const ziele = nutzbar.slice(0, portionen);
+    if (ziele.length > 0) {
+      check(await menu.from("batch_portions").insert(
+        ziele.map((date) => ({ batch_id: batch.id, date, meal_type: b.meal_type }))
+      ), "Boxen verteilen");
+    }
+  }
+
+  await tagesplaeneSichern(menu, alle);
+  revalidatePrep();
+}
+
+/**
+ * Portionenzahl eines Topfes ändern und die Boxen angleichen:
+ * zu viele fallen hinten weg, fehlende landen auf noch freien Tagen.
+ */
+export async function updateBatchPortions(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+
+  const batchId = str(fd, "id");
+  const portionen = Math.min(14, Math.max(1, Math.round(numOr(fd, "portions", 1))));
+  if (!batchId) return;
+
+  const { data: batch } = await menu.from("prep_batches")
+    .select("id, cycle_id, meal_type").eq("id", batchId).maybeSingle();
+  if (!batch) return;
+
+  check(await menu.from("prep_batches").update({ portions: portionen })
+    .eq("id", batchId), "Portionen speichern");
+
+  const { data: boxen } = await menu.from("batch_portions")
+    .select("id, date").eq("batch_id", batchId).order("date");
+  const aktuell = boxen ?? [];
+
+  if (aktuell.length > portionen) {
+    const weg = aktuell.slice(portionen).map((b) => b.id as string);
+    await menu.from("batch_portions").delete().in("id", weg);
+  } else if (aktuell.length < portionen) {
+    const { data: cycle } = await menu.from("prep_cycles")
+      .select("start_date, end_date").eq("id", batch.cycle_id as string).maybeSingle();
+    if (!cycle) return;
+
+    const alle = tageZwischen(cycle.start_date as string, cycle.end_date as string);
+    const { data: freie } = await menu.from("day_markers")
+      .select("date").in("date", alle).eq("is_free", true);
+    const gesperrt = new Set((freie ?? []).map((d) => d.date as string));
+    const belegt = new Set(aktuell.map((b) => b.date as string));
+    const offen = alle.filter((d) => !gesperrt.has(d) && !belegt.has(d));
+    const neu = offen.slice(0, portionen - aktuell.length);
+
+    if (neu.length > 0) {
+      await menu.from("batch_portions").insert(
+        neu.map((date) => ({
+          batch_id: batchId, date, meal_type: batch.meal_type as string,
+        }))
+      );
+      await tagesplaeneSichern(menu, neu);
+    }
+  }
+  revalidatePrep();
+}
+
+export async function setCycleStatus(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  const status = str(fd, "status");
+  if (!["geplant", "eingekauft", "gekocht", "erledigt"].includes(status)) return;
+  check(await menu.from("prep_cycles").update({ status })
+    .eq("id", str(fd, "id")), "Status speichern");
+  revalidatePrep();
+}
+
+export async function deleteCycle(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  check(await menu.from("prep_cycles").delete().eq("id", str(fd, "id")),
+    "Zyklus löschen");
+  revalidatePrep();
+}
+
+/** Box einem Tag zuweisen - für überzählige Portionen aus dem Kühlschrank. */
+export async function addPortionToDay(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  const batchId = str(fd, "batch_id");
+  const date = str(fd, "date");
+  const mealType = str(fd, "meal_type");
+  if (!batchId || !date || !mealType) return;
+
+  check(await menu.from("batch_portions").insert({
+    batch_id: batchId, date, meal_type: mealType,
+  }), "Box zuweisen");
+  await tagesplaeneSichern(menu, [date]);
+  revalidatePrep();
 }
 
 /* ------------------------------------------- Menüplan: Lebensmittel */
