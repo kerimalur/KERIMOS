@@ -75,7 +75,7 @@ export async function TodayCard() {
       <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
         {/* Menü heute - Klick führt in den Essen-Modus */}
         <div className="min-w-0">
-          <Link href="/m/Essen"
+          <Link href="/m/Essen/plan?ansicht=tag"
             className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted transition hover:text-ink-soft">
             Essen heute →
           </Link>

@@ -51,13 +51,10 @@ export interface TodayMenu {
   meals: MenuMeal[];
 }
 
-export const MEAL_ORDER = ["fruehstueck", "mittagessen", "abendessen", "snack"];
-export const MEAL_LABEL: Record<string, string> = {
-  fruehstueck: "Frühstück",
-  mittagessen: "Mittag",
-  abendessen: "Abend",
-  snack: "Snack",
-};
+// Beschriftungen liegen in lib/menu-labels.ts, damit auch Client-Komponenten
+// sie nutzen können - diese Datei ist serverseitig gesperrt.
+export { MEAL_ORDER, MEAL_LABEL } from "@/lib/menu-labels";
+import { MEAL_ORDER } from "@/lib/menu-labels";
 
 interface PlanRow {
   id: string;
@@ -387,6 +384,173 @@ export async function fetchPrepStand(): Promise<PrepStand | null> {
   for (let i = 0; i < 7; i++) if (!geplanteDaten.has(isoPlus(i))) ungeplant++;
 
   return { bis, tage, offeneEinkaeufe: offene ?? 0, ungeplant };
+}
+
+/* ------------------------------------------------------------ Tagesplan */
+
+export interface PlanMeal {
+  id: string;
+  meal_type: string;
+  name: string;
+  kcal_total: number;
+  protein_total: number;
+  eaten: boolean;
+  items: { id: string; food_name: string; amount: number; unit: string; eaten: boolean }[];
+}
+
+export interface PlanPortion {
+  id: string;
+  meal_type: string;
+  consumed: boolean;
+  name: string;
+  kcal: number;
+  protein: number;
+}
+
+export interface DayView {
+  date: string;
+  kcal: number;
+  protein: number;
+  /** Bereits abgehakt. */
+  gegessenKcal: number;
+  gegessenProtein: number;
+  meals: PlanMeal[];
+  portions: PlanPortion[];
+  marker: { training: boolean; eingeladen: boolean; is_free: boolean } | null;
+  ziele: { kcal: number; protein: number };
+}
+
+/** Ein Tag mit allem, was die Plan-Ansicht braucht. */
+export async function fetchDayView(date: string): Promise<DayView | null> {
+  const supabase = createMenuClient();
+  if (!supabase) return null;
+
+  const [{ data: plans }, { data: portionRows }, { data: markerRows }, { data: settingRows }] =
+    await Promise.all([
+      supabase.from("meal_plans")
+        .select("id, kcal_total, protein_total").eq("date", date),
+      supabase.from("batch_portions")
+        .select("id, meal_type, consumed, batch_id").eq("date", date),
+      supabase.from("day_markers")
+        .select("training, eingeladen, is_free").eq("date", date).maybeSingle(),
+      supabase.from("settings").select("key, value")
+        .in("key", ["kcal_ziel", "protein_ziel"]),
+    ]);
+
+  const planIds = (plans ?? []).map((p) => p.id as string);
+
+  // Mahlzeiten samt Positionen
+  const meals: PlanMeal[] = [];
+  if (planIds.length > 0) {
+    const { data: mealRows } = await supabase.from("meals")
+      .select("id, meal_type, name, kcal_total, protein_total, eaten")
+      .in("plan_id", planIds);
+    const ids = (mealRows ?? []).map((m) => m.id as string);
+    const itemsByMeal = new Map<string, PlanMeal["items"]>();
+    if (ids.length > 0) {
+      const { data: itemRows } = await supabase.from("meal_items")
+        .select("id, meal_id, food_name, amount, unit, eaten").in("meal_id", ids);
+      for (const i of itemRows ?? []) {
+        const list = itemsByMeal.get(i.meal_id as string) ?? [];
+        list.push({
+          id: i.id as string, food_name: i.food_name as string,
+          amount: Number(i.amount ?? 0), unit: (i.unit as string) ?? "g",
+          eaten: Boolean(i.eaten),
+        });
+        itemsByMeal.set(i.meal_id as string, list);
+      }
+    }
+    for (const m of mealRows ?? []) {
+      meals.push({
+        id: m.id as string, meal_type: m.meal_type as string, name: m.name as string,
+        kcal_total: Number(m.kcal_total ?? 0), protein_total: Number(m.protein_total ?? 0),
+        eaten: Boolean(m.eaten), items: itemsByMeal.get(m.id as string) ?? [],
+      });
+    }
+  }
+
+  // Boxen samt Rezeptname und Werten pro Portion
+  const portions: PlanPortion[] = [];
+  const batchIds = [...new Set((portionRows ?? []).map((p) => p.batch_id as string))];
+  if (batchIds.length > 0) {
+    const { data: batches } = await supabase.from("prep_batches")
+      .select("id, recipe_id, kcal_per_portion, protein_per_portion").in("id", batchIds);
+    const byId = new Map((batches ?? []).map((b) => [b.id as string, b]));
+    const recipeIds = [...new Set((batches ?? []).map((b) => b.recipe_id as string))];
+    const namen = new Map<string, string>();
+    if (recipeIds.length > 0) {
+      const { data: rez } = await supabase.from("recipes")
+        .select("id, name").in("id", recipeIds);
+      for (const r of rez ?? []) namen.set(r.id as string, r.name as string);
+    }
+    for (const p of portionRows ?? []) {
+      const b = byId.get(p.batch_id as string);
+      portions.push({
+        id: p.id as string, meal_type: p.meal_type as string,
+        consumed: Boolean(p.consumed),
+        name: (b && namen.get(b.recipe_id as string)) ?? "Box",
+        kcal: Number(b?.kcal_per_portion ?? 0),
+        protein: Number(b?.protein_per_portion ?? 0),
+      });
+    }
+  }
+
+  const settings = new Map((settingRows ?? []).map((s) => [s.key as string, s.value as string]));
+
+  // Geplant kommt aus meal_plans (dort addieren die Trigger beide Quellen);
+  // gegessen wird aus den Häkchen gerechnet.
+  const kcal = Math.max(0, ...(plans ?? []).map((p) => Number(p.kcal_total ?? 0)));
+  const protein = Math.max(0, ...(plans ?? []).map((p) => Number(p.protein_total ?? 0)));
+
+  const gegessenKcal =
+    meals.filter((m) => m.eaten).reduce((s, m) => s + m.kcal_total, 0) +
+    portions.filter((p) => p.consumed).reduce((s, p) => s + p.kcal, 0);
+  const gegessenProtein =
+    meals.filter((m) => m.eaten).reduce((s, m) => s + m.protein_total, 0) +
+    portions.filter((p) => p.consumed).reduce((s, p) => s + p.protein, 0);
+
+  return {
+    date,
+    kcal: kcal || meals.reduce((s, m) => s + m.kcal_total, 0)
+      + portions.reduce((s, p) => s + p.kcal, 0),
+    protein: protein || meals.reduce((s, m) => s + m.protein_total, 0)
+      + portions.reduce((s, p) => s + p.protein, 0),
+    gegessenKcal, gegessenProtein,
+    meals: meals.sort(
+      (a, b) => MEAL_ORDER.indexOf(a.meal_type) - MEAL_ORDER.indexOf(b.meal_type)
+    ),
+    portions: portions.sort(
+      (a, b) => MEAL_ORDER.indexOf(a.meal_type) - MEAL_ORDER.indexOf(b.meal_type)
+    ),
+    marker: (markerRows as DayView["marker"]) ?? null,
+    ziele: {
+      kcal: parseInt(settings.get("kcal_ziel") ?? "") || 2000,
+      protein: parseInt(settings.get("protein_ziel") ?? "") || 150,
+    },
+  };
+}
+
+/** Tagessummen eines Zeitraums - für Wochen- und Monatsraster. */
+export async function fetchRangeTotals(
+  von: string, bis: string
+): Promise<Map<string, { kcal: number; protein: number }>> {
+  const result = new Map<string, { kcal: number; protein: number }>();
+  const supabase = createMenuClient();
+  if (!supabase) return result;
+
+  const { data } = await supabase.from("meal_plans")
+    .select("date, kcal_total, protein_total").gte("date", von).lte("date", bis);
+
+  for (const p of data ?? []) {
+    const d = p.date as string;
+    const kcal = Number(p.kcal_total ?? 0);
+    const vorhanden = result.get(d);
+    // Mehrere Zeilen pro Datum kommen vor - die vollere gewinnt
+    if (!vorhanden || kcal > vorhanden.kcal) {
+      result.set(d, { kcal, protein: Number(p.protein_total ?? 0) });
+    }
+  }
+  return result;
 }
 
 /** Eine Zeile der Einkaufsliste. */

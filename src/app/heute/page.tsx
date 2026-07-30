@@ -9,6 +9,7 @@ import { AppointmentsCard } from "@/components/appointments-card";
 import { MorningCard } from "@/components/morning-card";
 import { PrepCard } from "@/components/prep-card";
 import { NewsCard } from "@/components/news-card";
+import { Logo } from "@/components/logo";
 import { heuteISO, ZONE } from "@/lib/time";
 import type { Activity, FocusSession } from "@/lib/types";
 
@@ -44,9 +45,7 @@ export default async function HeutePage() {
   return (
     <div className="mx-auto max-w-md space-y-4 py-4">
       <div className="flex items-center gap-3">
-        <span className="grid h-9 w-9 place-items-center rounded-xl bg-accent text-base font-medium text-white">
-          K
-        </span>
+        <Logo inverted className="h-9 w-9 rounded-xl" />
         <div>
           <h1 className="text-lg font-medium leading-tight text-ink">Heute</h1>
           <p className="text-xs text-ink-muted">{datum}</p>

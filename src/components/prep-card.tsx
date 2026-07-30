@@ -46,18 +46,13 @@ export async function PrepCard() {
       <div className="mt-3 flex flex-wrap gap-2">
         <Link href={`${MENU_APP}/prep`} target="_blank" rel="noopener noreferrer"
           className={knopf}>
-          Schon geprept — Boxen eintragen
+          Schon geprept — Boxen eintragen ↗
         </Link>
-        <Link href={`${MENU_APP}/einkaufsliste`} target="_blank" rel="noopener noreferrer"
-          className={knopf}>
+        <Link href="/m/Essen/einkauf" className={knopf}>
           Einkaufsliste schreiben
         </Link>
-        <Link href={`${MENU_APP}/plan`} target="_blank" rel="noopener noreferrer"
-          className={knopf}>
+        <Link href="/m/Essen/plan?ansicht=woche" className={knopf}>
           Menü planen
-        </Link>
-        <Link href="/m/Essen" className={knopf}>
-          Übersicht
         </Link>
       </div>
     </Card>

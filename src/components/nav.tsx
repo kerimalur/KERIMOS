@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cx } from "./ui";
+import { Logo } from "./logo";
 
 type Section = "geld" | "zeit" | "gym" | "trading" | null;
 
@@ -107,9 +108,7 @@ export function Nav({ email }: { email?: string }) {
         <div className="flex flex-wrap items-center gap-x-1 gap-y-2 pt-4">
           <Link href="/" className="mr-5 flex items-center gap-2.5"
             title="Zurück zur Auswahl">
-            <span className="grid h-7 w-7 place-items-center rounded-lg bg-accent text-sm font-medium text-white">
-              K
-            </span>
+            <Logo inverted className="h-7 w-7 rounded-lg" />
             <span className="text-sm font-medium text-ink">
               {SECTION_LABEL[section]}
             </span>

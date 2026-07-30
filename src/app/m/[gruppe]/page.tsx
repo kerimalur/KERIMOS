@@ -248,6 +248,8 @@ export default async function ModusPage({
         {n.includes("geld") && <GeldKarte />}
         {n.includes("zeit") && <ZeitKarte />}
         {n.includes("gym") && <GymKarte />}
+        {/* "Essen" hat seit der Übernahme eigene Seiten unter /m/Essen -
+            diese Karten greifen nur noch, falls eine Gruppe anders heisst. */}
         {n.includes("essen") && <EssenKarte />}
         {n.includes("essen") && <EinkaufKarte />}
 

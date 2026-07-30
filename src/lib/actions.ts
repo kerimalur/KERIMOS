@@ -97,6 +97,79 @@ export async function addShoppingItem(fd: FormData) {
   revalidateEssen();
 }
 
+/* ------------------------------------------------------ Menüplan: Tagesplan */
+// Alle Zugriffe laufen serverseitig über den Menü-Zugang. Die Tagessummen
+// rechnen Trigger in der Datenbank - hier wird nie von Hand addiert.
+
+const revalidatePlan = () => {
+  ["/m/Essen", "/m/Essen/plan", "/heute", "/"].forEach((p) => revalidatePath(p));
+};
+
+export async function toggleMealEaten(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  check(await menu.from("meals")
+    .update({ eaten: fd.get("eaten") === "true" })
+    .eq("id", str(fd, "id")), "Mahlzeit abhaken");
+  revalidatePlan();
+}
+
+export async function toggleMealItemEaten(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  check(await menu.from("meal_items")
+    .update({ eaten: fd.get("eaten") === "true" })
+    .eq("id", str(fd, "id")), "Position abhaken");
+  revalidatePlan();
+}
+
+export async function togglePortionConsumed(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  check(await menu.from("batch_portions")
+    .update({ consumed: fd.get("consumed") === "true" })
+    .eq("id", str(fd, "id")), "Box abhaken");
+  revalidatePlan();
+}
+
+/** Nimmt eine Box aus dem Tag - der Zyklus behält Topf und Portionen. */
+export async function removePortionFromDay(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  check(await menu.from("batch_portions")
+    .delete().eq("id", str(fd, "id")), "Box entfernen");
+  revalidatePlan();
+}
+
+export async function deletePlanMeal(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  check(await menu.from("meals")
+    .delete().eq("id", str(fd, "id")), "Mahlzeit löschen");
+  revalidatePlan();
+}
+
+/** Tagesmarker setzen: Training, Eingeladen, freier Tag. */
+export async function setMenuDayMarker(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  const date = str(fd, "date");
+  const feld = str(fd, "feld");
+  if (!date || !["training", "eingeladen", "is_free"].includes(feld)) return;
+
+  check(await menu.from("day_markers").upsert(
+    { date, [feld]: fd.get("wert") === "true" },
+    { onConflict: "date" }
+  ), "Tagesmarker speichern");
+  revalidatePlan();
+}
+
 export async function deleteShoppingItem(fd: FormData) {
   await requireUser();
   const menu = createMenuClient();

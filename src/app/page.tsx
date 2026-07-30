@@ -9,6 +9,7 @@ import { AppointmentsCard } from "@/components/appointments-card";
 import { MorningCard } from "@/components/morning-card";
 import { PrepCard } from "@/components/prep-card";
 import { NewsCard } from "@/components/news-card";
+import { Logo } from "@/components/logo";
 import { QuickSearch } from "@/components/quick-search";
 import { Button, Card } from "@/components/ui";
 import { seedLinks } from "@/lib/actions";
@@ -145,9 +146,7 @@ export default async function Start({
     <div className="py-6">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
-          <span className="grid h-11 w-11 place-items-center rounded-2xl bg-accent text-lg font-medium text-white">
-            K
-          </span>
+          <Logo inverted className="h-11 w-11 rounded-2xl" />
           <div>
             <h1 className="text-2xl font-medium leading-tight text-ink">KerimOS</h1>
             <p className="text-sm text-ink-muted">Was willst du jetzt tun?</p>
