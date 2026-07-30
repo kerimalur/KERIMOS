@@ -25,7 +25,9 @@ export function EssenTabs() {
     if (href === "/m/Essen/mehr") {
       return path.startsWith(href)
         || path.startsWith("/m/Essen/rezepte")
-        || path.startsWith("/m/Essen/lebensmittel");
+        || path.startsWith("/m/Essen/lebensmittel")
+        || path.startsWith("/m/Essen/analyse")
+        || path.startsWith("/m/Essen/einstellungen");
     }
     return path.startsWith(href);
   };

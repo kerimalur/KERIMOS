@@ -338,6 +338,7 @@ export async function createFood(fd: FormData) {
     carbs_per_100: numOr(fd, "carbs", 0),
     fat_per_100: numOr(fd, "fat", 0),
     cost_per_100: numOr(fd, "cost", 0),
+    category_id: str(fd, "category_id") || null,
   }), "Lebensmittel anlegen");
   revalidateEssenAlles();
 }
@@ -349,14 +350,38 @@ export async function updateFood(fd: FormData) {
   const id = str(fd, "id");
   if (!id) return;
 
-  check(await menu.from("foods").update({
+  const felder: Record<string, unknown> = {
     name: str(fd, "name"),
     calories_per_100: numOr(fd, "kcal", 0),
     protein_per_100: numOr(fd, "protein", 0),
     carbs_per_100: numOr(fd, "carbs", 0),
     fat_per_100: numOr(fd, "fat", 0),
     cost_per_100: numOr(fd, "cost", 0),
-  }).eq("id", id), "Lebensmittel speichern");
+  };
+  if (fd.has("category_id")) felder.category_id = str(fd, "category_id") || null;
+
+  check(await menu.from("foods").update(felder).eq("id", id), "Lebensmittel speichern");
+  revalidateEssenAlles();
+}
+
+/* ----------------------------------------- Menüplan: Lebensmittel-Kategorien */
+
+export async function createFoodCategory(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  const name = str(fd, "name");
+  if (!name) return;
+  check(await menu.from("food_categories").insert({ name }), "Kategorie anlegen");
+  revalidateEssenAlles();
+}
+
+export async function deleteFoodCategory(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  check(await menu.from("food_categories").delete().eq("id", str(fd, "id")),
+    "Kategorie löschen");
   revalidateEssenAlles();
 }
 
@@ -386,6 +411,7 @@ export async function createRecipe(fd: FormData) {
     default_portions: Math.min(14, Math.max(1, Math.round(numOr(fd, "portions", 3)))),
     freetext: str(fd, "freetext") || "",
     status: "bereit",
+    category_id: str(fd, "category_id") || null,
   }), "Rezept anlegen");
   revalidateEssenAlles();
 }
@@ -405,8 +431,30 @@ export async function updateRecipe(fd: FormData) {
   }
   if (fd.has("freetext")) felder.freetext = str(fd, "freetext");
   if (fd.has("favorite")) felder.is_favorite = fd.get("favorite") === "true";
+  if (fd.has("category_id")) felder.category_id = str(fd, "category_id") || null;
 
   check(await menu.from("recipes").update(felder).eq("id", id), "Rezept speichern");
+  revalidateEssenAlles();
+}
+
+/* --------------------------------------- Menüplan: Rezept-Vorlagen-Kategorien */
+
+export async function createRecipeCategory(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  const name = str(fd, "name");
+  if (!name) return;
+  check(await menu.from("template_categories").insert({ name }), "Kategorie anlegen");
+  revalidateEssenAlles();
+}
+
+export async function deleteRecipeCategory(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  check(await menu.from("template_categories").delete().eq("id", str(fd, "id")),
+    "Kategorie löschen");
   revalidateEssenAlles();
 }
 
@@ -459,6 +507,51 @@ export async function deleteRecipeItem(fd: FormData) {
   check(await menu.from("recipe_items").delete().eq("id", str(fd, "id")),
     "Zutat löschen");
   revalidateEssenAlles();
+}
+
+/* --------------------------------------------------- Menüplan: Einstellungen */
+
+const revalidateEinstellungen = () => {
+  ["/m/Essen/einstellungen", "/m/Essen/plan", "/m/Essen", "/heute", "/"]
+    .forEach((p) => revalidatePath(p));
+};
+
+/** Eine einzelne Einstellung speichern (Tagesziel, Standard-Mahlzeit, ...). */
+export async function saveMenuSetting(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  const key = str(fd, "key");
+  if (!key) return;
+  check(await menu.from("settings").upsert(
+    { key, value: str(fd, "value"), updated_at: new Date().toISOString() },
+    { onConflict: "key" }
+  ), "Einstellung speichern");
+  revalidateEinstellungen();
+}
+
+/** Regel, die an Tagen mit Marker (Training/Eingeladen) ein Rezept vorschlägt. */
+export async function addEventRule(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  const eventType = str(fd, "event_type");
+  const mealType = str(fd, "meal_type");
+  const recipeId = str(fd, "recipe_id");
+  if (!["training", "eingeladen"].includes(eventType) || !recipeId) return;
+  check(await menu.from("event_meal_rules").insert({
+    event_type: eventType, meal_type: mealType, recipe_id: recipeId,
+  }), "Regel anlegen");
+  revalidateEinstellungen();
+}
+
+export async function deleteEventRule(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  check(await menu.from("event_meal_rules").delete().eq("id", str(fd, "id")),
+    "Regel löschen");
+  revalidateEinstellungen();
 }
 
 /* --------------------------------------- Menüplan: Mahlzeit anlegen */

@@ -13,24 +13,34 @@ interface Food {
   fat_per_100: number;
   cost_per_100: number;
   unit: string;
+  category_id: string | null;
 }
+interface Category { id: string; name: string }
 
 /**
  * Lebensmittel-Datenbank. Alle Werte beziehen sich auf 100 Gramm bzw. 100
  * Milliliter - bei Stück auf ein Stück. Aus diesen Zahlen rechnet alles
  * andere: Rezepte, Mahlzeiten, Prep-Töpfe.
  */
-export function FoodList({ foods }: { foods: Food[] }) {
+export function FoodList({ foods, categories }: { foods: Food[]; categories: Category[] }) {
   const router = useRouter();
   const [suche, setSuche] = useState("");
   const [neu, setNeu] = useState(false);
   const [offen, setOffen] = useState<string | null>(null);
+  const [kategorieFilter, setKategorieFilter] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const kategorieName = useMemo(
+    () => new Map(categories.map((c) => [c.id, c.name])), [categories]
+  );
 
   const sichtbar = useMemo(() => {
     const q = suche.trim().toLowerCase();
-    return q ? foods.filter((f) => f.name.toLowerCase().includes(q)) : foods;
-  }, [foods, suche]);
+    return foods.filter((f) => {
+      if (kategorieFilter && f.category_id !== kategorieFilter) return false;
+      return q ? f.name.toLowerCase().includes(q) : true;
+    });
+  }, [foods, suche, kategorieFilter]);
 
   async function lauf(action: (fd: FormData) => Promise<void>, fd: FormData) {
     if (busy) return;
@@ -79,6 +89,15 @@ export function FoodList({ foods }: { foods: Food[] }) {
           {zahl("KH", "carbs")}
           {zahl("Fett", "fat")}
           {zahl("CHF", "cost")}
+          {categories.length > 0 && (
+            <div className="w-36">
+              <label htmlFor="f-kat" className="mb-1 block text-xs text-ink-muted">Kategorie</label>
+              <Select id="f-kat" name="category_id" defaultValue="">
+                <option value="">Keine</option>
+                {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </Select>
+            </div>
+          )}
           <Button type="submit">Anlegen</Button>
           <p className="w-full text-xs text-ink-muted">
             Werte pro 100 g bzw. 100 ml — bei Stück pro Stück.
@@ -86,8 +105,17 @@ export function FoodList({ foods }: { foods: Food[] }) {
         </form>
       )}
 
-      <Input value={suche} onChange={(e) => setSuche(e.target.value)}
-        placeholder={`${foods.length} Lebensmittel — suchen …`} className="mb-3" />
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <Input value={suche} onChange={(e) => setSuche(e.target.value)}
+          placeholder={`${foods.length} Lebensmittel — suchen …`} className="min-w-48 flex-1" />
+        {categories.length > 0 && (
+          <Select value={kategorieFilter} onChange={(e) => setKategorieFilter(e.target.value)}
+            className="w-40">
+            <option value="">Alle Kategorien</option>
+            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </Select>
+        )}
+      </div>
 
       {sichtbar.length === 0 ? (
         <Empty>Nichts gefunden.</Empty>
@@ -105,6 +133,8 @@ export function FoodList({ foods }: { foods: Food[] }) {
                     {f.fat_per_100 > 0 && ` · ${f.fat_per_100} g F`}
                     {f.cost_per_100 > 0 && ` · CHF ${f.cost_per_100.toFixed(2)}`}
                     {" "}/ 100 {f.unit}
+                    {f.category_id && kategorieName.get(f.category_id) &&
+                      ` · ${kategorieName.get(f.category_id)}`}
                   </span>
                 </button>
                 <button onClick={() => lauf(deleteFood, formOf({ id: f.id }))}
@@ -127,6 +157,17 @@ export function FoodList({ foods }: { foods: Food[] }) {
                   {zahl("KH", "carbs", f.carbs_per_100)}
                   {zahl("Fett", "fat", f.fat_per_100)}
                   {zahl("CHF", "cost", f.cost_per_100)}
+                  {categories.length > 0 && (
+                    <div className="w-36">
+                      <label className="mb-1 block text-xs text-ink-muted">Kategorie</label>
+                      <Select name="category_id" defaultValue={f.category_id ?? ""}>
+                        <option value="">Keine</option>
+                        {categories.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </Select>
+                    </div>
+                  )}
                   <Button variant="ghost" type="submit">Speichern</Button>
                 </form>
               )}

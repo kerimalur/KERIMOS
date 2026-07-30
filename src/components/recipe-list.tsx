@@ -15,32 +15,40 @@ interface Item {
   amount_per_portion: number; unit: string; sort_order: number;
 }
 interface Recipe {
-  id: string; name: string; meal_type: string; status: string;
+  id: string; name: string; meal_type: string; category_id: string | null; status: string;
   freetext: string; default_portions: number; is_favorite: boolean; items: Item[];
 }
+interface Category { id: string; name: string }
 
 /**
  * Rezepte: Mengen pro Portion, alles direkt bearbeitbar.
  * Ein Rezept ist die Vorlage - was daraus wird, entscheidet der Prep-Zyklus
  * (mal drei Portionen) oder eine einzelne Mahlzeit (genau eine).
  */
-export function RecipeList({ recipes, foods }: { recipes: Recipe[]; foods: Food[] }) {
+export function RecipeList({
+  recipes, foods, categories,
+}: { recipes: Recipe[]; foods: Food[]; categories: Category[] }) {
   const router = useRouter();
   const [offen, setOffen] = useState<string | null>(null);
   const [neu, setNeu] = useState(false);
   const [suche, setSuche] = useState("");
   const [filter, setFilter] = useState("");
+  const [kategorieFilter, setKategorieFilter] = useState("");
   const [busy, setBusy] = useState(false);
 
   const foodById = useMemo(() => new Map(foods.map((f) => [f.id, f])), [foods]);
+  const kategorieName = useMemo(
+    () => new Map(categories.map((c) => [c.id, c.name])), [categories]
+  );
 
   const sichtbar = useMemo(() => recipes.filter((r) => {
     if (filter && r.meal_type !== filter) return false;
+    if (kategorieFilter && r.category_id !== kategorieFilter) return false;
     if (!suche.trim()) return true;
     const q = suche.trim().toLowerCase();
     return r.name.toLowerCase().includes(q)
       || r.items.some((i) => i.food_name.toLowerCase().includes(q));
-  }), [recipes, filter, suche]);
+  }), [recipes, filter, kategorieFilter, suche]);
 
   const naehrwerte = (r: Recipe) => summe(r.items.map((i) => {
     const f = i.food_id ? foodById.get(i.food_id) : undefined;
@@ -89,6 +97,17 @@ export function RecipeList({ recipes, foods }: { recipes: Recipe[]; foods: Food[
               <Input id="r-port" name="portions" type="number" min={1} max={14}
                 defaultValue={3} />
             </div>
+            {categories.length > 0 && (
+              <div className="w-40">
+                <label htmlFor="r-kat" className="mb-1.5 block text-xs text-ink-muted">
+                  Vorlage
+                </label>
+                <Select id="r-kat" name="category_id" defaultValue="">
+                  <option value="">Keine</option>
+                  {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </Select>
+              </div>
+            )}
             <Button type="submit">Anlegen</Button>
           </form>
         )}
@@ -102,6 +121,13 @@ export function RecipeList({ recipes, foods }: { recipes: Recipe[]; foods: Food[
               <option key={s} value={s}>{MEAL_LABEL[s]}</option>
             ))}
           </Select>
+          {categories.length > 0 && (
+            <Select value={kategorieFilter} onChange={(e) => setKategorieFilter(e.target.value)}
+              className="w-40">
+              <option value="">Alle Vorlagen</option>
+              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </Select>
+          )}
         </div>
 
         {sichtbar.length === 0 ? (
@@ -131,6 +157,8 @@ export function RecipeList({ recipes, foods }: { recipes: Recipe[]; foods: Food[
                         {MEAL_LABEL[r.meal_type] ?? r.meal_type} ·{" "}
                         {Math.round(n.kcal)} kcal · {Math.round(n.protein)} g P je Portion
                         {r.items.length > 0 && ` · ${r.items.length} Zutaten`}
+                        {r.category_id && kategorieName.get(r.category_id) &&
+                          ` · ${kategorieName.get(r.category_id)}`}
                       </span>
                     </button>
                     <button onClick={() => lauf(deleteRecipe, formOf({ id: r.id }))}
@@ -198,6 +226,17 @@ export function RecipeList({ recipes, foods }: { recipes: Recipe[]; foods: Food[
                             <Input name="portions" type="number" min={1} max={14}
                               defaultValue={r.default_portions} />
                           </div>
+                          {categories.length > 0 && (
+                            <div className="w-40">
+                              <label className="mb-1 block text-xs text-ink-muted">Vorlage</label>
+                              <Select name="category_id" defaultValue={r.category_id ?? ""}>
+                                <option value="">Keine</option>
+                                {categories.map((c) => (
+                                  <option key={c.id} value={c.id}>{c.name}</option>
+                                ))}
+                              </Select>
+                            </div>
+                          )}
                           <Button variant="ghost" type="submit">Speichern</Button>
                         </form>
                       </div>
