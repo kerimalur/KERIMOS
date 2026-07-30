@@ -1,7 +1,7 @@
 import { GymPlanner } from "@/components/gym-planner";
 import { Empty } from "@/components/ui";
 import {
-  gymConfigured, fetchCalendarEntries, fetchTrainingDays, GYM_APP_URL,
+  gymConfigured, fetchCalendarEntries, fetchTrainingDays,
 } from "@/lib/supabase/gym";
 import { heuteISO, addDays } from "@/lib/time";
 
@@ -24,7 +24,6 @@ export default async function GymKalenderPage() {
         id: d.id, name: d.name, anzahlUebungen: d.exercises.length,
       }))}
       heute={heute}
-      gymAppUrl={GYM_APP_URL}
     />
   );
 }

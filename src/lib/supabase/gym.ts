@@ -28,10 +28,6 @@ export function gymConfigured(): boolean {
   return Boolean(process.env.GYM_SUPABASE_URL && process.env.GYM_SUPABASE_SERVICE_ROLE_KEY);
 }
 
-/** Adresse der Gym-App - dorthin geht es zum eigentlichen Training. */
-export const GYM_APP_URL =
-  process.env.NEXT_PUBLIC_GYM_APP_URL ?? "https://gymapp-vereinfacht.vercel.app";
-
 type GymClient = NonNullable<ReturnType<typeof createGymClient>>;
 
 /**
@@ -354,6 +350,357 @@ export async function fetchWeeklyGoal(): Promise<number> {
     .select("weekly_goal").limit(1).maybeSingle();
   const wert = Number(data?.weekly_goal ?? 0);
   return wert >= 1 && wert <= 14 ? wert : 4;
+}
+
+/* --------------------------------------------------------- Laufendes Training */
+
+/** Eine Übung, wie sie während des Trainings auf dem Bildschirm steht. */
+export interface WorkoutExercise {
+  exerciseId: string;
+  exerciseName: string;
+  muscleGroupId: string;
+  muscleGroupName: string;
+  baseRecoveryHours: number;
+  isCardio: boolean;
+  targetSets: number;
+  targetReps: string;
+  /** Die Sätze der letzten Einheit derselben Übung - als Orientierung. */
+  lastSets: { weightKg: number; reps: number; rir: number }[];
+}
+
+export interface WorkoutView {
+  sessionId: string;
+  trainingDayId: string;
+  trainingDayName: string;
+  calendarEntryId: string | null;
+  startedAt: string;
+  /** Gesetzt heisst: diese Einheit ist bereits abgeschlossen. */
+  completedAt: string | null;
+  exercises: WorkoutExercise[];
+}
+
+/**
+ * Alles, was die Workout-Seite braucht, in einem Rutsch.
+ *
+ * Die letzten Werte je Übung sind der eigentliche Kniff: ohne sie müsste man
+ * jedes Mal überlegen, mit wie viel Gewicht man letztes Mal gearbeitet hat.
+ */
+export async function fetchWorkoutSession(sessionId: string): Promise<WorkoutView | null> {
+  const supabase = createGymClient();
+  if (!supabase) return null;
+
+  const { data: session } = await supabase.from("workout_sessions")
+    .select("id, training_day_id, calendar_entry_id, started_at, completed_at")
+    .eq("id", sessionId).maybeSingle();
+  if (!session) return null;
+
+  const trainingDayId = session.training_day_id as string;
+
+  const [{ data: tag }, { data: zuordnungen }, uebungen, gruppen] = await Promise.all([
+    supabase.from("training_days").select("name").eq("id", trainingDayId).maybeSingle(),
+    supabase.from("training_day_exercises")
+      .select("exercise_id, order_index, target_sets, target_reps")
+      .eq("training_day_id", trainingDayId).order("order_index"),
+    fetchExercises(),
+    fetchMuscleGroups(),
+  ]);
+
+  const uebungById = new Map(uebungen.map((u) => [u.id, u]));
+  const gruppeById = new Map(gruppen.map((g) => [g.id, g]));
+  const exerciseIds = (zuordnungen ?? []).map((z) => z.exercise_id as string);
+
+  // Letzte Sätze je Übung: die jüngste abgeschlossene Einheit gewinnt.
+  const letzte = new Map<string, { weightKg: number; reps: number; rir: number }[]>();
+  if (exerciseIds.length > 0) {
+    const { data: fertige } = await supabase.from("workout_sessions")
+      .select("id, completed_at").not("completed_at", "is", null)
+      .neq("id", sessionId)
+      .order("completed_at", { ascending: false }).limit(60);
+    const reihenfolge = (fertige ?? []).map((s) => s.id as string);
+
+    if (reihenfolge.length > 0) {
+      const rang = new Map(reihenfolge.map((id, i) => [id, i]));
+      const { data: logs } = await supabase.from("exercise_logs")
+        .select("exercise_id, workout_session_id, set_number, weight_kg, reps, rir")
+        .in("exercise_id", exerciseIds)
+        .in("workout_session_id", reihenfolge);
+
+      // Je Übung nur die Sätze aus der jüngsten Einheit behalten
+      const besteSession = new Map<string, string>();
+      for (const l of logs ?? []) {
+        const ex = l.exercise_id as string;
+        const sess = l.workout_session_id as string;
+        const bisher = besteSession.get(ex);
+        if (bisher === undefined || (rang.get(sess) ?? 99) < (rang.get(bisher) ?? 99)) {
+          besteSession.set(ex, sess);
+        }
+      }
+      const gesammelt = new Map<string, { nr: number; w: number; r: number; rir: number }[]>();
+      for (const l of logs ?? []) {
+        const ex = l.exercise_id as string;
+        if (besteSession.get(ex) !== (l.workout_session_id as string)) continue;
+        const list = gesammelt.get(ex) ?? [];
+        list.push({
+          nr: Number(l.set_number ?? 0),
+          w: Number(l.weight_kg ?? 0),
+          r: Number(l.reps ?? 0),
+          rir: Number(l.rir ?? 2),
+        });
+        gesammelt.set(ex, list);
+      }
+      for (const [ex, list] of gesammelt) {
+        letzte.set(ex, list.sort((a, b) => a.nr - b.nr)
+          .map((s) => ({ weightKg: s.w, reps: s.r, rir: s.rir })));
+      }
+    }
+  }
+
+  const exercises: WorkoutExercise[] = (zuordnungen ?? []).map((z) => {
+    const u = uebungById.get(z.exercise_id as string);
+    const g = u ? gruppeById.get(u.primary_muscle_id) : undefined;
+    return {
+      exerciseId: z.exercise_id as string,
+      exerciseName: u?.name ?? "Unbekannte Übung",
+      muscleGroupId: u?.primary_muscle_id ?? "",
+      muscleGroupName: g?.name ?? "Ohne Gruppe",
+      baseRecoveryHours: g?.base_recovery_hours ?? 48,
+      isCardio: u?.is_cardio ?? false,
+      targetSets: Math.max(1, Number(z.target_sets ?? 3)),
+      targetReps: (z.target_reps as string | null) ?? "8-12",
+      lastSets: letzte.get(z.exercise_id as string) ?? [],
+    };
+  });
+
+  return {
+    sessionId: session.id as string,
+    trainingDayId,
+    trainingDayName: (tag?.name as string | undefined) ?? "Training",
+    calendarEntryId: (session.calendar_entry_id as string | null) ?? null,
+    startedAt: session.started_at as string,
+    completedAt: (session.completed_at as string | null) ?? null,
+    exercises,
+  };
+}
+
+/* ------------------------------------------------------------- Verlauf */
+
+export interface HistorySet {
+  id: string;
+  exerciseId: string;
+  exerciseName: string;
+  setNumber: number;
+  weightKg: number;
+  reps: number;
+  rir: number;
+}
+
+export interface HistoryCardio {
+  id: string;
+  exerciseName: string;
+  durationMinutes: number;
+  distanceKm: number | null;
+}
+
+export interface HistorySession {
+  id: string;
+  trainingDayName: string;
+  startedAt: string;
+  completedAt: string;
+  sets: HistorySet[];
+  cardio: HistoryCardio[];
+  /** Gewicht × Wiederholungen über alle Sätze. */
+  volumen: number;
+}
+
+/** Abgeschlossene Einheiten samt Sätzen - die Grundlage der Verlauf-Seite. */
+export async function fetchHistory(limit = 40): Promise<HistorySession[]> {
+  const supabase = createGymClient();
+  if (!supabase) return [];
+
+  const { data: sessions } = await supabase.from("workout_sessions")
+    .select("id, training_day_id, started_at, completed_at")
+    .not("completed_at", "is", null)
+    .order("completed_at", { ascending: false }).limit(limit);
+  const liste = sessions ?? [];
+  if (liste.length === 0) return [];
+
+  const sessionIds = liste.map((s) => s.id as string);
+  const tagIds = [...new Set(liste.map((s) => s.training_day_id as string))];
+
+  const [{ data: tage }, { data: logs }, { data: cardio }, uebungen] = await Promise.all([
+    supabase.from("training_days").select("id, name").in("id", tagIds),
+    supabase.from("exercise_logs")
+      .select("id, workout_session_id, exercise_id, set_number, weight_kg, reps, rir")
+      .in("workout_session_id", sessionIds).order("set_number"),
+    supabase.from("cardio_logs")
+      .select("id, workout_session_id, exercise_id, duration_minutes, distance_km")
+      .in("workout_session_id", sessionIds),
+    fetchExercises(),
+  ]);
+
+  const tagName = new Map((tage ?? []).map((t) => [t.id as string, t.name as string]));
+  const uebungName = new Map(uebungen.map((u) => [u.id, u.name]));
+
+  const saetzeNachSession = new Map<string, HistorySet[]>();
+  for (const l of logs ?? []) {
+    const sid = l.workout_session_id as string;
+    const list = saetzeNachSession.get(sid) ?? [];
+    list.push({
+      id: l.id as string,
+      exerciseId: l.exercise_id as string,
+      exerciseName: uebungName.get(l.exercise_id as string) ?? "Unbekannte Übung",
+      setNumber: Number(l.set_number ?? 0),
+      weightKg: Number(l.weight_kg ?? 0),
+      reps: Number(l.reps ?? 0),
+      rir: Number(l.rir ?? 0),
+    });
+    saetzeNachSession.set(sid, list);
+  }
+
+  const cardioNachSession = new Map<string, HistoryCardio[]>();
+  for (const c of cardio ?? []) {
+    const sid = c.workout_session_id as string;
+    const list = cardioNachSession.get(sid) ?? [];
+    list.push({
+      id: c.id as string,
+      exerciseName: uebungName.get(c.exercise_id as string) ?? "Cardio",
+      durationMinutes: Number(c.duration_minutes ?? 0),
+      distanceKm: c.distance_km === null ? null : Number(c.distance_km),
+    });
+    cardioNachSession.set(sid, list);
+  }
+
+  return liste.map((s) => {
+    const sets = saetzeNachSession.get(s.id as string) ?? [];
+    return {
+      id: s.id as string,
+      trainingDayName: tagName.get(s.training_day_id as string) ?? "Freies Training",
+      startedAt: s.started_at as string,
+      completedAt: s.completed_at as string,
+      sets,
+      cardio: cardioNachSession.get(s.id as string) ?? [],
+      volumen: Math.round(sets.reduce((sum, x) => sum + x.weightKg * x.reps, 0)),
+    };
+  });
+}
+
+/* ------------------------------------------------- Fortschritt pro Übung */
+
+export interface ExercisePoint {
+  day: string;
+  maxWeight: number;
+  /** Geschätztes Einmalmaximum nach Epley: Gewicht × (1 + Wdh / 30). */
+  oneRM: number;
+  avgRIR: number | null;
+  durationMin: number;
+  distanceKm: number | null;
+}
+
+/**
+ * Verlauf einer einzelnen Übung. Je Trainingstag der schwerste Satz - das
+ * ist die Zahl, an der Fortschritt sichtbar wird.
+ *
+ * `wochen = 0` heisst: alles, was da ist.
+ */
+export async function fetchExerciseHistory(
+  exerciseId: string, wochen: number, istCardio: boolean
+): Promise<ExercisePoint[]> {
+  const supabase = createGymClient();
+  if (!supabase) return [];
+
+  let q = supabase.from("workout_sessions")
+    .select("id, completed_at").not("completed_at", "is", null);
+  if (wochen > 0) {
+    q = q.gte("completed_at", new Date(Date.now() - wochen * 7 * 86400000).toISOString());
+  }
+  const { data: sessions } = await q;
+  const sessionIds = (sessions ?? []).map((s) => s.id as string);
+  if (sessionIds.length === 0) return [];
+
+  const tagVonSession = new Map(
+    (sessions ?? []).map((s) => [
+      s.id as string, (s.completed_at as string).slice(0, 10),
+    ])
+  );
+
+  const nachTag = new Map<string, ExercisePoint>();
+
+  if (istCardio) {
+    const { data: logs } = await supabase.from("cardio_logs")
+      .select("workout_session_id, duration_minutes, distance_km")
+      .eq("exercise_id", exerciseId).in("workout_session_id", sessionIds);
+
+    for (const l of logs ?? []) {
+      const tag = tagVonSession.get(l.workout_session_id as string);
+      if (!tag) continue;
+      const p = nachTag.get(tag) ?? leererPunkt(tag);
+      p.durationMin += Number(l.duration_minutes ?? 0);
+      const km = l.distance_km === null ? null : Number(l.distance_km);
+      if (km !== null) p.distanceKm = (p.distanceKm ?? 0) + km;
+      nachTag.set(tag, p);
+    }
+  } else {
+    const { data: logs } = await supabase.from("exercise_logs")
+      .select("workout_session_id, weight_kg, reps, rir")
+      .eq("exercise_id", exerciseId).in("workout_session_id", sessionIds);
+
+    const rirSumme = new Map<string, { summe: number; anzahl: number }>();
+    for (const l of logs ?? []) {
+      const tag = tagVonSession.get(l.workout_session_id as string);
+      if (!tag) continue;
+      const gewicht = Number(l.weight_kg ?? 0);
+      const wdh = Number(l.reps ?? 0);
+      const p = nachTag.get(tag) ?? leererPunkt(tag);
+      p.maxWeight = Math.max(p.maxWeight, gewicht);
+      p.oneRM = Math.max(p.oneRM, wdh > 0 ? gewicht * (1 + wdh / 30) : gewicht);
+      nachTag.set(tag, p);
+
+      const r = rirSumme.get(tag) ?? { summe: 0, anzahl: 0 };
+      r.summe += Number(l.rir ?? 0);
+      r.anzahl += 1;
+      rirSumme.set(tag, r);
+    }
+    for (const [tag, r] of rirSumme) {
+      const p = nachTag.get(tag);
+      if (p && r.anzahl > 0) p.avgRIR = Math.round((r.summe / r.anzahl) * 10) / 10;
+    }
+  }
+
+  return [...nachTag.values()]
+    .map((p) => ({
+      ...p,
+      maxWeight: Math.round(p.maxWeight * 10) / 10,
+      oneRM: Math.round(p.oneRM * 10) / 10,
+      distanceKm: p.distanceKm === null ? null : Math.round(p.distanceKm * 10) / 10,
+    }))
+    .sort((a, b) => a.day.localeCompare(b.day));
+}
+
+const leererPunkt = (day: string): ExercisePoint => ({
+  day, maxWeight: 0, oneRM: 0, avgRIR: null, durationMin: 0, distanceKm: null,
+});
+
+/** Gesamtzahlen für die Fortschritt-Seite. */
+export async function fetchGymTotals(): Promise<{
+  einheiten: number; saetze: number; volumen: number;
+}> {
+  const supabase = createGymClient();
+  if (!supabase) return { einheiten: 0, saetze: 0, volumen: 0 };
+
+  const [{ count: einheiten }, { data: logs }] = await Promise.all([
+    supabase.from("workout_sessions")
+      .select("id", { count: "exact", head: true }).not("completed_at", "is", null),
+    supabase.from("exercise_logs").select("weight_kg, reps").limit(20000),
+  ]);
+
+  const zeilen = logs ?? [];
+  return {
+    einheiten: einheiten ?? 0,
+    saetze: zeilen.length,
+    volumen: Math.round(
+      zeilen.reduce((s, l) => s + Number(l.weight_kg ?? 0) * Number(l.reps ?? 0), 0)
+    ),
+  };
 }
 
 /** Abgeschlossene Einheiten seit einem Datum - zum Abgleich mit dem Wochenziel. */

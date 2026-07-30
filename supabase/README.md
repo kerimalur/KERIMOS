@@ -26,6 +26,20 @@ bisher nur im localStorage der Gym-App und war damit an ein Gerät gebunden —
 KerimOS konnte es weder lesen noch setzen. Bis die Migration läuft, zeigt
 KerimOS den Standardwert 4 an; Speichern schlägt fehl.
 
+## Gym-Modul
+
+Der komplette Gym-Bereich läuft seit Juli 2026 in KerimOS — Trainingstage,
+Planung, das laufende Training samt Satz-Erfassung, Verlauf, Muskelbalance
+und Fortschritt je Übung. Die alte Gym-App (`Gymapp-vereinfacht/`) wird nicht
+mehr gebraucht.
+
+Die Tabellen bleiben unverändert, wo sie sind: `training_days`, `exercises`,
+`workout_sessions`, `exercise_logs`, `cardio_logs`, `recovery_status`. KerimOS
+greift serverseitig mit dem `service_role`-Schlüssel darauf zu, weil die
+Gym-Datenbank eine eigene Anmeldung hat, in der ein KerimOS-Nutzer nicht
+existiert. Der Besitzer neuer Zeilen kommt aus `GYM_USER_ID`, ersatzweise aus
+der ersten vorhandenen Zeile.
+
 Die Migrationen 01–05 existieren bislang nur in Supabase. Sie hierher zu holen
 ist der einzige Weg, das Schema reproduzierbar und gesichert zu haben:
 

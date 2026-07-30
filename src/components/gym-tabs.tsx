@@ -11,14 +11,22 @@ const TABS = [
   { href: "/gym", label: "Übersicht" },
   { href: "/gym/trainingstage", label: "Tage" },
   { href: "/gym/kalender", label: "Plan" },
-  { href: "/gym/uebungen", label: "Übungen" },
+  { href: "/gym/verlauf", label: "Verlauf" },
   { href: "/gym/einstellungen", label: "Mehr" },
 ];
 
+/** Unterseiten, die unter "Mehr" einsortiert sind. */
+const UNTER_MEHR = ["/gym/uebungen", "/gym/balance", "/gym/fortschritt"];
+
 export function GymTabs() {
   const path = usePathname();
-  const aktiv = (href: string) =>
-    href === "/gym" ? path === href : path.startsWith(href);
+  const aktiv = (href: string) => {
+    if (href === "/gym") return path === href;
+    if (href === "/gym/einstellungen") {
+      return path.startsWith(href) || UNTER_MEHR.some((p) => path.startsWith(p));
+    }
+    return path.startsWith(href);
+  };
 
   return (
     <>

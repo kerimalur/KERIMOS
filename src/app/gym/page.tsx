@@ -1,7 +1,8 @@
+import Link from "next/link";
 import {
   createGymClient, gymConfigured, buildSeries,
   fetchCalendarEntries, fetchTrainingDays, fetchMuscleBalance,
-  fetchWeeklyGoal, countSessionsSince, GYM_APP_URL,
+  fetchWeeklyGoal, countSessionsSince,
   type GymTopSet, type BodyWeightEntry,
 } from "@/lib/supabase/gym";
 import { GymCockpit } from "@/components/gym-cockpit";
@@ -78,7 +79,6 @@ export default async function GymPage() {
       morgen={addDays(heute, 1)}
       wochenZiel={wochenZiel}
       dieseWoche={dieseWoche}
-      gymAppUrl={GYM_APP_URL}
     />
   );
 
@@ -132,7 +132,13 @@ export default async function GymPage() {
       ) : (
         <>
           <Card>
-            <CardTitle>Fortschritt</CardTitle>
+            <div className="mb-4 flex items-center justify-between">
+              <CardTitle className="mb-0">Fortschritt</CardTitle>
+              <Link href="/gym/fortschritt"
+                className="text-xs font-medium text-accent-soft transition hover:underline">
+                Je Übung →
+              </Link>
+            </div>
             <div className="grid gap-4 sm:grid-cols-4">
               <Stat label="Einheiten" value={String(einheiten)} />
               <Stat label="Übungen" value={String(uebungen)} />

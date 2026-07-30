@@ -38,7 +38,7 @@ function seitText(iso: string | null): { text: string; hinterher: boolean } {
  * Einheit an und wechselt in die Gym-App.
  */
 export function GymCockpit({
-  entries, days, balance, heute, morgen, wochenZiel, dieseWoche, gymAppUrl,
+  entries, days, balance, heute, morgen, wochenZiel, dieseWoche,
 }: {
   entries: Entry[];
   days: DayLite[];
@@ -47,7 +47,6 @@ export function GymCockpit({
   morgen: string;
   wochenZiel: number;
   dieseWoche: number;
-  gymAppUrl: string;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -58,8 +57,9 @@ export function GymCockpit({
 
   async function starten(dayId: string, entry?: Entry) {
     if (busy) return;
+    // Läuft schon eine Einheit, direkt dorthin - ohne eine zweite anzulegen
     if (entry?.offeneSessionId) {
-      window.location.href = `${gymAppUrl}/workout/${entry.offeneSessionId}`;
+      router.push(`/gym/workout/${entry.offeneSessionId}`);
       return;
     }
     setBusy(true);
@@ -72,7 +72,7 @@ export function GymCockpit({
         fd.set("date", entry.scheduled_date);
       }
       const url = await startWorkout(fd);
-      window.location.href = url;
+      router.push(url);
     } catch (e) {
       setFehler(e instanceof Error ? e.message : "Training konnte nicht gestartet werden");
       setBusy(false);
@@ -185,7 +185,13 @@ export function GymCockpit({
 
       {/* Muskelbalance */}
       <Card>
-        <CardTitle>Muskelbalance · 4 Wochen</CardTitle>
+        <div className="mb-3 flex items-center justify-between">
+          <CardTitle className="mb-0">Muskelbalance · 4 Wochen</CardTitle>
+          <Link href="/gym/balance"
+            className="text-xs font-medium text-accent-soft transition hover:underline">
+            Analyse →
+          </Link>
+        </div>
         {hinterher > 0 && (
           <p className="mb-3 rounded-xl bg-warn-tint px-3 py-2 text-xs text-warn">
             {hinterher} {hinterher === 1 ? "Muskelgruppe" : "Muskelgruppen"} seit

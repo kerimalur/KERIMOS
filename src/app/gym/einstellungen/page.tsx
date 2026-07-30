@@ -1,7 +1,7 @@
 import { GymSettings } from "@/components/gym-settings";
 import { Empty } from "@/components/ui";
 import {
-  gymConfigured, fetchWeeklyGoal, fetchMuscleGroups, countSessionsSince, GYM_APP_URL,
+  gymConfigured, fetchWeeklyGoal, fetchMuscleGroups, countSessionsSince,
 } from "@/lib/supabase/gym";
 import { heuteISO, weekStart } from "@/lib/time";
 
@@ -21,7 +21,6 @@ export default async function GymEinstellungenPage() {
       weeklyGoal={weeklyGoal}
       muscleGroups={muscleGroups}
       dieseWoche={dieseWoche}
-      gymAppUrl={GYM_APP_URL}
     />
   );
 }

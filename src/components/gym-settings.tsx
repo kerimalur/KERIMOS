@@ -1,23 +1,32 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { saveWeeklyGoal } from "@/lib/actions";
 import { Card, CardTitle, cx } from "@/components/ui";
 
 interface MuscleGroup { id: string; name: string; base_recovery_hours: number }
 
+const BEREICHE = [
+  { href: "/gym/uebungen", titel: "Übungen",
+    text: "Datenbank durchsuchen, eigene Übung anlegen" },
+  { href: "/gym/fortschritt", titel: "Fortschritt",
+    text: "Verlauf je Übung, geschätztes 1RM, Cardio" },
+  { href: "/gym/balance", titel: "Muskelbalance",
+    text: "Gegenspieler-Paare und Volumen je Muskelgruppe" },
+];
+
 /**
- * Einstellungen des Gym-Bereichs. Das Wochenziel lag früher nur im Browser
- * der Gym-App - jetzt in der Datenbank, damit beide Apps dieselbe Zahl sehen.
+ * Einstellungen und Einstiegspunkte des Gym-Bereichs. Das Wochenziel lag
+ * früher nur im Browser der alten Gym-App - jetzt in der Datenbank.
  */
 export function GymSettings({
-  weeklyGoal, muscleGroups, dieseWoche, gymAppUrl,
+  weeklyGoal, muscleGroups, dieseWoche,
 }: {
   weeklyGoal: number;
   muscleGroups: MuscleGroup[];
   /** Abgeschlossene Einheiten seit Montag. */
   dieseWoche: number;
-  gymAppUrl: string;
 }) {
   const router = useRouter();
   const [ziel, setZiel] = useState(weeklyGoal);
@@ -63,9 +72,28 @@ export function GymSettings({
       )}
 
       <Card>
+        <CardTitle>Bereiche</CardTitle>
+        <ul className="divide-y divide-line">
+          {BEREICHE.map((b) => (
+            <li key={b.href}>
+              <Link href={b.href}
+                className="flex items-center justify-between gap-3 py-3 transition hover:text-accent-soft">
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-ink">{b.titel}</span>
+                  <span className="block text-xs text-ink-muted">{b.text}</span>
+                </span>
+                <span className="shrink-0 text-xs text-ink-faint">→</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </Card>
+
+      <Card>
         <CardTitle>Trainings pro Woche</CardTitle>
         <p className="mb-3 text-xs text-ink-muted">
-          Gilt für beide Apps — die Zahl steht in der Datenbank, nicht im Browser.
+          Wird in der Datenbank gespeichert, nicht im Browser — die Zahl gilt
+          also auf jedem Gerät.
         </p>
         <div className="grid grid-cols-7 gap-2">
           {[1, 2, 3, 4, 5, 6, 7].map((n) => (
@@ -104,9 +132,8 @@ export function GymSettings({
       <Card>
         <CardTitle>Muskelgruppen</CardTitle>
         <p className="mb-3 text-xs text-ink-muted">
-          Die Erholungszeit ist der Ausgangswert, mit dem gerechnet wird. Wie
-          lange es wirklich dauert, passt die Gym-App anhand deiner Rückmeldung
-          nach dem Training an.
+          Der Ausgangswert für die Erholungsrechnung. Viele Sätze und ein
+          tiefer RIR verlängern ihn, wenige und ein hoher verkürzen ihn.
         </p>
         <ul className="divide-y divide-line">
           {muscleGroups.map((m) => (
@@ -121,17 +148,13 @@ export function GymSettings({
       </Card>
 
       <Card>
-        <CardTitle>Training selbst</CardTitle>
+        <CardTitle>Während des Trainings</CardTitle>
         <p className="text-sm text-ink-muted">
-          Geplant und verwaltet wird hier, trainiert in der Gym-App. Das ist
-          Absicht: Timer und Satz-Erfassung laufen dort in einer kleinen App,
-          die selten neu ausgeliefert wird — mitten im Training soll nichts
-          dazwischenkommen.
+          Der Zwischenstand einer laufenden Einheit liegt im Browser und wird
+          bei jeder Eingabe gesichert. Sperrt sich das Handy oder lädt die
+          Seite neu, ist alles noch da — in der Datenbank landet es erst beim
+          Abschliessen.
         </p>
-        <a href={gymAppUrl} target="_blank" rel="noopener noreferrer"
-          className="mt-3 inline-block text-xs text-accent-soft transition hover:underline">
-          Gym-App öffnen ↗
-        </a>
       </Card>
     </>
   );

@@ -17,12 +17,11 @@ interface Entry {
  * legt die Einheit an und wechselt in die Gym-App - dort wird trainiert.
  */
 export function GymPlanner({
-  entries, days, heute, gymAppUrl,
+  entries, days, heute,
 }: {
   entries: Entry[];
   days: TrainingDayLite[];
   heute: string;
-  gymAppUrl: string;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -51,7 +50,7 @@ export function GymPlanner({
     if (busy) return;
     // Läuft schon eine Einheit, direkt dorthin - ohne eine zweite anzulegen
     if (entry.offeneSessionId) {
-      window.location.href = `${gymAppUrl}/workout/${entry.offeneSessionId}`;
+      router.push(`/gym/workout/${entry.offeneSessionId}`);
       return;
     }
     setBusy(true);
@@ -62,7 +61,7 @@ export function GymPlanner({
       fd.set("calendar_entry_id", entry.id);
       fd.set("date", entry.scheduled_date);
       const url = await startWorkout(fd);
-      window.location.href = url;
+      router.push(url);
     } catch (e) {
       setFehler(e instanceof Error ? e.message : "Training konnte nicht gestartet werden");
       setBusy(false);

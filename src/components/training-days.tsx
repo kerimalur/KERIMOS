@@ -56,7 +56,7 @@ export function TrainingDays({
     }
   }
 
-  /** Legt die Einheit an und wechselt in die Gym-App. */
+  /** Legt die Einheit an und öffnet die Workout-Seite. */
   async function starten(dayId: string) {
     if (busy) return;
     setBusy(true);
@@ -65,7 +65,7 @@ export function TrainingDays({
       const fd = new FormData();
       fd.set("training_day_id", dayId);
       const url = await startWorkout(fd);
-      window.location.href = url;
+      router.push(url);
     } catch (e) {
       setFehler(e instanceof Error ? e.message : "Training konnte nicht gestartet werden");
       setBusy(false);

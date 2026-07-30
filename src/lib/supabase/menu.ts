@@ -400,9 +400,9 @@ export interface Food {
   category_id: string | null;
 }
 
-const FOOD_SPALTEN =
-  "id, name, calories_per_100, protein_per_100, carbs_per_100, fat_per_100, " +
-  "cost_per_100, unit, category_id";
+// Bewusst ein einzelnes Literal, nicht zusammengesetzt: nur so kann
+// supabase-js den Spaltensatz typisieren.
+const FOOD_SPALTEN = "id, name, calories_per_100, protein_per_100, carbs_per_100, fat_per_100, cost_per_100, unit, category_id";
 
 /** Lebensmittel, optional nach Namen gefiltert. */
 export async function fetchFoods(suche = "", limit = 300): Promise<Food[]> {

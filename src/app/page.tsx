@@ -6,6 +6,7 @@ import { FocusPrompt } from "@/components/focus-prompt";
 import { TradingCard } from "@/components/trading-card";
 import { TodayCard } from "@/components/today-card";
 import { AppointmentsCard } from "@/components/appointments-card";
+import { TasksCard } from "@/components/tasks-card";
 import { MorningCard } from "@/components/morning-card";
 import { PrepCard } from "@/components/prep-card";
 import { NewsCard } from "@/components/news-card";
@@ -157,6 +158,7 @@ export default async function Start({
 
       <div className="space-y-5">
         <MorningCard />
+        <TasksCard />
         <AppointmentsCard />
         <TradingCard />
         <TodayCard />

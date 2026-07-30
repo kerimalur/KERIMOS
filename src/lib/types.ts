@@ -312,3 +312,53 @@ export const GOAL_KIND_LABEL: Record<GoalKind, string> = {
   time: "Stunden",
   milestone: "Meilensteine",
 };
+
+/* --------------------------------------------------------------- Aufgaben */
+
+/**
+ * Lebensbereich einer Aufgabe. Startet mit denselben sieben Bereichen wie die
+ * Zeit-Buckets, ist aber frei erweiterbar - deshalb eine eigene Tabelle und
+ * kein Enum. `bucket` hält die Verbindung zur Zeiterfassung, wo es eine gibt.
+ */
+export interface LifeArea {
+  id: string;
+  user_id: string;
+  name: string;
+  bucket: TimeBucket | null;
+  color: string;
+  sort_order: number;
+  archived: boolean;
+}
+
+export interface Task {
+  id: string;
+  user_id: string;
+  title: string;
+  details: string | null;
+  life_area_id: string | null;
+  /** Deadline. NULL heisst: irgendwann. */
+  due_on: string | null;
+  /** 0 = normal, 1 = wichtig. */
+  priority: number;
+  /** Gesetzt heisst erledigt. */
+  done_at: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface Subtask {
+  id: string;
+  user_id: string;
+  task_id: string;
+  title: string;
+  done_at: string | null;
+  sort_order: number;
+}
+
+/** Aufgabe samt Bereichsnamen und Stand der Unteraufgaben. */
+export interface TaskView extends Task {
+  areaName: string | null;
+  areaColor: string | null;
+  subtasks: Subtask[];
+  subtasksDone: number;
+}

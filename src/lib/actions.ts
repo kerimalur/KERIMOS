@@ -1,12 +1,13 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import {
-  createGymClient, gymUserId as resolveGymUserId, GYM_APP_URL,
-} from "@/lib/supabase/gym";
+import { createGymClient, gymUserId as resolveGymUserId } from "@/lib/supabase/gym";
 import { createMenuClient } from "@/lib/supabase/menu";
 import { heuteISO, addDays } from "@/lib/time";
 import { rechne, summe } from "@/lib/nutrition";
+import {
+  calculateSessionRecovery, type RecoveryInput, type RecoveryResult,
+} from "@/lib/recovery";
 import { type RecurrenceInterval } from "@/lib/types";
 
 async function requireUser() {
@@ -2015,17 +2016,15 @@ export async function seedLinks() {
       target: "C:\\Projekte\\Claude Cowork\\Gymapp-vereinfacht",
       group_name: "Programmieren", icon: "▭", color: "#A8A093", sort_order: 9 },
 
-    // Gym
-    { title: "Gym", subtitle: "Fortschritt je Übung", kind: "section",
+    // Gym - läuft vollständig in KerimOS, inklusive des laufenden Trainings
+    { title: "Gym", subtitle: "Training, Plan, Fortschritt", kind: "section",
       target: "/gym", group_name: "Gym", icon: "▲", color: "#C68D6B", sort_order: 1 },
-    { title: "Gym-Tracker", subtitle: "Training, Fortschritt, Erholung", kind: "web",
-      target: "https://gymapp-vereinfacht-kerim-alurs-projects.vercel.app",
-      group_name: "Gym", icon: "▲", color: "#6E9B76", sort_order: 2 },
+    { title: "Verlauf", subtitle: "Abgeschlossene Trainings", kind: "section",
+      target: "/gym/verlauf", group_name: "Gym", icon: "▲", color: "#6E9B76", sort_order: 2 },
 
     // Essen
-    { title: "Menüplan", subtitle: "Meal Prep, Rezepte, Einkauf", kind: "web",
-      target: "https://men-plan-kerim-alurs-projects.vercel.app",
-      group_name: "Essen", icon: "▤", color: "#C4A882", sort_order: 1 },
+    { title: "Essen", subtitle: "Meal Prep, Rezepte, Einkauf", kind: "section",
+      target: "/m/Essen", group_name: "Essen", icon: "▤", color: "#C4A882", sort_order: 1 },
 
     // Geld
     { title: "Geld", subtitle: "Runway, Konten, Buchungen", kind: "section",
@@ -2399,7 +2398,8 @@ export async function deleteMilestone(fd: FormData) {
 
 const GYM_PATHS = [
   "/gym", "/gym/trainingstage", "/gym/uebungen", "/gym/kalender",
-  "/gym/einstellungen", "/heute", "/",
+  "/gym/einstellungen", "/gym/verlauf", "/gym/balance", "/gym/fortschritt",
+  "/heute", "/",
 ];
 const revalidateGym = () => GYM_PATHS.forEach((p) => revalidatePath(p));
 
@@ -2592,9 +2592,7 @@ export async function deleteCalendarEntry(fd: FormData) {
 }
 
 /**
- * Legt die Einheit an und gibt die Adresse in der Gym-App zurück. Das
- * eigentliche Training läuft bewusst dort: Timer, Satz-Erfassung und
- * Erholungsrechnung bleiben in der kleinen, selten deployten App.
+ * Legt die Einheit an und gibt den Weg zur Workout-Seite zurück.
  *
  * Läuft für den Eintrag bereits eine unbeendete Einheit, führt der Weg
  * dorthin zurück - sonst entstünden zwei Einheiten für dasselbe Training.
@@ -2631,7 +2629,7 @@ export async function startWorkout(fd: FormData): Promise<string> {
     .select("id").eq("calendar_entry_id", entryId)
     .is("completed_at", null).limit(1);
   const laufende = offen?.[0]?.id as string | undefined;
-  if (laufende) return `${GYM_APP_URL}/workout/${laufende}`;
+  if (laufende) return `/gym/workout/${laufende}`;
 
   const { data: session, error: sessionError } = await gym.from("workout_sessions").insert({
     calendar_entry_id: entryId,
@@ -2642,7 +2640,7 @@ export async function startWorkout(fd: FormData): Promise<string> {
   if (sessionError) throw new Error(`Einheit anlegen: ${sessionError.message}`);
 
   revalidateGym();
-  return `${GYM_APP_URL}/workout/${session.id as string}`;
+  return `/gym/workout/${session.id as string}`;
 }
 
 /* -------------------------------------------------------- Einstellungen */
@@ -2656,6 +2654,220 @@ export async function saveWeeklyGoal(fd: FormData) {
     { user_id: userId, weekly_goal: ziel, updated_at: new Date().toISOString() },
     { onConflict: "user_id" }
   ), "Wochenziel speichern");
+  revalidateGym();
+}
+
+/* ------------------------------------------------------ Laufendes Training */
+
+/** Ein erfasster Satz, wie ihn die Workout-Seite schickt. */
+export interface SatzEingabe {
+  exerciseId: string;
+  muscleGroupId: string;
+  baseRecoveryHours: number;
+  setNumber: number;
+  weightKg: number;
+  reps: number;
+  rir: number;
+}
+
+/** Eine erfasste Cardio-Einheit. */
+export interface CardioEingabe {
+  exerciseId: string;
+  durationMinutes: number;
+  distanceKm: number | null;
+}
+
+/**
+ * Schliesst die Einheit ab: Sätze und Cardio speichern, Session und
+ * Kalendereintrag auf erledigt setzen, Erholung je Muskelgruppe rechnen.
+ *
+ * Gibt die Erholungswerte zurück - daraus baut die Seite die
+ * Abschluss-Zusammenfassung, ohne noch einmal nachfragen zu müssen.
+ */
+export async function finishWorkout(fd: FormData): Promise<RecoveryResult[]> {
+  await requireUser();
+  const { gym, userId } = await gymZugang();
+
+  const sessionId = str(fd, "session_id");
+  if (!sessionId) throw new Error("Training abschliessen: keine Einheit angegeben");
+
+  const saetze = JSON.parse(String(fd.get("sets") ?? "[]")) as SatzEingabe[];
+  const cardio = JSON.parse(String(fd.get("cardio") ?? "[]")) as CardioEingabe[];
+
+  const { data: session } = await gym.from("workout_sessions")
+    .select("id, calendar_entry_id, started_at").eq("id", sessionId).maybeSingle();
+  if (!session) throw new Error("Training abschliessen: Einheit nicht gefunden");
+
+  const fertigUm = new Date();
+  const fertigIso = fertigUm.toISOString();
+
+  // Frühere Zeilen derselben Einheit weg - sonst verdoppeln sich die Sätze,
+  // wenn jemand zweimal auf Abschliessen tippt.
+  await gym.from("exercise_logs").delete().eq("workout_session_id", sessionId);
+  await gym.from("cardio_logs").delete().eq("workout_session_id", sessionId);
+
+  if (saetze.length > 0) {
+    check(await gym.from("exercise_logs").insert(
+      saetze.map((s) => ({
+        workout_session_id: sessionId,
+        exercise_id: s.exerciseId,
+        set_number: s.setNumber,
+        weight_kg: s.weightKg,
+        reps: s.reps,
+        rir: Math.min(10, Math.max(0, Math.round(s.rir))),
+        completed_at: fertigIso,
+      }))
+    ), "Sätze speichern");
+  }
+
+  if (cardio.length > 0) {
+    check(await gym.from("cardio_logs").insert(
+      cardio.map((c) => ({
+        workout_session_id: sessionId,
+        exercise_id: c.exerciseId,
+        duration_minutes: c.durationMinutes,
+        distance_km: c.distanceKm,
+        completed_at: fertigIso,
+      }))
+    ), "Cardio speichern");
+  }
+
+  check(await gym.from("workout_sessions")
+    .update({ completed_at: fertigIso }).eq("id", sessionId), "Einheit abschliessen");
+
+  const entryId = session.calendar_entry_id as string | null;
+  if (entryId) {
+    await gym.from("calendar_entries").update({ status: "completed" }).eq("id", entryId);
+  }
+
+  // Erholung je Muskelgruppe: Sätze zählen, RIR mitteln
+  const proMuskel = new Map<string, RecoveryInput & { rirSumme: number }>();
+  for (const s of saetze) {
+    if (!s.muscleGroupId) continue;
+    const vorhanden = proMuskel.get(s.muscleGroupId);
+    if (vorhanden) {
+      vorhanden.totalSets += 1;
+      vorhanden.rirSumme += s.rir;
+    } else {
+      proMuskel.set(s.muscleGroupId, {
+        muscleGroupId: s.muscleGroupId,
+        muscleGroupName: "",
+        baseRecoveryHours: s.baseRecoveryHours || 48,
+        totalSets: 1,
+        avgRIR: 0,
+        rirSumme: s.rir,
+      });
+    }
+  }
+
+  const muskelIds = [...proMuskel.keys()];
+  if (muskelIds.length > 0) {
+    const { data: gruppen } = await gym.from("muscle_groups")
+      .select("id, name").in("id", muskelIds);
+    for (const g of gruppen ?? []) {
+      const eintrag = proMuskel.get(g.id as string);
+      if (eintrag) eintrag.muscleGroupName = g.name as string;
+    }
+  }
+
+  const eingaben: RecoveryInput[] = [...proMuskel.values()].map((m) => ({
+    muscleGroupId: m.muscleGroupId,
+    muscleGroupName: m.muscleGroupName || "Muskelgruppe",
+    baseRecoveryHours: m.baseRecoveryHours,
+    totalSets: m.totalSets,
+    avgRIR: m.totalSets > 0 ? m.rirSumme / m.totalSets : 2,
+  }));
+
+  const ergebnisse = calculateSessionRecovery(eingaben, fertigUm);
+
+  if (ergebnisse.length > 0) {
+    // Alte Erholungszeilen dieser Einheit ersetzen (zweiter Abschluss-Klick)
+    await gym.from("recovery_status").delete().eq("workout_session_id", sessionId);
+    await gym.from("recovery_status").insert(
+      ergebnisse.map((r) => ({
+        user_id: userId,
+        muscle_group_id: r.muscleGroupId,
+        workout_session_id: sessionId,
+        recovery_percentage: 0,
+        total_recovery_hours: r.totalRecoveryHours,
+        workout_completed_at: fertigIso,
+        estimated_full_recovery_at: r.estimatedFullRecoveryAt,
+      }))
+    );
+  }
+
+  revalidateGym();
+  return ergebnisse;
+}
+
+/**
+ * Bricht die Einheit ab und räumt auf. Der Kalendereintrag geht zurück auf
+ * "geplant" - das Training gilt dann als nicht stattgefunden.
+ */
+export async function cancelWorkout(fd: FormData) {
+  await requireUser();
+  const { gym } = await gymZugang();
+  const sessionId = str(fd, "session_id");
+  if (!sessionId) return;
+
+  const { data: session } = await gym.from("workout_sessions")
+    .select("calendar_entry_id").eq("id", sessionId).maybeSingle();
+
+  await gym.from("exercise_logs").delete().eq("workout_session_id", sessionId);
+  await gym.from("cardio_logs").delete().eq("workout_session_id", sessionId);
+  await gym.from("recovery_status").delete().eq("workout_session_id", sessionId);
+
+  const entryId = session?.calendar_entry_id as string | null | undefined;
+  if (entryId) {
+    await gym.from("calendar_entries").update({ status: "planned" }).eq("id", entryId);
+  }
+
+  check(await gym.from("workout_sessions").delete().eq("id", sessionId),
+    "Training abbrechen");
+  revalidateGym();
+}
+
+/* --------------------------------------------------------------- Verlauf */
+
+/** Einen einzelnen Satz im Nachhinein korrigieren. */
+export async function updateExerciseLog(fd: FormData) {
+  await requireUser();
+  const { gym } = await gymZugang();
+  const id = str(fd, "id");
+  if (!id) return;
+
+  check(await gym.from("exercise_logs").update({
+    weight_kg: numOr(fd, "weight_kg", 0),
+    reps: Math.max(0, Math.round(numOr(fd, "reps", 0))),
+    rir: Math.min(10, Math.max(0, Math.round(numOr(fd, "rir", 2)))),
+  }).eq("id", id), "Satz speichern");
+  revalidateGym();
+}
+
+/**
+ * Löscht eine abgeschlossene Einheit samt Sätzen und Erholungsdaten. Der
+ * Kalendereintrag wird wieder auf "geplant" gesetzt.
+ */
+export async function deleteWorkoutSession(fd: FormData) {
+  await requireUser();
+  const { gym } = await gymZugang();
+  const sessionId = str(fd, "id");
+  if (!sessionId) return;
+
+  const { data: session } = await gym.from("workout_sessions")
+    .select("calendar_entry_id").eq("id", sessionId).maybeSingle();
+
+  await gym.from("exercise_logs").delete().eq("workout_session_id", sessionId);
+  await gym.from("cardio_logs").delete().eq("workout_session_id", sessionId);
+  await gym.from("recovery_status").delete().eq("workout_session_id", sessionId);
+
+  const entryId = session?.calendar_entry_id as string | null | undefined;
+  if (entryId) {
+    await gym.from("calendar_entries").update({ status: "planned" }).eq("id", entryId);
+  }
+
+  check(await gym.from("workout_sessions").delete().eq("id", sessionId),
+    "Training löschen");
   revalidateGym();
 }
 
@@ -2687,4 +2899,193 @@ export async function deleteWeeklyReview(fd: FormData) {
   const { supabase } = await requireUser();
   await supabase.from("weekly_reviews").delete().eq("id", str(fd, "id"));
   revalidatePath("/rueckblick");
+}
+
+/* ========================================================== Aufgaben */
+
+// Aufgaben stehen auf der Startseite, im Handy-Einstieg und auf der eigenen
+// Seite - nach jeder Änderung müssen alle drei stimmen.
+const revalidateTasks = () => {
+  ["/aufgaben", "/heute", "/"].forEach((p) => revalidatePath(p));
+};
+
+/**
+ * Neue Aufgabe. Bewusst genügsam: nur der Titel ist Pflicht, alles andere
+ * darf leer bleiben. Genau das macht das kleine Plus auf der Startseite
+ * brauchbar - sonst notiert man nichts, weil das Formular zu lang ist.
+ */
+export async function createTask(fd: FormData) {
+  const { supabase, userId } = await requireUser();
+  const title = str(fd, "title");
+  if (!title) return;
+
+  check(await supabase.from("tasks").insert({
+    user_id: userId,
+    title,
+    details: str(fd, "details") || null,
+    life_area_id: str(fd, "life_area_id") || null,
+    due_on: str(fd, "due_on") || null,
+    priority: bool(fd, "priority") ? 1 : 0,
+  }), "Aufgabe anlegen");
+  revalidateTasks();
+}
+
+export async function updateTask(fd: FormData) {
+  const { supabase, userId } = await requireUser();
+  const id = str(fd, "id");
+  const title = str(fd, "title");
+  if (!id || !title) return;
+
+  check(await supabase.from("tasks").update({
+    title,
+    details: str(fd, "details") || null,
+    life_area_id: str(fd, "life_area_id") || null,
+    due_on: str(fd, "due_on") || null,
+    priority: bool(fd, "priority") ? 1 : 0,
+  }).eq("id", id).eq("user_id", userId), "Aufgabe speichern");
+  revalidateTasks();
+}
+
+/**
+ * Abhaken und wieder öffnen. Der gewünschte Zustand kommt mit, statt ihn aus
+ * der Datenbank zu lesen - so kann ein Doppelklick nichts durcheinander
+ * bringen.
+ */
+export async function toggleTask(fd: FormData) {
+  const { supabase, userId } = await requireUser();
+  const id = str(fd, "id");
+  if (!id) return;
+
+  check(await supabase.from("tasks")
+    .update({ done_at: bool(fd, "done") ? new Date().toISOString() : null })
+    .eq("id", id).eq("user_id", userId), "Aufgabe abhaken");
+  revalidateTasks();
+}
+
+export async function deleteTask(fd: FormData) {
+  const { supabase, userId } = await requireUser();
+  // Unteraufgaben hängen per ON DELETE CASCADE mit dran
+  await supabase.from("tasks").delete().eq("id", str(fd, "id")).eq("user_id", userId);
+  revalidateTasks();
+}
+
+/** Räumt alle erledigten Aufgaben weg - für den Frühjahrsputz. */
+export async function clearDoneTasks() {
+  const { supabase, userId } = await requireUser();
+  await supabase.from("tasks").delete()
+    .eq("user_id", userId).not("done_at", "is", null);
+  revalidateTasks();
+}
+
+/* ------------------------------------------------------- Unteraufgaben */
+
+export async function addSubtask(fd: FormData) {
+  const { supabase, userId } = await requireUser();
+  const taskId = str(fd, "task_id");
+  const title = str(fd, "title");
+  if (!taskId || !title) return;
+
+  // Ans Ende hängen: höchste bestehende Position plus eins
+  const { data: letzte } = await supabase.from("subtasks")
+    .select("sort_order").eq("task_id", taskId)
+    .order("sort_order", { ascending: false }).limit(1);
+
+  check(await supabase.from("subtasks").insert({
+    user_id: userId,
+    task_id: taskId,
+    title,
+    sort_order: Number(letzte?.[0]?.sort_order ?? 0) + 1,
+  }), "Unteraufgabe anlegen");
+  revalidateTasks();
+}
+
+export async function toggleSubtask(fd: FormData) {
+  const { supabase, userId } = await requireUser();
+  const id = str(fd, "id");
+  if (!id) return;
+
+  check(await supabase.from("subtasks")
+    .update({ done_at: bool(fd, "done") ? new Date().toISOString() : null })
+    .eq("id", id).eq("user_id", userId), "Unteraufgabe abhaken");
+  revalidateTasks();
+}
+
+export async function deleteSubtask(fd: FormData) {
+  const { supabase, userId } = await requireUser();
+  await supabase.from("subtasks").delete().eq("id", str(fd, "id")).eq("user_id", userId);
+  revalidateTasks();
+}
+
+/* ------------------------------------------------------ Lebensbereiche */
+
+export async function createLifeArea(fd: FormData) {
+  const { supabase, userId } = await requireUser();
+  const name = str(fd, "name");
+  if (!name) return;
+
+  const { data: letzte } = await supabase.from("life_areas")
+    .select("sort_order").eq("user_id", userId)
+    .order("sort_order", { ascending: false }).limit(1);
+
+  check(await supabase.from("life_areas").insert({
+    user_id: userId,
+    name,
+    // Ein eigener Bereich hängt an keinem Zeit-Bucket
+    bucket: str(fd, "bucket") || null,
+    color: str(fd, "color") || "#8A8478",
+    sort_order: Number(letzte?.[0]?.sort_order ?? 0) + 1,
+  }), "Lebensbereich anlegen");
+  revalidateTasks();
+  revalidatePath("/aktivitaeten");
+}
+
+export async function updateLifeArea(fd: FormData) {
+  const { supabase, userId } = await requireUser();
+  const id = str(fd, "id");
+  const name = str(fd, "name");
+  if (!id || !name) return;
+
+  check(await supabase.from("life_areas").update({
+    name,
+    color: str(fd, "color") || "#8A8478",
+  }).eq("id", id).eq("user_id", userId), "Lebensbereich speichern");
+  revalidateTasks();
+}
+
+/**
+ * Bereiche werden archiviert, nicht gelöscht: sonst verlören alte Aufgaben
+ * ihre Zuordnung. Archivierte tauchen in der Auswahl nicht mehr auf.
+ */
+export async function archiveLifeArea(fd: FormData) {
+  const { supabase, userId } = await requireUser();
+  const id = str(fd, "id");
+  if (!id) return;
+
+  check(await supabase.from("life_areas")
+    .update({ archived: !bool(fd, "wieder") })
+    .eq("id", id).eq("user_id", userId), "Lebensbereich archivieren");
+  revalidateTasks();
+}
+
+/** Legt die sieben Standardbereiche an, falls noch keine existieren. */
+export async function seedLifeAreas() {
+  const { supabase, userId } = await requireUser();
+  const { count } = await supabase.from("life_areas")
+    .select("id", { count: "exact", head: true }).eq("user_id", userId);
+  if ((count ?? 0) > 0) return;
+
+  const standard: { name: string; bucket: string; color: string }[] = [
+    { name: "Ziele", bucket: "ziel", color: "#5B8C7B" },
+    { name: "Arbeit", bucket: "arbeit", color: "#C4A882" },
+    { name: "Pflicht", bucket: "pflicht", color: "#A8A093" },
+    { name: "Regeneration", bucket: "regeneration", color: "#8FA6B8" },
+    { name: "Soziales", bucket: "sozial", color: "#D2A05F" },
+    { name: "Spass", bucket: "spass", color: "#BE8DA4" },
+    { name: "Leerlauf", bucket: "leerlauf", color: "#B9847A" },
+  ];
+
+  check(await supabase.from("life_areas").insert(
+    standard.map((s, i) => ({ ...s, user_id: userId, sort_order: i + 1 }))
+  ), "Lebensbereiche anlegen");
+  revalidateTasks();
 }
