@@ -97,6 +97,220 @@ export async function addShoppingItem(fd: FormData) {
   revalidateEssen();
 }
 
+/* ------------------------------------------- Menüplan: Lebensmittel */
+
+const revalidateEssenAlles = () => {
+  ["/m/Essen", "/m/Essen/plan", "/m/Essen/rezepte", "/m/Essen/lebensmittel",
+   "/heute", "/"].forEach((p) => revalidatePath(p));
+};
+
+export async function createFood(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  const name = str(fd, "name");
+  if (!name) return;
+
+  const einheit = str(fd, "unit");
+  check(await menu.from("foods").insert({
+    name,
+    unit: ["g", "ml", "stk"].includes(einheit) ? einheit : "g",
+    calories_per_100: numOr(fd, "kcal", 0),
+    protein_per_100: numOr(fd, "protein", 0),
+    carbs_per_100: numOr(fd, "carbs", 0),
+    fat_per_100: numOr(fd, "fat", 0),
+    cost_per_100: numOr(fd, "cost", 0),
+  }), "Lebensmittel anlegen");
+  revalidateEssenAlles();
+}
+
+export async function updateFood(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  const id = str(fd, "id");
+  if (!id) return;
+
+  check(await menu.from("foods").update({
+    name: str(fd, "name"),
+    calories_per_100: numOr(fd, "kcal", 0),
+    protein_per_100: numOr(fd, "protein", 0),
+    carbs_per_100: numOr(fd, "carbs", 0),
+    fat_per_100: numOr(fd, "fat", 0),
+    cost_per_100: numOr(fd, "cost", 0),
+  }).eq("id", id), "Lebensmittel speichern");
+  revalidateEssenAlles();
+}
+
+export async function deleteFood(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  check(await menu.from("foods").delete().eq("id", str(fd, "id")),
+    "Lebensmittel löschen");
+  revalidateEssenAlles();
+}
+
+/* ------------------------------------------------ Menüplan: Rezepte */
+
+export async function createRecipe(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  const name = str(fd, "name");
+  if (!name) return;
+
+  const typ = str(fd, "meal_type");
+  check(await menu.from("recipes").insert({
+    name,
+    meal_type: ["fruehstueck", "mittagessen", "abendessen", "snack"].includes(typ)
+      ? typ : "mittagessen",
+    default_portions: Math.min(14, Math.max(1, Math.round(numOr(fd, "portions", 3)))),
+    freetext: str(fd, "freetext") || "",
+    status: "bereit",
+  }), "Rezept anlegen");
+  revalidateEssenAlles();
+}
+
+export async function updateRecipe(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  const id = str(fd, "id");
+  if (!id) return;
+
+  const felder: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (fd.has("name")) felder.name = str(fd, "name");
+  if (fd.has("meal_type")) felder.meal_type = str(fd, "meal_type");
+  if (fd.has("portions")) {
+    felder.default_portions = Math.min(14, Math.max(1, Math.round(numOr(fd, "portions", 3))));
+  }
+  if (fd.has("freetext")) felder.freetext = str(fd, "freetext");
+  if (fd.has("favorite")) felder.is_favorite = fd.get("favorite") === "true";
+
+  check(await menu.from("recipes").update(felder).eq("id", id), "Rezept speichern");
+  revalidateEssenAlles();
+}
+
+export async function deleteRecipe(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  check(await menu.from("recipes").delete().eq("id", str(fd, "id")), "Rezept löschen");
+  revalidateEssenAlles();
+}
+
+/** Zutat ans Rezept hängen. Mengen sind immer pro Portion. */
+export async function addRecipeItem(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  const recipeId = str(fd, "recipe_id");
+  const name = str(fd, "food_name");
+  const menge = numOrNull(fd, "amount");
+  if (!recipeId || !name || menge === null || menge <= 0) return;
+
+  const einheit = str(fd, "unit");
+  check(await menu.from("recipe_items").insert({
+    recipe_id: recipeId,
+    food_id: str(fd, "food_id") || null,
+    food_name: name,
+    amount_per_portion: menge,
+    unit: ["g", "ml", "dl", "l", "stk"].includes(einheit) ? einheit : "g",
+    sort_order: Math.round(numOr(fd, "sort_order", 0)),
+  }), "Zutat hinzufügen");
+  revalidateEssenAlles();
+}
+
+export async function updateRecipeItemAmount(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  const menge = numOrNull(fd, "amount");
+  if (menge === null || menge <= 0) return;
+  check(await menu.from("recipe_items")
+    .update({ amount_per_portion: menge })
+    .eq("id", str(fd, "id")), "Menge speichern");
+  revalidateEssenAlles();
+}
+
+export async function deleteRecipeItem(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  check(await menu.from("recipe_items").delete().eq("id", str(fd, "id")),
+    "Zutat löschen");
+  revalidateEssenAlles();
+}
+
+/* --------------------------------------- Menüplan: Mahlzeit anlegen */
+
+export interface NeueMahlzeitPosition {
+  food_id: string | null;
+  food_name: string;
+  amount: number;
+  unit: string;
+  kcal: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  cost: number;
+}
+
+/**
+ * Legt eine Mahlzeit mit Positionen an - der Ersatz für den Sprung in die
+ * alte App. Die Tagessummen rechnen die Trigger in der Datenbank, hier wird
+ * nichts addiert.
+ */
+export async function createPlanMeal(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+
+  const date = str(fd, "date");
+  const mealType = str(fd, "meal_type");
+  const name = str(fd, "name");
+  const positionen = JSON.parse(
+    String(fd.get("items") ?? "[]")
+  ) as NeueMahlzeitPosition[];
+  if (!date || !name || positionen.length === 0) return;
+
+  // Tagesplan sicherstellen - mehrere Zeilen pro Datum sind möglich,
+  // deshalb bewusst ohne maybeSingle.
+  const { data: vorhanden } = await menu.from("meal_plans")
+    .select("id").eq("date", date).limit(1);
+  let planId = vorhanden?.[0]?.id as string | undefined;
+  if (!planId) {
+    const { data: neu, error } = await menu.from("meal_plans")
+      .insert({ date }).select("id").single();
+    if (error) throw new Error(`Tagesplan anlegen: ${error.message}`);
+    planId = neu.id as string;
+  }
+
+  const { data: meal, error: mealError } = await menu.from("meals")
+    .insert({ plan_id: planId, meal_type: mealType, name })
+    .select("id").single();
+  if (mealError) throw new Error(`Mahlzeit anlegen: ${mealError.message}`);
+
+  check(await menu.from("meal_items").insert(
+    positionen.map((p) => ({
+      meal_id: meal.id,
+      food_id: p.food_id,
+      food_name: p.food_name,
+      amount: p.amount,
+      unit: p.unit,
+      kcal: p.kcal,
+      protein: p.protein,
+      carbs: p.carbs,
+      fat: p.fat,
+      cost: p.cost,
+      eaten: false,
+    }))
+  ), "Zutaten speichern");
+
+  revalidateEssenAlles();
+}
+
 /* ------------------------------------------------------ Menüplan: Tagesplan */
 // Alle Zugriffe laufen serverseitig über den Menü-Zugang. Die Tagessummen
 // rechnen Trigger in der Datenbank - hier wird nie von Hand addiert.

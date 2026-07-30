@@ -7,9 +7,8 @@ import {
 } from "@/lib/actions";
 import { Card, cx } from "@/components/ui";
 import { MEAL_ORDER, MEAL_LABEL } from "@/lib/menu-labels";
+import { MealForm, type FoodOption, type RezeptOption } from "@/components/meal-form";
 import type { DayView } from "@/lib/supabase/menu";
-
-const MENU_APP = "https://men-plan-kerim-alurs-projects.vercel.app";
 
 /** "300 g Reis" — Menge weggelassen, wenn sie fehlt. */
 function menge(amount: number, unit: string): string {
@@ -23,11 +22,17 @@ function menge(amount: number, unit: string): string {
  * Mahlzeiten, alles abhakbar. Die Summen kommen aus der Datenbank, das
  * Abgehakte wird lokal sofort gespiegelt, damit das Antippen nicht wartet.
  */
-export function PlanDay({ tag }: { tag: DayView }) {
+export function PlanDay({ tag, foods, rezepte }: {
+  tag: DayView;
+  foods: FoodOption[];
+  rezepte: RezeptOption[];
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   // Optimistische Häkchen: id -> Zustand
   const [lokal, setLokal] = useState<Record<string, boolean>>({});
+  // Slot, für den gerade eine Mahlzeit angelegt wird
+  const [neuFuer, setNeuFuer] = useState<string | null>(null);
 
   const state = (id: string, echt: boolean) => lokal[id] ?? echt;
 
@@ -118,13 +123,21 @@ export function PlanDay({ tag }: { tag: DayView }) {
               <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted">
                 {MEAL_LABEL[slot]}
               </span>
-              <a href={`${MENU_APP}/plan`} target="_blank" rel="noopener noreferrer"
-                className="text-xs text-accent-soft transition hover:underline">
-                + Hinzufügen
-              </a>
+              <button
+                onClick={() => setNeuFuer(neuFuer === slot ? null : slot)}
+                className="text-xs font-medium text-accent-soft transition hover:underline">
+                {neuFuer === slot ? "Schliessen" : "+ Hinzufügen"}
+              </button>
             </div>
 
-            {leer && <p className="text-sm text-ink-faint">—</p>}
+            {neuFuer === slot && (
+              <div className="mb-3">
+                <MealForm date={tag.date} slot={slot} foods={foods} rezepte={rezepte}
+                  onFertig={() => setNeuFuer(null)} />
+              </div>
+            )}
+
+            {leer && neuFuer !== slot && <p className="text-sm text-ink-faint">—</p>}
 
             {/* Vorgekochte Boxen */}
             {boxen.map((p) => {

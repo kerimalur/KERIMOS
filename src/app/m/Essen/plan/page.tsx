@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { PlanDay } from "@/components/plan-day";
 import { Card, CardTitle, Empty, cx } from "@/components/ui";
-import { fetchDayView, fetchRangeTotals } from "@/lib/supabase/menu";
+import { fetchDayView, fetchRangeTotals, fetchFoods, fetchRecipes } from "@/lib/supabase/menu";
 import { heuteISO, addDays, weekStart, dayNameShort, toISODate } from "@/lib/time";
 import { dateLabel } from "@/lib/format";
 
@@ -47,7 +47,9 @@ export default async function EssenPlanPage({
 
   /* ------------------------------- Tag ------------------------------- */
   if (ansicht === "tag") {
-    const tag = await fetchDayView(datum);
+    const [tag, foods, rezepte] = await Promise.all([
+      fetchDayView(datum), fetchFoods(), fetchRecipes(),
+    ]);
     const wochentag = new Date(datum + "T12:00:00")
       .toLocaleDateString("de-CH", { weekday: "long" });
 
@@ -73,7 +75,14 @@ export default async function EssenPlanPage({
         {!tag ? (
           <Empty>Menü-Datenbank nicht verbunden.</Empty>
         ) : (
-          <PlanDay tag={tag} />
+          <PlanDay tag={tag} foods={foods}
+            rezepte={rezepte.map((r) => ({
+              id: r.id, name: r.name, meal_type: r.meal_type,
+              items: r.items.map((i) => ({
+                food_id: i.food_id, food_name: i.food_name,
+                amount_per_portion: i.amount_per_portion, unit: i.unit,
+              })),
+            }))} />
         )}
       </>
     );

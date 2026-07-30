@@ -19,8 +19,16 @@ const TABS = [
 
 export function EssenTabs() {
   const path = usePathname();
-  const aktiv = (href: string) =>
-    href === "/m/Essen" ? path === href : path.startsWith(href);
+  // "Mehr" bleibt aktiv, solange man in einem seiner Unterbereiche ist
+  const aktiv = (href: string) => {
+    if (href === "/m/Essen") return path === href;
+    if (href === "/m/Essen/mehr") {
+      return path.startsWith(href)
+        || path.startsWith("/m/Essen/rezepte")
+        || path.startsWith("/m/Essen/lebensmittel");
+    }
+    return path.startsWith(href);
+  };
 
   return (
     <>

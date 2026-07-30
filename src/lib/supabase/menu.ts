@@ -386,6 +386,87 @@ export async function fetchPrepStand(): Promise<PrepStand | null> {
   return { bis, tage, offeneEinkaeufe: offene ?? 0, ungeplant };
 }
 
+/* -------------------------------------------------- Lebensmittel, Rezepte */
+
+export interface Food {
+  id: string;
+  name: string;
+  calories_per_100: number;
+  protein_per_100: number;
+  carbs_per_100: number;
+  fat_per_100: number;
+  cost_per_100: number;
+  unit: string;
+}
+
+const FOOD_SPALTEN =
+  "id, name, calories_per_100, protein_per_100, carbs_per_100, fat_per_100, " +
+  "cost_per_100, unit";
+
+/** Lebensmittel, optional nach Namen gefiltert. */
+export async function fetchFoods(suche = "", limit = 300): Promise<Food[]> {
+  const supabase = createMenuClient();
+  if (!supabase) return [];
+
+  let q = supabase.from("foods").select(FOOD_SPALTEN).order("name").limit(limit);
+  if (suche.trim()) q = q.ilike("name", `%${suche.trim()}%`);
+
+  const { data } = await q;
+  return ((data ?? []) as Food[]).map((f) => ({
+    ...f,
+    calories_per_100: Number(f.calories_per_100 ?? 0),
+    protein_per_100: Number(f.protein_per_100 ?? 0),
+    carbs_per_100: Number(f.carbs_per_100 ?? 0),
+    fat_per_100: Number(f.fat_per_100 ?? 0),
+    cost_per_100: Number(f.cost_per_100 ?? 0),
+  }));
+}
+
+export interface RecipeItem {
+  id: string;
+  food_id: string | null;
+  food_name: string;
+  amount_per_portion: number;
+  unit: string;
+  sort_order: number;
+}
+
+export interface Recipe {
+  id: string;
+  name: string;
+  meal_type: string;
+  status: string;
+  freetext: string;
+  default_portions: number;
+  is_favorite: boolean;
+  items: RecipeItem[];
+}
+
+/** Rezepte samt Zutaten. Zwei flache Abfragen statt eingebettetem Join. */
+export async function fetchRecipes(): Promise<Recipe[]> {
+  const supabase = createMenuClient();
+  if (!supabase) return [];
+
+  const { data: rez } = await supabase.from("recipes")
+    .select("id, name, meal_type, status, freetext, default_portions, is_favorite")
+    .order("is_favorite", { ascending: false }).order("name");
+  const rezepte = (rez ?? []) as Omit<Recipe, "items">[];
+  if (rezepte.length === 0) return [];
+
+  const { data: items } = await supabase.from("recipe_items")
+    .select("id, recipe_id, food_id, food_name, amount_per_portion, unit, sort_order")
+    .in("recipe_id", rezepte.map((r) => r.id)).order("sort_order");
+
+  const nachRezept = new Map<string, RecipeItem[]>();
+  for (const i of (items ?? []) as (RecipeItem & { recipe_id: string })[]) {
+    const list = nachRezept.get(i.recipe_id) ?? [];
+    list.push({ ...i, amount_per_portion: Number(i.amount_per_portion ?? 0) });
+    nachRezept.set(i.recipe_id, list);
+  }
+
+  return rezepte.map((r) => ({ ...r, items: nachRezept.get(r.id) ?? [] }));
+}
+
 /* ------------------------------------------------------------ Tagesplan */
 
 export interface PlanMeal {
