@@ -521,8 +521,7 @@ export async function fetchCycles(limit = 8): Promise<PrepCycle[]> {
   if (!cycles || cycles.length === 0) return [];
 
   const { data: batches } = await supabase.from("prep_batches")
-    .select("id, cycle_id, recipe_id, meal_type, portions, kcal_per_portion, " +
-            "protein_per_portion, cost_per_portion")
+    .select("id, cycle_id, recipe_id, meal_type, portions, kcal_per_portion, protein_per_portion, cost_per_portion")
     .in("cycle_id", cycles.map((c) => c.id as string));
 
   const batchIds = (batches ?? []).map((b) => b.id as string);
