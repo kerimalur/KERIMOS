@@ -4,7 +4,10 @@ import { usePathname } from "next/navigation";
 import { cx } from "./ui";
 import { Logo } from "./logo";
 
-type Section = "geld" | "zeit" | "gym" | "trading" | null;
+// Gym fehlt hier bewusst: dieser Bereich bringt seine eigene Tab-Leiste mit
+// (siehe app/gym/layout.tsx), wie der Essen-Bereich auch. Zwei Navigationen
+// übereinander verwirren mehr, als sie helfen.
+type Section = "geld" | "zeit" | "trading" | null;
 
 const GELD = {
   home: { href: "/geld", label: "Übersicht" },
@@ -38,14 +41,6 @@ const ZEIT = {
   ],
 };
 
-const GYM = {
-  home: { href: "/gym", label: "Fortschritt" },
-  primary: [],
-  secondary: [
-    { href: "https://gymapp-vereinfacht.vercel.app", label: "Zum Gym-Tracker ↗" },
-  ],
-};
-
 const TRADING = {
   home: { href: "/trading", label: "Übersicht" },
   primary: [],
@@ -58,21 +53,19 @@ const GELD_PATHS = ["/geld", "/analyse", "/runway", "/transaktionen", "/konten",
   "/fixkosten", "/kategorien", "/import"];
 const ZEIT_PATHS = ["/zeit", "/kalender", "/woche", "/aktivitaeten", "/ziele",
   "/rueckblick", "/schichten", "/termine"];
-const GYM_PATHS = ["/gym"];
 const TRADING_PATHS = ["/trading"];
-// "/" und "/links" gehören zu keinem Bereich - dort zeigt die Navigation nichts.
+// "/", "/links", "/gym" und "/m/…" gehören zu keinem Bereich - dort zeigt
+// die Navigation nichts bzw. der Bereich bringt seine eigene Leiste mit.
 
 const SECTION_LABEL: Record<Exclude<Section, null>, string> = {
   geld: "Geld",
   zeit: "Zeit",
-  gym: "Gym",
   trading: "Trading",
 };
 
 function sectionOf(path: string): Section {
   if (GELD_PATHS.some((p) => path === p || path.startsWith(p + "/"))) return "geld";
   if (ZEIT_PATHS.some((p) => path === p || path.startsWith(p + "/"))) return "zeit";
-  if (GYM_PATHS.some((p) => path === p || path.startsWith(p + "/"))) return "gym";
   if (TRADING_PATHS.some((p) => path === p || path.startsWith(p + "/"))) return "trading";
   return null;
 }
@@ -99,8 +92,7 @@ export function Nav({ email }: { email?: string }) {
     );
   }
 
-  const config = section === "geld" ? GELD : section === "zeit" ? ZEIT
-    : section === "trading" ? TRADING : GYM;
+  const config = section === "geld" ? GELD : section === "zeit" ? ZEIT : TRADING;
 
   return (
     <header className="sticky top-0 z-20 border-b border-line/70 bg-paper/85 backdrop-blur">

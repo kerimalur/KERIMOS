@@ -1,7 +1,9 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { createGymClient } from "@/lib/supabase/gym";
+import {
+  createGymClient, gymUserId as resolveGymUserId, GYM_APP_URL,
+} from "@/lib/supabase/gym";
 import { createMenuClient } from "@/lib/supabase/menu";
 import { heuteISO, addDays } from "@/lib/time";
 import { rechne, summe } from "@/lib/nutrition";
@@ -777,6 +779,32 @@ export async function createAppointment(fd: FormData) {
     location: str(fd, "location") || null,
     note: str(fd, "note") || null,
   }), "Termin anlegen");
+  revalidateTermine();
+}
+
+/**
+ * Termin ändern - für getippte Datums- oder Zeitfehler. Die Felder werden
+ * vollständig überschrieben; leere Zeitangaben bedeuten wieder "ganztägig".
+ */
+export async function updateAppointment(fd: FormData) {
+  const { supabase, userId } = await requireUser();
+  const id = str(fd, "id");
+  const title = str(fd, "title");
+  const startsOn = str(fd, "starts_on");
+  if (!id || !title || !startsOn) return;
+
+  const start = zuMinute(str(fd, "start"));
+  const ende = zuMinute(str(fd, "end"));
+
+  check(await supabase.from("appointments").update({
+    title,
+    starts_on: startsOn,
+    start_minute: start,
+    // Ende nur übernehmen, wenn es nach dem Start liegt
+    end_minute: start !== null && ende !== null && ende > start ? ende : null,
+    location: str(fd, "location") || null,
+    note: str(fd, "note") || null,
+  }).eq("id", id).eq("user_id", userId), "Termin speichern");
   revalidateTermine();
 }
 
@@ -2360,6 +2388,275 @@ export async function deleteMilestone(fd: FormData) {
   const { supabase } = await requireUser();
   await supabase.from("goal_milestones").delete().eq("id", str(fd, "id"));
   revalidateGoals();
+}
+
+/* ============================================================ Gym-Modul */
+//
+// Planung und Verwaltung laufen in KerimOS, das eigentliche Training in der
+// Gym-App. Alle Zugriffe hier gehen serverseitig über den Gym-Schlüssel -
+// die Gym-Datenbank hat eine eigene Anmeldung, in der ein KerimOS-Nutzer
+// nicht existiert.
+
+const GYM_PATHS = [
+  "/gym", "/gym/trainingstage", "/gym/uebungen", "/gym/kalender",
+  "/gym/einstellungen", "/heute", "/",
+];
+const revalidateGym = () => GYM_PATHS.forEach((p) => revalidatePath(p));
+
+/** Gym-Zugang samt Besitzer-Id. Wirft, wenn eins von beidem fehlt. */
+async function gymZugang() {
+  const gym = createGymClient();
+  if (!gym) throw new Error("Gym-Zugang nicht eingerichtet");
+  const userId = await resolveGymUserId(gym);
+  if (!userId) {
+    throw new Error(
+      "Gym: GYM_USER_ID fehlt in den Umgebungsvariablen und es gibt noch " +
+      "keine bestehende Zeile, von der die Zuordnung übernommen werden könnte."
+    );
+  }
+  return { gym, userId };
+}
+
+/* ------------------------------------------------------- Trainingstage */
+
+export async function createTrainingDay(fd: FormData) {
+  await requireUser();
+  const { gym, userId } = await gymZugang();
+  const name = str(fd, "name");
+  if (!name) return;
+
+  check(await gym.from("training_days").insert({
+    user_id: userId,
+    name,
+    description: str(fd, "description") || null,
+  }), "Trainingstag anlegen");
+  revalidateGym();
+}
+
+export async function updateTrainingDay(fd: FormData) {
+  await requireUser();
+  const { gym } = await gymZugang();
+  const id = str(fd, "id");
+  const name = str(fd, "name");
+  if (!id || !name) return;
+
+  check(await gym.from("training_days").update({
+    name, description: str(fd, "description") || null,
+  }).eq("id", id), "Trainingstag speichern");
+  revalidateGym();
+}
+
+export async function deleteTrainingDay(fd: FormData) {
+  await requireUser();
+  const { gym } = await gymZugang();
+  check(await gym.from("training_days").delete().eq("id", str(fd, "id")),
+    "Trainingstag löschen");
+  revalidateGym();
+}
+
+/**
+ * Übung an einen Trainingstag hängen. Die Reihenfolge ergibt sich aus der
+ * Anzahl bestehender Übungen - neue landen hinten.
+ */
+export async function addExerciseToDay(fd: FormData) {
+  await requireUser();
+  const { gym } = await gymZugang();
+  const dayId = str(fd, "training_day_id");
+  const exerciseId = str(fd, "exercise_id");
+  if (!dayId || !exerciseId) return;
+
+  const { count } = await gym.from("training_day_exercises")
+    .select("id", { count: "exact", head: true }).eq("training_day_id", dayId);
+
+  check(await gym.from("training_day_exercises").insert({
+    training_day_id: dayId,
+    exercise_id: exerciseId,
+    order_index: count ?? 0,
+    target_sets: Math.min(10, Math.max(1, Math.round(numOr(fd, "target_sets", 3)))),
+    target_reps: str(fd, "target_reps") || "8-12",
+  }), "Übung hinzufügen");
+  revalidateGym();
+}
+
+export async function updateDayExercise(fd: FormData) {
+  await requireUser();
+  const { gym } = await gymZugang();
+  const id = str(fd, "id");
+  if (!id) return;
+
+  const felder: Record<string, unknown> = {};
+  if (fd.has("target_sets")) {
+    felder.target_sets = Math.min(10, Math.max(1, Math.round(numOr(fd, "target_sets", 3))));
+  }
+  if (fd.has("target_reps")) felder.target_reps = str(fd, "target_reps") || "8-12";
+  if (fd.has("order_index")) felder.order_index = Math.max(0, Math.round(numOr(fd, "order_index", 0)));
+  if (Object.keys(felder).length === 0) return;
+
+  check(await gym.from("training_day_exercises").update(felder).eq("id", id),
+    "Übung speichern");
+  revalidateGym();
+}
+
+export async function removeExerciseFromDay(fd: FormData) {
+  await requireUser();
+  const { gym } = await gymZugang();
+  check(await gym.from("training_day_exercises").delete().eq("id", str(fd, "id")),
+    "Übung entfernen");
+  revalidateGym();
+}
+
+/**
+ * Übung im Trainingstag verschieben. Tauscht die Reihenfolge mit dem
+ * Nachbarn - einfacher und robuster als alle Indizes neu zu vergeben.
+ */
+export async function moveExerciseInDay(fd: FormData) {
+  await requireUser();
+  const { gym } = await gymZugang();
+  const id = str(fd, "id");
+  const richtung = str(fd, "richtung"); // "hoch" | "runter"
+  if (!id || !["hoch", "runter"].includes(richtung)) return;
+
+  const { data: aktuell } = await gym.from("training_day_exercises")
+    .select("id, training_day_id, order_index").eq("id", id).maybeSingle();
+  if (!aktuell) return;
+
+  const { data: geschwister } = await gym.from("training_day_exercises")
+    .select("id, order_index")
+    .eq("training_day_id", aktuell.training_day_id as string)
+    .order("order_index");
+  const liste = geschwister ?? [];
+  const pos = liste.findIndex((g) => g.id === id);
+  const zielPos = richtung === "hoch" ? pos - 1 : pos + 1;
+  if (pos < 0 || zielPos < 0 || zielPos >= liste.length) return;
+
+  const nachbar = liste[zielPos];
+  await gym.from("training_day_exercises")
+    .update({ order_index: Number(nachbar.order_index ?? 0) }).eq("id", id);
+  await gym.from("training_day_exercises")
+    .update({ order_index: Number(aktuell.order_index ?? 0) }).eq("id", nachbar.id as string);
+  revalidateGym();
+}
+
+/* ------------------------------------------------------------- Übungen */
+
+/** Eigene Übung in die Datenbank aufnehmen. */
+export async function createExercise(fd: FormData) {
+  await requireUser();
+  const { gym } = await gymZugang();
+  const name = str(fd, "name");
+  const muskel = str(fd, "primary_muscle_id");
+  if (!name || !muskel) return;
+
+  check(await gym.from("exercises").insert({
+    name,
+    primary_muscle_id: muskel,
+    description: str(fd, "description") || null,
+    equipment_needed: str(fd, "equipment_needed") || null,
+    is_cardio: fd.get("is_cardio") === "on" || fd.get("is_cardio") === "true",
+  }), "Übung anlegen");
+  revalidateGym();
+}
+
+export async function deleteExercise(fd: FormData) {
+  await requireUser();
+  const { gym } = await gymZugang();
+  check(await gym.from("exercises").delete().eq("id", str(fd, "id")),
+    "Übung löschen");
+  revalidateGym();
+}
+
+/* ------------------------------------------------------------ Kalender */
+
+export async function planTraining(fd: FormData) {
+  await requireUser();
+  const { gym, userId } = await gymZugang();
+  const dayId = str(fd, "training_day_id");
+  const datum = str(fd, "scheduled_date");
+  if (!dayId || !datum) return;
+
+  // Die Tabelle trägt UNIQUE(user_id, scheduled_date, training_day_id) -
+  // ein zweiter Versuch für denselben Tag soll deshalb nicht scheitern.
+  check(await gym.from("calendar_entries").upsert(
+    { user_id: userId, training_day_id: dayId, scheduled_date: datum, status: "planned" },
+    { onConflict: "user_id,scheduled_date,training_day_id", ignoreDuplicates: true }
+  ), "Training planen");
+  revalidateGym();
+}
+
+export async function deleteCalendarEntry(fd: FormData) {
+  await requireUser();
+  const { gym } = await gymZugang();
+  check(await gym.from("calendar_entries").delete().eq("id", str(fd, "id")),
+    "Planung löschen");
+  revalidateGym();
+}
+
+/**
+ * Legt die Einheit an und gibt die Adresse in der Gym-App zurück. Das
+ * eigentliche Training läuft bewusst dort: Timer, Satz-Erfassung und
+ * Erholungsrechnung bleiben in der kleinen, selten deployten App.
+ *
+ * Läuft für den Eintrag bereits eine unbeendete Einheit, führt der Weg
+ * dorthin zurück - sonst entstünden zwei Einheiten für dasselbe Training.
+ */
+export async function startWorkout(fd: FormData): Promise<string> {
+  await requireUser();
+  const { gym, userId } = await gymZugang();
+  const dayId = str(fd, "training_day_id");
+  if (!dayId) throw new Error("Training starten: kein Trainingstag angegeben");
+
+  const datum = str(fd, "date") || heuteISO();
+  let entryId = str(fd, "calendar_entry_id") || null;
+
+  // Ohne Kalendereintrag ("jetzt sofort") erst einen für heute sicherstellen
+  if (!entryId) {
+    const { data: vorhanden } = await gym.from("calendar_entries")
+      .select("id").eq("training_day_id", dayId).eq("scheduled_date", datum).limit(1);
+    entryId = (vorhanden?.[0]?.id as string | undefined) ?? null;
+
+    if (!entryId) {
+      const { data: neu, error } = await gym.from("calendar_entries").insert({
+        user_id: userId, training_day_id: dayId,
+        scheduled_date: datum, status: "planned",
+      }).select("id").single();
+      if (error) throw new Error(`Kalendereintrag anlegen: ${error.message}`);
+      entryId = neu.id as string;
+    }
+  }
+
+  // Ab hier steht der Eintrag fest - der Zweig oben legt ihn sonst an.
+  if (!entryId) throw new Error("Training starten: Kalendereintrag fehlt");
+
+  const { data: offen } = await gym.from("workout_sessions")
+    .select("id").eq("calendar_entry_id", entryId)
+    .is("completed_at", null).limit(1);
+  const laufende = offen?.[0]?.id as string | undefined;
+  if (laufende) return `${GYM_APP_URL}/workout/${laufende}`;
+
+  const { data: session, error: sessionError } = await gym.from("workout_sessions").insert({
+    calendar_entry_id: entryId,
+    training_day_id: dayId,
+    user_id: userId,
+    started_at: new Date().toISOString(),
+  }).select("id").single();
+  if (sessionError) throw new Error(`Einheit anlegen: ${sessionError.message}`);
+
+  revalidateGym();
+  return `${GYM_APP_URL}/workout/${session.id as string}`;
+}
+
+/* -------------------------------------------------------- Einstellungen */
+
+export async function saveWeeklyGoal(fd: FormData) {
+  await requireUser();
+  const { gym, userId } = await gymZugang();
+  const ziel = Math.min(14, Math.max(1, Math.round(numOr(fd, "weekly_goal", 4))));
+
+  check(await gym.from("gym_settings").upsert(
+    { user_id: userId, weekly_goal: ziel, updated_at: new Date().toISOString() },
+    { onConflict: "user_id" }
+  ), "Wochenziel speichern");
+  revalidateGym();
 }
 
 /* ==================================================== Wochenrückblick */

@@ -15,6 +15,17 @@ Die Migrationen sind im Supabase-Projekt `fhgrjqvunxbfhujoxmcn` angewandt:
 einmalig im SQL-Editor des Projekts `fhgrjqvunxbfhujoxmcn` ausführen; danach
 funktioniert `/schichten`.
 
+## Migration in einem anderen Projekt
+
+| Migration | Projekt | Inhalt |
+|---|---|---|
+| `09_gym_settings` | **Gym** (`kvpexrorkqmxnzqvexga`) | Wochenziel, damit `/gym/einstellungen` speichern kann |
+
+`09_gym_settings.sql` gehört **nicht** ins Kompass-Projekt. Das Wochenziel lag
+bisher nur im localStorage der Gym-App und war damit an ein Gerät gebunden —
+KerimOS konnte es weder lesen noch setzen. Bis die Migration läuft, zeigt
+KerimOS den Standardwert 4 an; Speichern schlägt fehl.
+
 Die Migrationen 01–05 existieren bislang nur in Supabase. Sie hierher zu holen
 ist der einzige Weg, das Schema reproduzierbar und gesichert zu haben:
 

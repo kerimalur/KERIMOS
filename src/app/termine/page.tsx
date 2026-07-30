@@ -1,33 +1,10 @@
 import { createClient } from "@/lib/supabase/server";
-import { createAppointment, deleteAppointment } from "@/lib/actions";
-import { Button, Card, CardTitle, Empty, Input, Label } from "@/components/ui";
+import { createAppointment } from "@/lib/actions";
+import { AppointmentList, type Appointment } from "@/components/appointment-list";
+import { Button, Card, CardTitle, Input, Label } from "@/components/ui";
 import { heuteISO, addDays } from "@/lib/time";
-import { dateLabel } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
-
-// Bewusst nicht exportiert: Next.js erlaubt in einer Seite nur bestimmte
-// Exporte (default, dynamic, metadata …) und bricht den Build sonst ab.
-interface Appointment {
-  id: string;
-  title: string;
-  starts_on: string;
-  start_minute: number | null;
-  end_minute: number | null;
-  location: string | null;
-  note: string | null;
-}
-
-const hhmm = (m: number) =>
-  `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
-
-/** "09:00–11:30" · "09:00" · "ganztägig" */
-function zeitText(a: Appointment): string {
-  if (a.start_minute === null) return "ganztägig";
-  return a.end_minute === null
-    ? hhmm(a.start_minute)
-    : `${hhmm(a.start_minute)}–${hhmm(a.end_minute)}`;
-}
 
 export default async function TerminePage() {
   const supabase = await createClient();
@@ -63,7 +40,7 @@ export default async function TerminePage() {
         <h1 className="text-xl font-medium text-ink">Termine</h1>
         <p className="mt-1 max-w-2xl text-sm text-ink-muted">
           Hier eintragen, unterwegs sehen: die anstehenden Termine stehen auf der
-          Startseite und im Handy-Einstieg.
+          Startseite und im Handy-Einstieg. Zum Ändern den Termin antippen.
         </p>
       </div>
 
@@ -105,49 +82,13 @@ export default async function TerminePage() {
 
       <Card>
         <CardTitle>Anstehend</CardTitle>
-        {kommend.length === 0 ? (
-          <Empty>Nichts geplant.</Empty>
-        ) : (
-          <ul className="divide-y divide-line">
-            {kommend.map((a) => (
-              <li key={a.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2.5">
-                <span className="w-28 shrink-0 text-xs text-ink-muted">
-                  {a.starts_on === heute ? "heute" : dateLabel(a.starts_on)}
-                </span>
-                <span className="tabular w-24 shrink-0 text-xs text-ink-soft">
-                  {zeitText(a)}
-                </span>
-                <span className="text-sm text-ink">{a.title}</span>
-                {a.location && (
-                  <span className="text-xs text-ink-muted">· {a.location}</span>
-                )}
-                {a.note && <span className="text-xs text-ink-faint">· {a.note}</span>}
-                <form action={deleteAppointment} className="ml-auto">
-                  <input type="hidden" name="id" value={a.id} />
-                  <button className="text-xs text-ink-faint transition hover:text-bad">✕</button>
-                </form>
-              </li>
-            ))}
-          </ul>
-        )}
+        <AppointmentList termine={kommend} heute={heute} />
       </Card>
 
       {vergangen.length > 0 && (
         <Card>
           <CardTitle>Vorbei</CardTitle>
-          <ul className="divide-y divide-line">
-            {vergangen.map((a) => (
-              <li key={a.id} className="flex flex-wrap items-baseline gap-x-3 py-2 text-ink-faint">
-                <span className="w-28 shrink-0 text-xs">{dateLabel(a.starts_on)}</span>
-                <span className="tabular w-24 shrink-0 text-xs">{zeitText(a)}</span>
-                <span className="text-sm">{a.title}</span>
-                <form action={deleteAppointment} className="ml-auto">
-                  <input type="hidden" name="id" value={a.id} />
-                  <button className="text-xs transition hover:text-bad">✕</button>
-                </form>
-              </li>
-            ))}
-          </ul>
+          <AppointmentList termine={vergangen} heute={heute} vergangen />
         </Card>
       )}
     </div>
