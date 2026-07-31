@@ -1,5 +1,5 @@
 "use server";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createGymClient, gymUserId as resolveGymUserId } from "@/lib/supabase/gym";
 import { createMenuClient } from "@/lib/supabase/menu";
@@ -2622,7 +2622,13 @@ const GYM_PATHS = [
   "/gym/einstellungen", "/gym/verlauf", "/gym/balance", "/gym/fortschritt",
   "/heute", "/",
 ];
-const revalidateGym = () => GYM_PATHS.forEach((p) => revalidatePath(p));
+const revalidateGym = () => {
+  GYM_PATHS.forEach((p) => revalidatePath(p));
+  // Übungen und Muskelgruppen liegen in unstable_cache (lib/supabase/gym.ts).
+  // revalidatePath allein räumt den nicht ab — ohne das hier bliebe eine neu
+  // angelegte Übung bis zu einer Stunde unsichtbar.
+  revalidateTag("gym-stammdaten");
+};
 
 /** Gym-Zugang samt Besitzer-Id. Wirft, wenn eins von beidem fehlt. */
 async function gymZugang() {

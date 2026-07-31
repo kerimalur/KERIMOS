@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
 
 /**
@@ -69,22 +70,42 @@ export interface GymExercise {
   is_cardio: boolean;
 }
 
-export async function fetchMuscleGroups(): Promise<MuscleGroup[]> {
-  const supabase = createGymClient();
-  if (!supabase) return [];
-  const { data } = await supabase.from("muscle_groups")
-    .select("id, name, base_recovery_hours").order("name");
-  return ((data ?? []) as unknown as MuscleGroup[]).map((m) => ({
-    ...m, base_recovery_hours: Number(m.base_recovery_hours ?? 0),
-  }));
-}
+/**
+ * Stammdaten-Cache.
+ *
+ * Muskelgruppen und Übungen sind Nachschlagetabellen: wenige Zeilen, die sich
+ * höchstens beim Anlegen einer neuen Übung ändern. Ohne Cache holt jede Seite
+ * sie erneut — und weil Vercel-Funktion und Datenbank in verschiedenen
+ * Rechenzentren stehen, kostet jeder dieser Aufrufe eine volle Netzwerkrunde.
+ * fetchExercises zieht zusätzlich fetchMuscleGroups nach, das schlägt also
+ * doppelt zu.
+ *
+ * `revalidate` hält sie eine Stunde vor; `createExercise` und Verwandte rufen
+ * ohnehin revalidatePath auf, das den Cache mitleert.
+ */
+const STAMMDATEN_TTL = 3600;
+
+export const fetchMuscleGroups = unstable_cache(
+  async (): Promise<MuscleGroup[]> => {
+    const supabase = createGymClient();
+    if (!supabase) return [];
+    const { data } = await supabase.from("muscle_groups")
+      .select("id, name, base_recovery_hours").order("name");
+    return ((data ?? []) as unknown as MuscleGroup[]).map((m) => ({
+      ...m, base_recovery_hours: Number(m.base_recovery_hours ?? 0),
+    }));
+  },
+  ["gym-muscle-groups"],
+  { revalidate: STAMMDATEN_TTL, tags: ["gym-stammdaten"] },
+);
 
 /**
  * Übungen samt Muskelgruppen-Namen. Bewusst zwei flache Abfragen statt eines
  * eingebetteten Joins - dasselbe Muster wie im Menüplan, weil PostgREST bei
  * Joins keinen ableitbaren Typ liefert.
  */
-export async function fetchExercises(): Promise<GymExercise[]> {
+export const fetchExercises = unstable_cache(
+  async (): Promise<GymExercise[]> => {
   const supabase = createGymClient();
   if (!supabase) return [];
 
@@ -105,7 +126,10 @@ export async function fetchExercises(): Promise<GymExercise[]> {
     equipment_needed: (e.equipment_needed as string | null) ?? null,
     is_cardio: Boolean(e.is_cardio),
   }));
-}
+  },
+  ["gym-exercises"],
+  { revalidate: STAMMDATEN_TTL, tags: ["gym-stammdaten"] },
+);
 
 /* --------------------------------------------------------- Trainingstage */
 
