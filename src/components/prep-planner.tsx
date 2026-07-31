@@ -6,6 +6,8 @@ import {
 } from "@/lib/actions";
 import { Button, Card, CardTitle, Empty, Input, Select, cx } from "@/components/ui";
 import { MEAL_LABEL, MEAL_ORDER } from "@/lib/menu-labels";
+import { MenuWrite } from "@/components/menu-write";
+import type { FoodOption } from "@/components/meal-form";
 import type { PrepCycle } from "@/lib/supabase/menu";
 
 interface RezeptOption {
@@ -13,6 +15,15 @@ interface RezeptOption {
   name: string;
   meal_type: string;
   default_portions: number;
+}
+
+/** Ganze Tage zwischen zwei ISO-Daten, beide inklusive. Mittags gerechnet,
+ *  damit die Sommerzeit-Umstellung keine krummen Werte erzeugt. */
+function tageZwischen(von: string, bis: string): number {
+  if (!von || !bis || bis < von) return 0;
+  const a = new Date(`${von}T12:00:00`).getTime();
+  const b = new Date(`${bis}T12:00:00`).getTime();
+  return Math.round((b - a) / 86_400_000) + 1;
 }
 
 interface Zeile {
@@ -41,10 +52,11 @@ const kurz = (iso: string) =>
  * in der Kochliste.
  */
 export function PrepPlanner({
-  cycles, rezepte, heute,
+  cycles, rezepte, foods, heute,
 }: {
   cycles: PrepCycle[];
   rezepte: RezeptOption[];
+  foods: FoodOption[];
   heute: string;
 }) {
   const router = useRouter();
@@ -56,6 +68,14 @@ export function PrepPlanner({
   const [bis, setBis] = useState(heute);
   const [name, setName] = useState("");
   const [offen, setOffen] = useState<string | null>(cycles[0]?.id ?? null);
+  const [schreiben, setSchreiben] = useState(false);
+
+  /**
+   * Boxen je Menü: eine Portion pro Tag. Genau die Rechnung hinter
+   * "1. bis 2. August = 2 Boxen". Freie Tage zieht die Verteilung serverseitig
+   * ab, die Zahl hier ist die Obergrenze.
+   */
+  const tage = tageZwischen(von, bis);
 
   async function lauf(action: (fd: FormData) => Promise<void>, fd: FormData) {
     if (busy) return;
@@ -65,11 +85,15 @@ export function PrepPlanner({
     router.refresh();
   }
 
-  function zeileHinzu() {
-    const r = rezepte[0];
+  /** Topf setzen. Die Boxenzahl folgt dem Zeitraum, nicht default_portions
+   *  des Rezepts — der Zeitraum ist die konkretere Angabe. Von Hand lässt sie
+   *  sich danach weiterhin überschreiben. */
+  function zeileHinzu(rezept?: RezeptOption) {
+    const r = rezept ?? rezepte[0];
     if (!r) return;
     setZeilen((z) => [...z, {
-      recipe_id: r.id, meal_type: r.meal_type, portions: r.default_portions || 3,
+      recipe_id: r.id, meal_type: r.meal_type,
+      portions: Math.max(1, tage || r.default_portions || 3),
     }]);
   }
 
@@ -132,9 +156,21 @@ export function PrepPlanner({
               </div>
               <div>
                 <label className="mb-1 block text-xs text-ink-muted">bis</label>
-                <Input type="date" value={bis} onChange={(e) => setBis(e.target.value)} />
+                <Input type="date" value={bis} min={von}
+                  onChange={(e) => setBis(e.target.value)} />
               </div>
             </div>
+
+            {/* Was der Zeitraum bedeutet — hier fällt die Boxenzahl. */}
+            {bis < von ? (
+              <p className="text-xs text-bad">Das Enddatum liegt vor dem Startdatum.</p>
+            ) : (
+              <p className="text-xs text-ink-soft">
+                <span className="font-medium text-ink">{tage} Tage</span> → 1 Portion pro Tag
+                → <span className="font-medium text-ink">{tage} Boxen</span> je Menü.
+                Freie Tage überspringt die Verteilung.
+              </p>
+            )}
 
             {zeilen.length > 0 && (
               <ul className="space-y-2">
@@ -173,6 +209,20 @@ export function PrepPlanner({
                         onChange={(e) => setZeilen((list) => list.map((x, j) =>
                           j === i ? { ...x, portions: Number(e.target.value) || 1 } : x))} />
                     </div>
+                    {/* Woher die Zahl kommt — und zurück, falls der Zeitraum
+                        sich nach dem Setzen geändert hat. */}
+                    <div className="pb-2 text-xs">
+                      {z.portions === tage ? (
+                        <span className="text-ink-faint">= 1 × {tage} Tage</span>
+                      ) : (
+                        <button
+                          onClick={() => setZeilen((list) => list.map((x, j) =>
+                            j === i ? { ...x, portions: Math.max(1, tage) } : x))}
+                          className="text-accent-soft hover:underline">
+                          Zeitraum sagt {tage}
+                        </button>
+                      )}
+                    </div>
                     <button onClick={() => setZeilen((list) => list.filter((_, j) => j !== i))}
                       aria-label="Topf entfernen"
                       className="px-1 pb-2 text-sm text-ink-faint transition hover:text-bad">
@@ -183,10 +233,28 @@ export function PrepPlanner({
               </ul>
             )}
 
+            {/* Menü direkt schreiben, ohne Umweg über die Rezeptliste. */}
+            {schreiben && (
+              <MenuWrite
+                foods={foods}
+                boxen={Math.max(1, tage)}
+                onFertig={(rezept) => {
+                  setSchreiben(false);
+                  if (rezept) {
+                    zeileHinzu({ ...rezept, default_portions: Math.max(1, tage) });
+                    router.refresh();
+                  }
+                }}
+              />
+            )}
+
             <div className="flex flex-wrap items-center gap-3">
-              <Button variant="ghost" onClick={zeileHinzu}
+              <Button variant="ghost" onClick={() => zeileHinzu()}
                 disabled={rezepte.length === 0}>
-                + Topf
+                + Topf aus Rezept
+              </Button>
+              <Button variant="ghost" onClick={() => setSchreiben(!schreiben)}>
+                {schreiben ? "Schliessen" : "✎ Menü schreiben"}
               </Button>
               <Button onClick={anlegen}
                 disabled={busy || zeilen.length === 0 || bis < von}>
@@ -194,7 +262,7 @@ export function PrepPlanner({
               </Button>
               {rezepte.length === 0 && (
                 <span className="text-xs text-ink-muted">
-                  Zuerst ein Rezept anlegen.
+                  Noch kein Rezept — schreib einfach ein Menü.
                 </span>
               )}
             </div>

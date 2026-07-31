@@ -3,11 +3,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   toggleMealEaten, toggleMealItemEaten, togglePortionConsumed,
-  removePortionFromDay, deletePlanMeal, setMenuDayMarker,
+  removePortionFromDay, deletePlanMeal, setMenuDayMarker, convertPortionToMeal,
 } from "@/lib/actions";
 import { Card, cx } from "@/components/ui";
 import { MEAL_ORDER, MEAL_LABEL } from "@/lib/menu-labels";
 import { MealForm, type FoodOption, type RezeptOption } from "@/components/meal-form";
+import { MealEdit } from "@/components/meal-edit";
 import type { DayView } from "@/lib/supabase/menu";
 
 /** "300 g Reis" — Menge weggelassen, wenn sie fehlt. */
@@ -33,8 +34,29 @@ export function PlanDay({ tag, foods, rezepte }: {
   const [lokal, setLokal] = useState<Record<string, boolean>>({});
   // Slot, für den gerade eine Mahlzeit angelegt wird
   const [neuFuer, setNeuFuer] = useState<string | null>(null);
+  // Mahlzeit, die gerade bearbeitet wird
+  const [editId, setEditId] = useState<string | null>(null);
 
   const state = (id: string, echt: boolean) => lokal[id] ?? echt;
+
+  /**
+   * Box bearbeiten: erst aus dem Zyklus lösen, dann den Editor öffnen.
+   *
+   * Eine Box hängt am Rezept ihres Topfs und ist deshalb nicht direkt
+   * änderbar. convertPortionToMeal legt sie als freie Mahlzeit dieses Tages an
+   * — Name, Mengen und Zutaten sind ab dann frei. Der Prep-Zyklus bleibt
+   * unverändert: gekocht ist gekocht.
+   */
+  async function boxBearbeiten(portionId: string) {
+    if (busy) return;
+    setBusy(true);
+    const fd = new FormData();
+    fd.set("id", portionId);
+    const mealId = await convertPortionToMeal(fd);
+    setBusy(false);
+    if (mealId) setEditId(mealId);
+    router.refresh();
+  }
 
   async function schalten(
     id: string, wert: boolean, action: (fd: FormData) => Promise<void>, feld: string
@@ -161,6 +183,12 @@ export function PlanDay({ tag, foods, rezepte }: {
                     <span className="tabular shrink-0 text-xs text-ink-muted">
                       {Math.round(p.kcal)} kcal
                     </span>
+                    <button onClick={() => boxBearbeiten(p.id)} disabled={busy}
+                      aria-label="Box bearbeiten: Name, Mengen und Zutaten"
+                      title="Bearbeiten — löst die Box aus dem Zyklus"
+                      className="shrink-0 px-1 text-sm text-ink-faint transition hover:text-accent-soft disabled:opacity-40">
+                      ✎
+                    </button>
                     <button onClick={() => entfernen(p.id, removePortionFromDay)}
                       aria-label="Box aus dem Tag nehmen"
                       className="shrink-0 px-1 text-sm text-ink-faint transition hover:text-bad">
@@ -178,6 +206,14 @@ export function PlanDay({ tag, foods, rezepte }: {
             {mahlzeiten.map((m) => {
               const an = state(m.id, m.eaten);
               const fertig = m.items.filter((i) => state(i.id, i.eaten)).length;
+
+              if (editId === m.id) {
+                return (
+                  <MealEdit key={m.id} meal={m} foods={foods}
+                    onFertig={() => setEditId(null)} />
+                );
+              }
+
               return (
                 <div key={m.id} className="mb-2 rounded-xl bg-sand/50 p-3">
                   <div className="flex items-center gap-2.5">
@@ -195,6 +231,12 @@ export function PlanDay({ tag, foods, rezepte }: {
                     <span className="tabular shrink-0 text-xs text-ink-muted">
                       {Math.round(m.kcal_total)} kcal
                     </span>
+                    <button onClick={() => setEditId(m.id)}
+                      aria-label="Mahlzeit bearbeiten: Name, Mengen und Zutaten"
+                      title="Bearbeiten"
+                      className="shrink-0 px-1 text-sm text-ink-faint transition hover:text-accent-soft">
+                      ✎
+                    </button>
                     <button onClick={() => entfernen(m.id, deletePlanMeal)}
                       aria-label="Mahlzeit löschen"
                       className="shrink-0 px-1 text-sm text-ink-faint transition hover:text-bad">

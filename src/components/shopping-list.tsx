@@ -82,17 +82,25 @@ export function ShoppingList({ items }: { items: ShoppingItem[] }) {
         )}
       </div>
 
-      <div className="mb-3 flex items-center gap-2">
+      {/* Artikelfeld auf eigener Zeile in voller Breite. Vorher teilten sich
+          Artikel, Menge und Button eine Zeile — auf dem Handy blieben für den
+          Artikelnamen keine 150 px und das Getippte war nicht lesbar.
+          text-base (16 px) verhindert zusätzlich den Auto-Zoom von iOS Safari. */}
+      <div className="mb-3 flex flex-col gap-2">
         <Input value={neu} onChange={(e) => setNeu(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && hinzufuegen()}
-          placeholder="Was fehlt?" className="flex-1" />
-        <Input value={menge} onChange={(e) => setMenge(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && hinzufuegen()}
-          placeholder="Menge" className="w-24" />
-        <Button onClick={hinzufuegen} disabled={busy || !neu.trim()}
-          className="px-3.5 py-2 text-sm">
-          +
-        </Button>
+          placeholder="Was fehlt?" autoComplete="off"
+          className="w-full text-base" />
+        <div className="flex items-center gap-2">
+          <Input value={menge} onChange={(e) => setMenge(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && hinzufuegen()}
+            placeholder="Menge (z.B. 500 g)" autoComplete="off"
+            className="min-w-0 flex-1 text-base" />
+          <Button onClick={hinzufuegen} disabled={busy || !neu.trim()}
+            className="shrink-0 px-3.5 py-2 text-sm">
+            +
+          </Button>
+        </div>
       </div>
 
       {items.length === 0 ? (

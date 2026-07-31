@@ -419,6 +419,55 @@ export async function createRecipe(fd: FormData) {
   revalidateEssenAlles();
 }
 
+/**
+ * Menü direkt schreiben statt aus der Rezeptliste wählen.
+ *
+ * Legt Rezept und Zutaten in einem Schritt an und gibt die id zurück, damit
+ * der Prep-Planer den Topf sofort setzen kann. Mengen gelten für EINE Portion
+ * — so werden recipe_items ohnehin gespeichert; wie oft gekocht wird,
+ * entscheidet der Zeitraum im Planer.
+ *
+ * Ein Topf braucht zwingend eine recipe_id, sonst greifen Einkaufs- und
+ * Kochliste nicht. Darum entsteht auch beim "freien" Menü ein echtes Rezept.
+ */
+export async function createRecipeWithItems(fd: FormData): Promise<string | null> {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return null;
+
+  const name = str(fd, "name").trim();
+  if (!name) return null;
+  const typ = str(fd, "meal_type");
+  const positionen = JSON.parse(String(fd.get("items") ?? "[]")) as {
+    food_id: string | null; food_name: string; amount: number; unit: string;
+  }[];
+  if (positionen.length === 0) return null;
+
+  const { data: rezept, error } = await menu.from("recipes").insert({
+    name,
+    meal_type: ["fruehstueck", "mittagessen", "abendessen", "snack"].includes(typ)
+      ? typ : "mittagessen",
+    default_portions: Math.min(14, Math.max(1, Math.round(numOr(fd, "portions", 3)))),
+    freetext: str(fd, "freetext") || "",
+    status: "bereit",
+  }).select("id").single();
+  if (error) throw new Error(`Menü anlegen: ${error.message}`);
+
+  check(await menu.from("recipe_items").insert(
+    positionen.map((p, i) => ({
+      recipe_id: rezept.id,
+      food_id: p.food_id,
+      food_name: p.food_name,
+      amount_per_portion: p.amount,
+      unit: ["g", "ml", "dl", "l", "stk"].includes(p.unit) ? p.unit : "g",
+      sort_order: i,
+    }))
+  ), "Zutaten speichern");
+
+  revalidateEssenAlles();
+  return rezept.id as string;
+}
+
 export async function updateRecipe(fd: FormData) {
   await requireUser();
   const menu = createMenuClient();
@@ -680,6 +729,178 @@ export async function deletePlanMeal(fd: FormData) {
   check(await menu.from("meals")
     .delete().eq("id", str(fd, "id")), "Mahlzeit löschen");
   revalidatePlan();
+}
+
+/* ------------------------------------- Menüplan: geplante Mahlzeit ändern */
+// Name, Mengen und Zusammensetzung einer bereits geplanten Mahlzeit. Die
+// Tagessummen rechnen Trigger in der Datenbank nach - hier wird nie addiert.
+
+/** Namen einer geplanten Mahlzeit ändern. */
+export async function renamePlanMeal(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  const name = str(fd, "name").trim();
+  if (!name) return;
+  check(await menu.from("meals")
+    .update({ name }).eq("id", str(fd, "id")), "Mahlzeit umbenennen");
+  revalidatePlan();
+}
+
+/**
+ * Menge einer Position ändern.
+ *
+ * Nährwerte und Kosten skalieren proportional zur alten Menge. Das kommt ohne
+ * erneuten Zugriff auf das Lebensmittel aus und funktioniert deshalb auch für
+ * Positionen ohne food_id (Direkteingaben).
+ */
+export async function updatePlanMealItemAmount(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  const id = str(fd, "id");
+  const neu = Number(fd.get("amount"));
+  if (!id || !Number.isFinite(neu) || neu <= 0) return;
+
+  const { data: alt } = await menu.from("meal_items")
+    .select("amount, kcal, protein, carbs, fat, cost").eq("id", id).single();
+  if (!alt || !alt.amount || alt.amount <= 0) return;
+
+  const r = neu / Number(alt.amount);
+  const r1 = (v: unknown) => Math.round(Number(v ?? 0) * r * 10) / 10;
+
+  check(await menu.from("meal_items").update({
+    amount: neu,
+    kcal: r1(alt.kcal),
+    protein: r1(alt.protein),
+    carbs: r1(alt.carbs),
+    fat: r1(alt.fat),
+    cost: Math.round(Number(alt.cost ?? 0) * r * 1000) / 1000,
+  }).eq("id", id), "Menge ändern");
+  revalidatePlan();
+}
+
+/** Einzelne Position aus einer geplanten Mahlzeit entfernen. */
+export async function deletePlanMealItem(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  check(await menu.from("meal_items")
+    .delete().eq("id", str(fd, "id")), "Position entfernen");
+  revalidatePlan();
+}
+
+/** Weitere Position an eine bestehende Mahlzeit anhängen. */
+export async function addPlanMealItem(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  const mealId = str(fd, "meal_id");
+  const positionen = JSON.parse(
+    String(fd.get("items") ?? "[]")
+  ) as NeueMahlzeitPosition[];
+  if (!mealId || positionen.length === 0) return;
+
+  check(await menu.from("meal_items").insert(
+    positionen.map((p) => ({
+      meal_id: mealId,
+      food_id: p.food_id,
+      food_name: p.food_name,
+      amount: p.amount,
+      unit: p.unit,
+      kcal: p.kcal,
+      protein: p.protein,
+      carbs: p.carbs,
+      fat: p.fat,
+      cost: p.cost,
+      eaten: false,
+    }))
+  ), "Zutat hinzufügen");
+  revalidatePlan();
+}
+
+/**
+ * Box aus dem Zyklus lösen und als frei geplante Mahlzeit dieses Tages
+ * anlegen — danach ist sie wie jede andere Mahlzeit bearbeitbar.
+ *
+ * Der Prep-Zyklus bleibt unangetastet: Topf, Portionenzahl, Einkaufs- und
+ * Kochliste ändern sich nicht. Nur diese eine Tageszuordnung wird ersetzt.
+ * Die Zutaten kommen aus dem Rezept des Topfs, Mengen pro Portion, weil eine
+ * Box genau eine Portion ist.
+ */
+export async function convertPortionToMeal(fd: FormData): Promise<string | null> {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return null;
+  const portionId = str(fd, "id");
+  if (!portionId) return null;
+
+  const { data: portion } = await menu.from("batch_portions")
+    .select("id, date, meal_type, consumed, prep_batches(recipe_id, recipes(name))")
+    .eq("id", portionId).single();
+  if (!portion) return null;
+
+  const batch = portion.prep_batches as unknown as {
+    recipe_id: string; recipes?: { name?: string } | null;
+  } | null;
+  const name = batch?.recipes?.name ?? "Box";
+
+  const { data: zutaten } = await menu.from("recipe_items")
+    .select("food_id, food_name, amount_per_portion, unit, foods(calories_per_100, protein_per_100, carbs_per_100, fat_per_100, cost_per_100, unit)")
+    .eq("recipe_id", batch?.recipe_id ?? "")
+    .order("sort_order");
+
+  // Tagesplan sicherstellen — gleiche Logik wie createPlanMeal.
+  const { data: vorhanden } = await menu.from("meal_plans")
+    .select("id").eq("date", portion.date).limit(1);
+  let planId = vorhanden?.[0]?.id as string | undefined;
+  if (!planId) {
+    const { data: neu, error } = await menu.from("meal_plans")
+      .insert({ date: portion.date }).select("id").single();
+    if (error) throw new Error(`Tagesplan anlegen: ${error.message}`);
+    planId = neu.id as string;
+  }
+
+  const { data: meal, error: mealError } = await menu.from("meals")
+    .insert({ plan_id: planId, meal_type: portion.meal_type, name })
+    .select("id").single();
+  if (mealError) throw new Error(`Mahlzeit anlegen: ${mealError.message}`);
+
+  const positionen = (zutaten ?? []).map((z) => {
+    const f = z.foods as unknown as {
+      calories_per_100?: number; protein_per_100?: number; carbs_per_100?: number;
+      fat_per_100?: number; cost_per_100?: number; unit?: string;
+    } | null;
+    const menge = Number(z.amount_per_portion ?? 0);
+    // Stück rechnet je Stück, alles andere je 100 Einheiten.
+    const faktor = z.unit === "stk" ? menge : menge / 100;
+    const r1 = (v: unknown) => Math.round(Number(v ?? 0) * faktor * 10) / 10;
+    return {
+      meal_id: meal.id,
+      food_id: z.food_id,
+      food_name: z.food_name,
+      amount: menge,
+      unit: z.unit,
+      kcal: r1(f?.calories_per_100),
+      protein: r1(f?.protein_per_100),
+      carbs: r1(f?.carbs_per_100),
+      fat: r1(f?.fat_per_100),
+      cost: Math.round(Number(f?.cost_per_100 ?? 0) * faktor * 1000) / 1000,
+      eaten: Boolean(portion.consumed),
+    };
+  });
+
+  if (positionen.length > 0) {
+    check(await menu.from("meal_items").insert(positionen), "Zutaten übernehmen");
+  }
+
+  // Erst jetzt die Box aus dem Tag nehmen — sonst stünde bei einem Fehler
+  // weder Box noch Mahlzeit im Plan.
+  check(await menu.from("batch_portions")
+    .delete().eq("id", portionId), "Box aus dem Tag nehmen");
+
+  revalidatePlan();
+  return meal.id as string;
 }
 
 /** Tagesmarker setzen: Training, Eingeladen, freier Tag. */

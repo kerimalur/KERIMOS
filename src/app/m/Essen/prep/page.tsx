@@ -2,7 +2,7 @@ import Link from "next/link";
 import { PrepPlanner } from "@/components/prep-planner";
 import { Card, CardTitle, Empty } from "@/components/ui";
 import {
-  fetchCycles, fetchRecipes, fetchPrepStand, menuConfigured,
+  fetchCycles, fetchRecipes, fetchPrepStand, fetchFoods, menuConfigured,
 } from "@/lib/supabase/menu";
 import { heuteISO } from "@/lib/time";
 import { dateLabel } from "@/lib/format";
@@ -12,8 +12,8 @@ export const dynamic = "force-dynamic";
 export default async function EssenPrepPage() {
   if (!menuConfigured()) return <Empty>Menü-Datenbank nicht verbunden.</Empty>;
 
-  const [cycles, rezepte, stand] = await Promise.all([
-    fetchCycles(), fetchRecipes(), fetchPrepStand(),
+  const [cycles, rezepte, stand, foods] = await Promise.all([
+    fetchCycles(), fetchRecipes(), fetchPrepStand(), fetchFoods(),
   ]);
 
   return (
@@ -50,6 +50,7 @@ export default async function EssenPrepPage() {
       <PrepPlanner
         cycles={cycles}
         heute={heuteISO()}
+        foods={foods}
         rezepte={rezepte.map((r) => ({
           id: r.id, name: r.name, meal_type: r.meal_type,
           default_portions: r.default_portions,
