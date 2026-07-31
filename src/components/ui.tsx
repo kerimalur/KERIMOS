@@ -98,8 +98,13 @@ export function Empty({ children }: { children: React.ReactNode }) {
 }
 
 export function Badge({
-  children, tone = "neutral",
-}: { children: React.ReactNode; tone?: "neutral" | "good" | "warn" | "bad" | "accent" }) {
+  children, tone = "neutral", title,
+}: {
+  children: React.ReactNode;
+  tone?: "neutral" | "good" | "warn" | "bad" | "accent";
+  /** Tooltip, z.B. die Begründung hinter dem Badge. */
+  title?: string;
+}) {
   const tones = {
     neutral: "bg-sand text-ink-soft",
     good: "bg-good-tint text-good",
@@ -108,7 +113,10 @@ export function Badge({
     accent: "bg-accent-tint text-accent-soft",
   };
   return (
-    <span className={cx("rounded-md px-2 py-0.5 text-[11px] font-medium", tones[tone])}>
+    <span
+      title={title}
+      className={cx("rounded-md px-2 py-0.5 text-[11px] font-medium", tones[tone])}
+    >
       {children}
     </span>
   );

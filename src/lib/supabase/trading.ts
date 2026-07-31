@@ -152,18 +152,160 @@ export async function fetchWeekEvents(): Promise<EconEvent[]> {
 // GVA-Screener Live-API (FastAPI auf Render)
 // ---------------------------------------------------------------------------
 
+/** Timeframe, auf dem die GVA entstanden ist. Älteres Screener-Backend liefert
+ *  das Feld nicht — dann als "3D" behandeln (bis Juli 2026 gab es nur 3D). */
+export type GvaTf = "3D" | "W";
+
+export function tfLabel(tf: GvaTf | null | undefined): string {
+  return tf === "W" ? "Woche" : "3D";
+}
+
 export interface ScreenerPair {
   pair: string;
   near: "LONG" | "SHORT" | null;
   price: number | null;
   short: number | null;
   long: number | null;
+  /** Timeframe der jeweiligen Linie (3D-Chart oder Wochenchart). */
+  short_tf: GvaTf | null;
+  long_tf: GvaTf | null;
   status: "HIT" | "PREPARE" | "NEUTRAL";
   /** Pips bis zur nächsten Line. PREPARE = innerhalb von 100 Pips. */
   distance: number | null;
   /** True = Preis vom Tagesschluss, nicht live. */
   stale: boolean;
   pending: boolean;
+}
+
+/** Timeframe der Linie, die für dieses Paar gerade relevant ist. */
+export function pairTf(p: ScreenerPair): GvaTf | null {
+  if (p.near === "SHORT") return p.short_tf ?? null;
+  if (p.near === "LONG") return p.long_tf ?? null;
+  return p.short_tf ?? p.long_tf ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Fundamentale Bestätigung — Quelle: Währungsranking des GVA-Screeners
+// ---------------------------------------------------------------------------
+
+/**
+ * Eine Währung aus dem Wochen-Ranking (Tabelle `ml_weekly_rankings`, Modell
+ * "champion"). `strength_quintile` ist das STÄRKE-Quintil 1..5: die Position
+ * des Scores in seiner eigenen 156-Wochen-Verteilung. Q5 = stärkstes Fünftel,
+ * Q1 = schwächstes. Ausdrücklich KEIN Konfidenzmass.
+ */
+export interface RankingCurrency {
+  ccy: string;
+  score: number;
+  strength_quintile: number;
+}
+
+export type FundamentalUrteil = "bestaetigt" | "dagegen" | "neutral" | "unbekannt";
+
+export interface FundamentalCheck {
+  urteil: FundamentalUrteil;
+  /** Richtung, die das Ranking für dieses Paar vorgibt. */
+  rankingSeite: "LONG" | "SHORT" | "NEUTRAL" | null;
+  /** Kurzbegründung, z.B. "AUD Q5 · JPY Q1". Leer wenn keine Extremwährung. */
+  grund: string;
+  baseCode: string;
+  quoteCode: string;
+  baseQ: number | null;
+  quoteQ: number | null;
+}
+
+/**
+ * Pair-Bias exakt wie im Screener (`lib/ml/pairBias.ts` und Backend
+ * `replay/fundamentals.py::_pair_bias`): nur die Extrem-Quintile Q5 und Q1
+ * geben Richtung, Q2–Q4 sind neutral. Sind beide Seiten gleich extrem,
+ * hebt sich der relative Vorteil auf.
+ *
+ * Bewusst dupliziert statt importiert — KerimOS und Screener sind getrennte
+ * Repos. Bei Änderungen an der Regel MÜSSEN beide Stellen nachgezogen werden.
+ */
+export function rankingPairBias(
+  baseQ: number | undefined,
+  quoteQ: number | undefined,
+): "LONG" | "SHORT" | "NEUTRAL" {
+  const b5 = baseQ === 5, b1 = baseQ === 1, q5 = quoteQ === 5, q1 = quoteQ === 1;
+  if ((b5 && q5) || (b1 && q1)) return "NEUTRAL";
+  if (b5 && q1) return "LONG";
+  if (b1 && q5) return "SHORT";
+  if (b5 || q1) return "LONG";
+  if (b1 || q5) return "SHORT";
+  return "NEUTRAL";
+}
+
+/**
+ * Prüft, ob die GVA-Richtung zum Wochen-Ranking passt.
+ *
+ * "unbekannt" heisst: eine der beiden Währungen fehlt im Ranking oder es gibt
+ * noch keine Trade-Richtung — bewusst getrennt von "neutral", damit fehlende
+ * Daten nicht wie eine ausgewogene Lage aussehen.
+ */
+export function checkFundamental(
+  pair: string,
+  side: "LONG" | "SHORT" | null,
+  ranking: RankingCurrency[],
+): FundamentalCheck {
+  const clean = pair.replace(/[^A-Za-z]/g, "").toUpperCase();
+  const baseCode = clean.slice(0, 3);
+  const quoteCode = clean.slice(3, 6);
+  const byCcy = new Map(ranking.map((r) => [r.ccy, r]));
+  const base = byCcy.get(baseCode);
+  const quote = byCcy.get(quoteCode);
+
+  const baseQ = typeof base?.strength_quintile === "number" ? base.strength_quintile : null;
+  const quoteQ = typeof quote?.strength_quintile === "number" ? quote.strength_quintile : null;
+
+  const leer: FundamentalCheck = {
+    urteil: "unbekannt", rankingSeite: null, grund: "",
+    baseCode, quoteCode, baseQ, quoteQ,
+  };
+  if (baseQ === null || quoteQ === null || !side) return leer;
+
+  const rankingSeite = rankingPairBias(baseQ, quoteQ);
+
+  const teile: string[] = [];
+  if (baseQ === 5 || baseQ === 1) teile.push(`${baseCode} Q${baseQ}`);
+  if (quoteQ === 5 || quoteQ === 1) teile.push(`${quoteCode} Q${quoteQ}`);
+  const grund = teile.join(" · ");
+
+  let urteil: FundamentalUrteil = "neutral";
+  if (rankingSeite === side) urteil = "bestaetigt";
+  else if (rankingSeite !== "NEUTRAL") urteil = "dagegen";
+
+  return { urteil, rankingSeite, grund, baseCode, quoteCode, baseQ, quoteQ };
+}
+
+/**
+ * Aktuelles Champion-Ranking der jüngsten Woche. Leeres Array, wenn die
+ * Trading-DB fehlt oder noch kein Ranking geschrieben wurde — die Seite zeigt
+ * dann "—" statt zu blockieren.
+ */
+export async function fetchRanking(): Promise<RankingCurrency[]> {
+  const supabase = createTradingClient();
+  if (!supabase) return [];
+
+  const { data: latest } = await supabase
+    .from("ml_weekly_rankings")
+    .select("week_start")
+    .order("week_start", { ascending: false })
+    .limit(1);
+  const weekStart: string | undefined = latest?.[0]?.week_start;
+  if (!weekStart) return [];
+
+  const { data } = await supabase
+    .from("ml_weekly_rankings")
+    .select("ccy, score, strength_quintile")
+    .eq("week_start", weekStart)
+    .eq("model", "champion");
+
+  return (data ?? []).map((r) => ({
+    ccy: r.ccy as string,
+    score: Number(r.score ?? 0),
+    strength_quintile: Number(r.strength_quintile ?? 3),
+  }));
 }
 
 export interface ScreenerSnapshot {

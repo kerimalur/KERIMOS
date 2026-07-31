@@ -1,9 +1,9 @@
 import Link from "next/link";
 import {
   createTradingClient, tradingConfigured, computeBacktestStats, fetchScreener,
-  fetchWeekEvents, BACKTEST_ZIEL,
+  fetchWeekEvents, fetchRanking, checkFundamental, pairTf, tfLabel, BACKTEST_ZIEL,
   type BacktestSessionRow, type BacktestTrade, type EconEvent,
-  type GvaSignal, type ScreenerPair,
+  type GvaSignal, type ScreenerPair, type RankingCurrency,
 } from "@/lib/supabase/trading";
 import { Card, CardTitle, Stat, Badge, Empty } from "@/components/ui";
 import { dateLabel } from "@/lib/format";
@@ -11,6 +11,46 @@ import { dateLabel } from "@/lib/format";
 export const dynamic = "force-dynamic";
 
 const SIDE_TONE: Record<string, "good" | "bad"> = { LONG: "good", SHORT: "bad" };
+
+/** Timeframe der GVA: 3D-Chart oder Wochenchart. */
+function TfBadge({ p }: { p: ScreenerPair }) {
+  const tf = pairTf(p);
+  if (!tf) return null;
+  return (
+    <Badge tone={tf === "W" ? "warn" : "neutral"}>
+      {tfLabel(tf)}
+    </Badge>
+  );
+}
+
+/**
+ * Passt die GVA-Richtung zum Wochen-Ranking? Q5/Q1-Regel, identisch zum
+ * Screener. "unbekannt" wird nicht angezeigt — kein Badge ist ehrlicher als
+ * ein Badge, das nur bedeutet "keine Daten".
+ */
+function FundamentalBadge({
+  pair, side, ranking,
+}: {
+  pair: string;
+  side: "LONG" | "SHORT" | null;
+  ranking: RankingCurrency[];
+}) {
+  const f = checkFundamental(pair, side, ranking);
+  if (f.urteil === "unbekannt") return null;
+
+  const text =
+    f.urteil === "bestaetigt" ? "fundamental bestätigt"
+      : f.urteil === "dagegen" ? "gegen Fundamentals"
+        : "fundamental neutral";
+  const tone = f.urteil === "bestaetigt" ? "good" : f.urteil === "dagegen" ? "bad" : "neutral";
+
+  return (
+    <Badge tone={tone} title={f.grund || `${f.baseCode} Q${f.baseQ} · ${f.quoteCode} Q${f.quoteQ}`}>
+      {text}
+      {f.grund && <span className="ml-1 opacity-70">({f.grund})</span>}
+    </Badge>
+  );
+}
 
 function fmtUpdated(unix: number | null): string {
   if (!unix) return "—";
@@ -88,9 +128,10 @@ function cxNews(erledigt: boolean, tagVorbei: boolean): string {
 }
 
 export default async function TradingPage() {
-  const [screener, weekEvents, journal] = await Promise.all([
+  const [screener, weekEvents, ranking, journal] = await Promise.all([
     fetchScreener(),
     fetchWeekEvents(),
+    fetchRanking(),
     (async () => {
       const supabase = createTradingClient();
       if (!supabase) return null;
@@ -159,6 +200,8 @@ export default async function TradingPage() {
                       className="flex flex-wrap items-center gap-2 rounded-lg bg-bad-tint px-3 py-2 text-sm">
                       <span className="font-medium text-ink">{p.pair}</span>
                       {p.near && <Badge tone={SIDE_TONE[p.near] ?? "neutral"}>{p.near}</Badge>}
+                      <TfBadge p={p} />
+                      <FundamentalBadge pair={p.pair} side={p.near} ranking={ranking} />
                       {p.pending && <Badge tone="warn">pending</Badge>}
                       <span className="ml-auto tabular text-xs text-ink-muted">
                         Level {p.near === "SHORT" ? p.short : p.long}
@@ -184,6 +227,8 @@ export default async function TradingPage() {
                       className="flex flex-wrap items-center gap-2 rounded-lg bg-sand/60 px-3 py-2 text-sm">
                       <span className="font-medium text-ink">{p.pair}</span>
                       {p.near && <Badge tone={SIDE_TONE[p.near] ?? "neutral"}>{p.near}</Badge>}
+                      <TfBadge p={p} />
+                      <FundamentalBadge pair={p.pair} side={p.near} ranking={ranking} />
                       <span className="ml-auto tabular text-xs text-ink-soft">
                         {p.stale ? "~" : ""}{p.distance} Pips
                       </span>
@@ -198,6 +243,12 @@ export default async function TradingPage() {
 
             <p className="text-xs text-ink-faint">
               {pairs.length - hits.length - prepares.length} weitere Paare neutral.
+            </p>
+            <p className="text-xs text-ink-faint">
+              „3D" / „Woche" = Chart, auf dem die GVA entstanden ist.
+              {ranking.length > 0
+                ? " Fundamentale Bewertung aus dem Währungsranking des Screeners (Q5/Q1 der Champion-Woche) — Q2–Q4 gelten als neutral."
+                : " Währungsranking gerade nicht verfügbar, darum keine fundamentale Bewertung."}
             </p>
           </div>
         )}
