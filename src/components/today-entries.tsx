@@ -52,8 +52,15 @@ export function TodayEntries({
   };
   const vonMin = toMin(von);
   const bisMin = toMin(bis);
-  const dauer = vonMin !== null && bisMin !== null && bisMin > vonMin
-    ? bisMin - vonMin : null;
+  /**
+   * Dauer der Spanne. Liegt "bis" vor "von", ist die Nacht gemeint
+   * (23:00 bis 01:00 = zwei Stunden) - der Eintrag laeuft dann auf dem
+   * Folgetag weiter. Serverseitig wird er dafuer an Mitternacht geteilt.
+   */
+  const dauer = vonMin !== null && bisMin !== null && bisMin !== vonMin
+    ? (bisMin > vonMin ? bisMin - vonMin : bisMin + 1440 - vonMin)
+    : null;
+  const ueberNacht = vonMin !== null && bisMin !== null && bisMin < vonMin;
 
   async function nachtragen() {
     if (!aktivitaet || dauer === null || busy) return;
@@ -87,7 +94,9 @@ export function TodayEntries({
   async function saveEdit() {
     if (!edit || busy) return;
     const v = toMin(eVon), b = toMin(eBis);
-    if (v === null || b === null || b <= v) return;
+    // b < v heisst "ueber Mitternacht" - der Server teilt den Eintrag dann
+    // an der Tagesgrenze. Nur eine Dauer von null ergibt keinen Sinn.
+    if (v === null || b === null || b === v) return;
     setBusy(true);
     const fd = new FormData();
     fd.set("id", edit); fd.set("von", eVon); fd.set("bis", eBis);
@@ -151,8 +160,16 @@ export function TodayEntries({
           </div>
           <div className="flex items-center justify-between">
             <span className="text-xs text-ink-muted">
-              {dauer !== null ? fmtMin(dauer)
-                : bisMin !== null && vonMin !== null ? "Ende muss nach Start liegen" : ""}
+              {dauer !== null ? (
+                <>
+                  {fmtMin(dauer)}
+                  {ueberNacht && (
+                    <span className="text-accent"> · läuft bis morgen weiter</span>
+                  )}
+                </>
+              ) : bisMin !== null && vonMin !== null
+                ? "Start und Ende sind gleich"
+                : ""}
             </span>
             <Button onClick={nachtragen} disabled={!aktivitaet || dauer === null || busy}
               className="px-4 py-1.5 text-xs">
@@ -227,7 +244,7 @@ export function TodayEntries({
                       className="flex-1 rounded-xl border border-line bg-field px-3 py-1.5 text-sm text-ink outline-none focus:border-accent" />
                     <Button onClick={saveEdit} className="px-3 py-1.5 text-xs"
                       disabled={busy || toMin(eVon) === null || toMin(eBis) === null
-                        || (toMin(eBis) ?? 0) <= (toMin(eVon) ?? 0)}>
+                        || toMin(eBis) === toMin(eVon)}>
                       {busy ? "…" : "OK"}
                     </Button>
                   </div>

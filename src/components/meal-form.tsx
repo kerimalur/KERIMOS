@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createPlanMeal } from "@/lib/actions";
 import { Button, Card, Input, Select, cx } from "@/components/ui";
-import { MEAL_LABEL, MEAL_ORDER } from "@/lib/menu-labels";
+import { MEAL_LABEL, MEAL_ORDER, istSnack } from "@/lib/menu-labels";
 import { rechne, summe, einheitenFuer, type FoodValues } from "@/lib/nutrition";
 
 export interface FoodOption extends FoodValues {
@@ -45,6 +45,26 @@ export function MealForm({
   const [positionen, setPositionen] = useState<Position[]>([]);
   const [suche, setSuche] = useState("");
   const [busy, setBusy] = useState(false);
+  const [rezeptSuche, setRezeptSuche] = useState("");
+  // Standard: nur Rezepte, die zum Slot passen. Auf Wunsch auch die anderen.
+  const [andereSorte, setAndereSorte] = useState(false);
+
+  const nurSnacks = slot === "snack";
+
+  const passendeRezepte = useMemo(
+    () => (andereSorte
+      ? rezepte
+      : rezepte.filter((r) => istSnack(r.meal_type) === nurSnacks)),
+    [rezepte, andereSorte, nurSnacks]
+  );
+
+  const sichtbareRezepte = useMemo(() => {
+    const q = rezeptSuche.trim().toLowerCase();
+    const liste = q
+      ? passendeRezepte.filter((r) => r.name.toLowerCase().includes(q))
+      : passendeRezepte;
+    return liste.slice(0, 24);
+  }, [passendeRezepte, rezeptSuche]);
 
   const foodById = useMemo(
     () => new Map(foods.map((f) => [f.id, f])), [foods]
@@ -124,17 +144,45 @@ export function MealForm({
       </div>
 
       {/* Rezept als Startpunkt */}
+      {/* Rezepte passend zum Slot: im Snack-Slot Snacks, sonst Hauptmahlzeiten.
+          Der Umschalter darunter holt die jeweils andere Sorte dazu, falls man
+          doch etwas anderes einfuegen will. */}
       {rezepte.length > 0 && positionen.length === 0 && (
         <div className="mb-3">
-          <div className="mb-1.5 text-xs text-ink-muted">Aus Rezept übernehmen</div>
-          <div className="flex flex-wrap gap-1.5">
-            {rezepte.slice(0, 8).map((r) => (
-              <button key={r.id} onClick={() => rezeptUebernehmen(r)}
-                className="rounded-lg border border-line bg-card px-2.5 py-1.5 text-xs text-ink-soft transition hover:border-line-strong hover:text-ink">
-                {r.name}
-              </button>
-            ))}
+          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs text-ink-muted">
+              {nurSnacks ? "Snack einfügen" : "Hauptmahlzeit einfügen"}
+            </span>
+            <button onClick={() => setAndereSorte(!andereSorte)}
+              className="text-xs text-accent-soft transition hover:underline">
+              {andereSorte
+                ? "nur passende zeigen"
+                : nurSnacks ? "Hauptmahlzeiten zeigen" : "Snacks zeigen"}
+            </button>
           </div>
+
+          {passendeRezepte.length > 6 && (
+            <Input value={rezeptSuche} onChange={(e) => setRezeptSuche(e.target.value)}
+              placeholder="Rezept suchen …" aria-label="Rezept suchen"
+              className="mb-2 text-base" />
+          )}
+
+          {sichtbareRezepte.length === 0 ? (
+            <p className="text-xs text-ink-faint">
+              Kein passendes Rezept. Leg unter Mehr → Rezepte eines an.
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {sichtbareRezepte.map((r) => (
+                <button key={r.id} onClick={() => rezeptUebernehmen(r)}
+                  className="rounded-lg border border-line bg-card px-2.5 py-1.5 text-xs
+                             text-ink-soft transition duration-150 ease-tactile
+                             hover:border-line-strong hover:text-ink active:scale-95">
+                  {r.name}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

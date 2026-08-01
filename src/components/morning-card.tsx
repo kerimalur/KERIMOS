@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
-import { logSleep } from "@/lib/actions";
-import { Button, Card } from "@/components/ui";
-import { heuteISO, heuteMinuten, addDays, ZONE, fmtMinutes } from "@/lib/time";
+import { Card } from "@/components/ui";
+import { SleepPrompt } from "@/components/sleep-prompt";
+import { heuteISO, heuteMinuten, addDays, ZONE } from "@/lib/time";
 import { chf } from "@/lib/format";
 import { naechsterMeilenstein } from "@/lib/meilensteine";
 
@@ -60,7 +60,6 @@ export async function MorningCard() {
   // Nur morgens anbieten, und nur wenn der Abend überhaupt erfasst wurde
   const zeigeSchlaf = !schonHeuteErfasst && schlafVon !== null
     && jetzt < 12 * 60 && schlafVon >= 18 * 60;
-  const schlafDauer = zeigeSchlaf ? (1440 - schlafVon!) + jetzt : 0;
 
   /* ---- Streak: Tage in Folge mit erfasster Zeit ---- */
   const tage = new Set((streakTage ?? []).map((r) => String(r.entry_date)));
@@ -100,7 +99,7 @@ export async function MorningCard() {
     <Card className="p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
-          <p className="text-2xl font-medium leading-tight text-ink">
+          <p className="font-display text-2xl font-bold leading-tight text-ink">
             {gruss(jetzt)}, Kerim
           </p>
           <p className="mt-0.5 text-sm text-ink-muted">
@@ -114,23 +113,7 @@ export async function MorningCard() {
         )}
       </div>
 
-      {zeigeSchlaf && (
-        <form action={logSleep}
-          className="mt-4 rounded-xl border border-accent bg-accent-tint p-3">
-          <input type="hidden" name="von" value={hhmm(schlafVon!)} />
-          <input type="hidden" name="bis" value={hhmm(jetzt)} />
-          <p className="text-xs text-accent-soft">Geschlafen seit dem letzten Eintrag</p>
-          <p className="tabular mt-1 text-lg font-medium text-ink">
-            {hhmm(schlafVon!)} – {hhmm(jetzt)}
-            <span className="ml-2 text-sm font-normal text-ink-soft">
-              {fmtMinutes(schlafDauer)}
-            </span>
-          </p>
-          <Button type="submit" className="mt-2.5 w-full">
-            Stimmt, als Schlaf eintragen
-          </Button>
-        </form>
-      )}
+      {zeigeSchlaf && <SleepPrompt von={schlafVon!} bis={jetzt} />}
 
       <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 border-t border-line pt-3 text-xs">
         {ziel && (

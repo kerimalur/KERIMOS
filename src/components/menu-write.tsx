@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import { createRecipeWithItems } from "@/lib/actions";
 import { Button, Card, Input, Select } from "@/components/ui";
-import { MEAL_LABEL, MEAL_ORDER } from "@/lib/menu-labels";
+import { RECIPE_KINDS } from "@/lib/menu-labels";
 import { rechne, summe, einheitenFuer } from "@/lib/nutrition";
 import type { FoodOption } from "@/components/meal-form";
 
@@ -16,22 +16,35 @@ interface Position {
 /**
  * Menü direkt hinschreiben, statt eines aus der Rezeptliste zu wählen.
  *
- * Mengen gelten für GENAU EINE PORTION — so werden recipe_items ohnehin
- * gespeichert. Wie oft das Menü gekocht wird, entscheidet der Zeitraum im
- * Prep-Planer (eine Portion pro Tag), nicht dieses Formular.
+ * Dient in zwei Rollen: im Prep-Planer als "Menü schreiben" (dann sagt
+ * `boxen`, wie oft gekocht wird), und in der Rezeptliste als Formular für
+ * ein neues Rezept (dann fehlt `boxen`).
+ *
+ * Mengen gelten in beiden Fällen für GENAU EINE PORTION — so werden
+ * recipe_items ohnehin gespeichert. Ein Rezept ist damit immer die Anleitung
+ * für eine Portion; wie oft gekocht wird, entscheidet erst der Prep-Zyklus.
  *
  * Unter der Haube entsteht ein normales Rezept, weil ein Topf eine recipe_id
  * braucht — nur so greifen Einkaufsliste, Kochliste und Nährwerte. Das Menü
  * taucht daher auch unter Rezepte auf und kann dort wiederverwendet werden.
  */
-export function MenuWrite({ foods, boxen, onFertig }: {
+export function MenuWrite({ foods, boxen, categories = [], onFertig }: {
   foods: FoodOption[];
-  /** Anzahl Boxen aus dem Zeitraum — nur als Hinweis und Startwert. */
-  boxen: number;
+  /** Vorlagen-Kategorien. Leer = das Feld wird gar nicht erst gezeigt. */
+  categories?: { id: string; name: string }[];
+  /**
+   * Anzahl Boxen aus dem Zeitraum — nur als Hinweis und Startwert.
+   * Fehlt sie, ist das Formular ein reines Rezept-Formular (eine Portion).
+   */
+  boxen?: number;
   onFertig: (rezept?: { id: string; name: string; meal_type: string }) => void;
 }) {
+  // Ohne Zeitraum ist es ein Rezept, kein Topf.
+  const alsRezept = boxen === undefined;
+  const portionen = Math.max(1, boxen ?? 1);
   const [name, setName] = useState("");
   const [mealType, setMealType] = useState("mittagessen");
+  const [categoryId, setCategoryId] = useState("");
   const [positionen, setPositionen] = useState<Position[]>([]);
   const [suche, setSuche] = useState("");
   const [busy, setBusy] = useState(false);
@@ -67,8 +80,9 @@ export function MenuWrite({ foods, boxen, onFertig }: {
     const fd = new FormData();
     fd.set("name", name.trim());
     fd.set("meal_type", mealType);
-    fd.set("portions", String(Math.max(1, boxen)));
+    fd.set("portions", String(portionen));
     fd.set("items", JSON.stringify(positionen));
+    if (categoryId) fd.set("category_id", categoryId);
     try {
       const id = await createRecipeWithItems(fd);
       if (id) onFertig({ id, name: name.trim(), meal_type: mealType });
@@ -83,28 +97,46 @@ export function MenuWrite({ foods, boxen, onFertig }: {
       <div className="mb-3 flex flex-wrap items-end gap-3">
         <div className="min-w-40 flex-1">
           <label htmlFor="menu-name" className="mb-1.5 block text-xs text-ink-muted">
-            Name des Menüs
+            {alsRezept ? "Name des Rezepts" : "Name des Menüs"}
           </label>
           <Input id="menu-name" value={name} onChange={(e) => setName(e.target.value)}
             placeholder="z.B. Poulet mit Reis und Broccoli" className="text-base" />
         </div>
         <div className="w-40">
           <label htmlFor="menu-slot" className="mb-1.5 block text-xs text-ink-muted">
-            Slot
+            Sorte
           </label>
           <Select id="menu-slot" value={mealType}
             onChange={(e) => setMealType(e.target.value)}>
-            {MEAL_ORDER.map((s) => (
-              <option key={s} value={s}>{MEAL_LABEL[s]}</option>
+            {RECIPE_KINDS.map((k) => (
+              <option key={k.value} value={k.value}>{k.label}</option>
             ))}
           </Select>
         </div>
+        {categories.length > 0 && (
+          <div className="w-40">
+            <label htmlFor="menu-kat" className="mb-1.5 block text-xs text-ink-muted">
+              Vorlage
+            </label>
+            <Select id="menu-kat" value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value)}>
+              <option value="">Keine</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </Select>
+          </div>
+        )}
       </div>
 
       <p className="mb-3 rounded-xl bg-sand/60 px-3 py-2 text-xs text-ink-soft">
         Mengen für <span className="font-medium text-ink">eine Portion</span> eintragen.
-        Der Zeitraum ergibt <span className="font-medium text-ink">{boxen} Boxen</span> —
-        so oft wird gekocht.
+        {alsRezept ? (
+          <> Wie oft gekocht wird, entscheidet später der Prep-Zyklus.</>
+        ) : (
+          <> Der Zeitraum ergibt <span className="font-medium text-ink">{portionen} Boxen</span>
+            {" "}— so oft wird gekocht.</>
+        )}
       </p>
 
       {/* Zutatensuche */}
@@ -183,7 +215,9 @@ export function MenuWrite({ foods, boxen, onFertig }: {
           </button>
           <Button onClick={speichern}
             disabled={busy || !name.trim() || positionen.length === 0}>
-            {busy ? "…" : `Als Topf übernehmen (${Math.max(1, boxen)} Boxen)`}
+            {busy ? "…"
+              : alsRezept ? "Rezept anlegen"
+                : `Als Topf übernehmen (${portionen} Boxen)`}
           </Button>
         </span>
       </div>

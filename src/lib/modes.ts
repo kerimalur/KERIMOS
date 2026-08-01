@@ -10,10 +10,16 @@ export const MODE_ORDER = [
 
 /**
  * Modi, die keinen eigenen Arbeitsplatz brauchen: sie führen direkt dorthin,
- * wo gearbeitet wird. Bei Geld und Zeit wäre der Zwischenschritt reine
+ * wo gearbeitet wird. Der Zwischenschritt über /m/[gruppe] wäre reine
  * Klickarbeit - die Kennzahlen stehen ohnehin schon auf der Kachel.
+ *
+ * Gym und Essen laufen inzwischen vollständig in KerimOS. Die alten
+ * eigenständigen Apps sind Altbestand und werden nicht mehr angesteuert -
+ * deshalb führen beide Kacheln direkt in ihren Bereich.
  */
 export const MODE_DIRECT: Record<string, string> = {
   Geld: "/geld",
   Zeit: "/kalender?ansicht=tag",
+  Gym: "/gym",
+  Essen: "/m/Essen",
 };

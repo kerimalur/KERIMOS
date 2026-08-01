@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createGymClient, gymUserId as resolveGymUserId } from "@/lib/supabase/gym";
 import { createMenuClient } from "@/lib/supabase/menu";
 import { heuteISO, addDays } from "@/lib/time";
-import { rechne, summe } from "@/lib/nutrition";
+import { rechne, summe, type FoodValues } from "@/lib/nutrition";
 import {
   calculateSessionRecovery, type RecoveryInput, type RecoveryResult,
 } from "@/lib/recovery";
@@ -23,6 +23,9 @@ function check(res: { error: { message: string } | null }, was: string) {
 }
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
+
+/** Die Slots, die die Datenbank in meal_type zulässt. */
+const ERLAUBTE_SLOTS = ["fruehstueck", "mittagessen", "abendessen", "snack"];
 const numOrNull = (fd: FormData, k: string) => {
   const v = str(fd, k);
   if (v === "") return null;
@@ -450,6 +453,7 @@ export async function createRecipeWithItems(fd: FormData): Promise<string | null
     default_portions: Math.min(14, Math.max(1, Math.round(numOr(fd, "portions", 3)))),
     freetext: str(fd, "freetext") || "",
     status: "bereit",
+    category_id: str(fd, "category_id") || null,
   }).select("id").single();
   if (error) throw new Error(`Menü anlegen: ${error.message}`);
 
@@ -486,6 +490,168 @@ export async function updateRecipe(fd: FormData) {
   if (fd.has("category_id")) felder.category_id = str(fd, "category_id") || null;
 
   check(await menu.from("recipes").update(felder).eq("id", id), "Rezept speichern");
+  revalidateEssenAlles();
+}
+
+/* ------------------------------------------- Menüplan: Tagesvorlagen */
+
+/**
+ * Tagesvorlage anlegen: ein ganzer Tag aus Rezepten.
+ *
+ * `items` ist eine Liste aus Slot und Rezept — z.B. Mittag und Abend, bei
+ * Bedarf zusätzlich Snacks. Gespeichert werden nur die Verweise; die Mengen
+ * kommen beim Laden aus dem jeweiligen Rezept, damit eine Rezeptänderung
+ * auch in der Vorlage ankommt.
+ */
+export async function createDayTemplate(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+
+  const name = str(fd, "name").trim();
+  if (!name) return;
+
+  const items = JSON.parse(String(fd.get("items") ?? "[]")) as {
+    meal_type: string; recipe_id: string;
+  }[];
+  const gueltig = items.filter((i) =>
+    i.recipe_id && ERLAUBTE_SLOTS.includes(i.meal_type));
+  if (gueltig.length === 0) return;
+
+  const { data: vorlage, error } = await menu.from("day_templates").insert({
+    name,
+    with_snacks: gueltig.some((i) => i.meal_type === "snack"),
+  }).select("id").single();
+  if (error) throw new Error(`Vorlage anlegen: ${error.message}`);
+
+  check(await menu.from("day_template_items").insert(
+    gueltig.map((i, n) => ({
+      template_id: vorlage.id,
+      meal_type: i.meal_type,
+      recipe_id: i.recipe_id,
+      sort_order: n,
+    }))
+  ), "Vorlage speichern");
+
+  revalidateEssenAlles();
+}
+
+export async function deleteDayTemplate(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+  check(await menu.from("day_templates").delete().eq("id", str(fd, "id")),
+    "Vorlage löschen");
+  revalidateEssenAlles();
+}
+
+/**
+ * Vorlage auf ein Datum laden: legt für jedes Rezept der Vorlage eine
+ * Mahlzeit an diesem Tag an, samt Zutaten und Nährwerten.
+ *
+ * Bereits geplante Mahlzeiten bleiben stehen — die Vorlage ergänzt, sie
+ * räumt nicht auf. Wer den Tag leer haben will, löscht ihn vorher; das ist
+ * die seltenere Absicht und soll nicht aus Versehen passieren.
+ */
+export async function applyDayTemplate(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+
+  const date = str(fd, "date");
+  const templateId = str(fd, "template_id");
+  if (!date || !templateId) return;
+
+  const { data: items } = await menu.from("day_template_items")
+    .select("meal_type, recipe_id").eq("template_id", templateId).order("sort_order");
+  const zeilen = (items ?? []) as { meal_type: string; recipe_id: string }[];
+  if (zeilen.length === 0) return;
+
+  const recipeIds = [...new Set(zeilen.map((z) => z.recipe_id))];
+  const [{ data: rezepte }, { data: zutaten }] = await Promise.all([
+    menu.from("recipes").select("id, name").in("id", recipeIds),
+    menu.from("recipe_items")
+      .select("recipe_id, food_id, food_name, amount_per_portion, unit, sort_order")
+      .in("recipe_id", recipeIds).order("sort_order"),
+  ]);
+
+  const namen = new Map((rezepte ?? []).map((r) => [r.id as string, r.name as string]));
+  const nachRezept = new Map<string, {
+    food_id: string | null; food_name: string; amount: number; unit: string;
+  }[]>();
+  for (const z of zutaten ?? []) {
+    const list = nachRezept.get(z.recipe_id as string) ?? [];
+    list.push({
+      food_id: (z.food_id as string | null) ?? null,
+      food_name: z.food_name as string,
+      amount: Number(z.amount_per_portion ?? 0),
+      unit: (z.unit as string) ?? "g",
+    });
+    nachRezept.set(z.recipe_id as string, list);
+  }
+
+  // Nährwerte je Zutat aus der Lebensmittel-Tabelle rechnen — dieselbe
+  // Rechnung wie im Mahlzeiten-Formular, damit die Zahlen übereinstimmen.
+  const foodIds = [...new Set(
+    [...nachRezept.values()].flat().map((z) => z.food_id).filter(Boolean) as string[]
+  )];
+  const foods = new Map<string, FoodValues>();
+  if (foodIds.length > 0) {
+    const { data: f } = await menu.from("foods")
+      .select("id, calories_per_100, protein_per_100, carbs_per_100, fat_per_100, cost_per_100")
+      .in("id", foodIds);
+    for (const row of f ?? []) {
+      foods.set(row.id as string, {
+        calories_per_100: Number(row.calories_per_100 ?? 0),
+        protein_per_100: Number(row.protein_per_100 ?? 0),
+        carbs_per_100: Number(row.carbs_per_100 ?? 0),
+        fat_per_100: Number(row.fat_per_100 ?? 0),
+        cost_per_100: Number(row.cost_per_100 ?? 0),
+      });
+    }
+  }
+
+  // Tagesplan sicherstellen (mehrere Zeilen je Datum sind möglich)
+  const { data: vorhanden } = await menu.from("meal_plans")
+    .select("id").eq("date", date).limit(1);
+  let planId = vorhanden?.[0]?.id as string | undefined;
+  if (!planId) {
+    const { data: neu, error } = await menu.from("meal_plans")
+      .insert({ date }).select("id").single();
+    if (error) throw new Error(`Tagesplan anlegen: ${error.message}`);
+    planId = neu.id as string;
+  }
+
+  for (const zeile of zeilen) {
+    const name = namen.get(zeile.recipe_id);
+    if (!name) continue;
+
+    const { data: meal, error: mealError } = await menu.from("meals")
+      .insert({ plan_id: planId, meal_type: zeile.meal_type, name })
+      .select("id").single();
+    if (mealError) throw new Error(`Mahlzeit anlegen: ${mealError.message}`);
+
+    const positionen = nachRezept.get(zeile.recipe_id) ?? [];
+    if (positionen.length === 0) continue;
+
+    check(await menu.from("meal_items").insert(
+      positionen.map((p) => {
+        const f = p.food_id ? foods.get(p.food_id) : undefined;
+        const w = f ? rechne(f, p.amount, p.unit)
+          : { kcal: 0, protein: 0, carbs: 0, fat: 0, cost: 0 };
+        return {
+          meal_id: meal.id,
+          food_id: p.food_id,
+          food_name: p.food_name,
+          amount: p.amount,
+          unit: p.unit,
+          kcal: w.kcal, protein: w.protein, carbs: w.carbs, fat: w.fat, cost: w.cost,
+          eaten: false,
+        };
+      })
+    ), "Zutaten der Vorlage speichern");
+  }
+
   revalidateEssenAlles();
 }
 
@@ -2057,24 +2223,166 @@ export async function setEntryStart(fd: FormData) {
 }
 
 /** Setzt Start und Ende eines Eintrags neu - zum Korrigieren von Fehlern. */
+/**
+ * Zeitspanne eines Eintrags setzen.
+ *
+ * Liegt "bis" vor "von" (23:00 bis 01:00), ist die Nacht gemeint: der
+ * Eintrag läuft bis Mitternacht und wird am Folgetag fortgesetzt. Das ist
+ * die einzige sinnvolle Lesart - eine Spanne, die rückwärts läuft, gibt es
+ * nicht.
+ */
 export async function setEntryRange(fd: FormData) {
-  const { supabase } = await requireUser();
+  const { supabase, userId } = await requireUser();
   const id = str(fd, "id");
   const von = /^(\d{1,2}):(\d{2})$/.exec(str(fd, "von"));
   const bis = /^(\d{1,2}):(\d{2})$/.exec(str(fd, "bis"));
   if (!id || !von || !bis) return;
 
   const start = Number(von[1]) * 60 + Number(von[2]);
-  const end = Number(bis[1]) * 60 + Number(bis[2]);
-  if (start < 0 || start > 1439 || end <= start) return;
+  const rohEnde = Number(bis[1]) * 60 + Number(bis[2]);
+  if (start < 0 || start > 1439) return;
+  // Gleiches "von" und "bis" wäre eine Dauer von null - das ist ein Vertipper.
+  if (rohEnde === start) return;
+  const ende = rohEnde < start ? rohEnde + 1440 : rohEnde;
 
+  const { data: eintrag } = await supabase.from("time_entries")
+    .select("activity_id, entry_date, note").eq("id", id).maybeSingle();
+  if (!eintrag) return;
+
+  const stuecke = aufTageVerteilen(
+    eintrag.entry_date as string, start, ende - start
+  );
+
+  // Der erste Abschnitt bleibt der bearbeitete Eintrag ...
+  const [erster, ...weitere] = stuecke;
   await supabase.from("time_entries")
-    .update({ start_minute: start, minutes: Math.min(end - start, 1440 - start) })
+    .update({ start_minute: erster.start, minutes: erster.minutes })
     .eq("id", id);
+
+  // ... alles nach Mitternacht kommt als eigener Eintrag am Folgetag dazu.
+  for (const stueck of weitere) {
+    await zeitstueckSpeichern(
+      supabase, userId, eintrag.activity_id as string, stueck,
+      (eintrag.note as string | null) ?? null
+    );
+  }
+
   revalidateTime(); revalidatePath("/kalender"); revalidatePath("/heute");
 }
 
 /** Legt einen Zeiteintrag mit Uhrzeit an - für die Kalenderansicht. */
+/** Ein Zeitabschnitt, wie er in time_entries landet. */
+interface Zeitstueck {
+  date: string;
+  start: number | null;
+  minutes: number;
+}
+
+/**
+ * Einen Eintrag, der über Mitternacht hinausreicht, auf die Tage aufteilen.
+ *
+ * Wer um 23 Uhr noch zwei Stunden Familie einträgt, meint bis 1 Uhr nachts —
+ * nicht "bis Mitternacht und der Rest verfällt". Der Tag endet bei Minute
+ * 1440; alles darüber läuft am Folgetag ab Minute 0 weiter.
+ *
+ * Ohne Startzeit gibt es nichts aufzuteilen: dann ist es eine reine Dauer.
+ */
+function aufTageVerteilen(date: string, start: number | null, minutes: number): Zeitstueck[] {
+  if (start === null) return [{ date, start: null, minutes: Math.min(minutes, 1440) }];
+
+  const stuecke: Zeitstueck[] = [];
+  let tag = date;
+  let ab = start;
+  let rest = minutes;
+
+  // Obergrenze, damit ein Vertipper nicht hundert Tage anlegt
+  while (rest > 0 && stuecke.length < 7) {
+    const platz = 1440 - ab;
+    const dauer = Math.min(rest, platz);
+    if (dauer > 0) stuecke.push({ date: tag, start: ab, minutes: dauer });
+    rest -= dauer;
+    tag = addDays(tag, 1);
+    ab = 0;
+  }
+  return stuecke;
+}
+
+/**
+ * Ein Zeitstück speichern und dabei mit direkt angrenzenden Einträgen
+ * derselben Aktivität verschmelzen.
+ *
+ * Zweimal eine halbe Stunde "Coding Projekt" hintereinander ist in
+ * Wirklichkeit eine Stunde am Stück — als zwei Zeilen liest sich der Tag
+ * nur unnötig zerstückelt. Verschmolzen wird ausschliesslich bei exakter
+ * Berührung (Ende = Anfang), damit keine echte Pause verschwindet.
+ */
+async function zeitstueckSpeichern(
+  supabase: Awaited<ReturnType<typeof requireUser>>["supabase"],
+  userId: string, activityId: string, stueck: Zeitstueck, note: string | null
+) {
+  const { data: bestehende } = await supabase.from("time_entries")
+    .select("id, start_minute, minutes")
+    .eq("user_id", userId).eq("activity_id", activityId).eq("entry_date", stueck.date);
+  const liste = (bestehende ?? []) as
+    { id: string; start_minute: number | null; minutes: number }[];
+
+  // Ohne Startzeit: gleichartige Dauer-Einträge desselben Tages aufaddieren
+  if (stueck.start === null) {
+    const offen = liste.find((e) => e.start_minute === null);
+    if (offen) {
+      await supabase.from("time_entries")
+        .update({ minutes: Math.min(offen.minutes + stueck.minutes, 1440) })
+        .eq("id", offen.id);
+      return;
+    }
+  } else {
+    const start = stueck.start;
+    const ende = start + stueck.minutes;
+    const mitZeit = liste.filter(
+      (e): e is { id: string; start_minute: number; minutes: number } =>
+        e.start_minute !== null
+    );
+
+    // Eintrag, der genau vorher endet - der neue hängt sich hinten an
+    const davor = mitZeit.find((e) => e.start_minute + e.minutes === start);
+    // Eintrag, der genau nachher beginnt - der neue schiebt sich davor
+    const danach = mitZeit.find((e) => e.start_minute === ende);
+
+    if (davor && danach) {
+      // Lücke zwischen zwei Blöcken gefüllt: alles zu einem verschmelzen
+      const neueDauer = davor.minutes + stueck.minutes + danach.minutes;
+      await supabase.from("time_entries")
+        .update({ minutes: Math.min(neueDauer, 1440 - davor.start_minute) })
+        .eq("id", davor.id);
+      await supabase.from("time_entries").delete().eq("id", danach.id);
+      return;
+    }
+    if (davor) {
+      await supabase.from("time_entries")
+        .update({ minutes: Math.min(davor.minutes + stueck.minutes, 1440 - davor.start_minute) })
+        .eq("id", davor.id);
+      return;
+    }
+    if (danach) {
+      await supabase.from("time_entries")
+        .update({ start_minute: start, minutes: danach.minutes + stueck.minutes })
+        .eq("id", danach.id);
+      return;
+    }
+  }
+
+  check(await supabase.from("time_entries").insert({
+    user_id: userId,
+    activity_id: activityId,
+    entry_date: stueck.date,
+    minutes: Math.min(stueck.minutes, 1440),
+    start_minute: stueck.start,
+    note,
+    source: "manual",
+    confirmed: true,
+  }), "Zeiteintrag anlegen");
+}
+
 export async function addTimedEntry(fd: FormData) {
   const { supabase, userId } = await requireUser();
   const activityId = str(fd, "activity_id");
@@ -2086,17 +2394,12 @@ export async function addTimedEntry(fd: FormData) {
   const m = /^(\d{1,2}):(\d{2})$/.exec(str(fd, "start"));
   if (m) startMinute = Number(m[1]) * 60 + Number(m[2]);
 
-  check(await supabase.from("time_entries").insert({
-    user_id: userId,
-    activity_id: activityId,
-    entry_date: date,
-    minutes: Math.min(minutes, 1440),
-    start_minute: startMinute,
-    note: str(fd, "note") || null,
-    source: "manual",
-    confirmed: true,
-  }), "Zeiteintrag anlegen");
-  revalidateTime(); revalidatePath("/kalender");
+  const note = str(fd, "note") || null;
+  for (const stueck of aufTageVerteilen(date, startMinute, minutes)) {
+    await zeitstueckSpeichern(supabase, userId, activityId, stueck, note);
+  }
+
+  revalidateTime(); revalidatePath("/kalender"); revalidatePath("/heute");
 }
 
 /**

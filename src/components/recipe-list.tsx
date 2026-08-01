@@ -2,11 +2,12 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  createRecipe, updateRecipe, deleteRecipe,
+  updateRecipe, deleteRecipe,
   addRecipeItem, updateRecipeItemAmount, deleteRecipeItem,
 } from "@/lib/actions";
+import { MenuWrite } from "@/components/menu-write";
 import { Button, Card, CardTitle, Empty, Input, Select, cx } from "@/components/ui";
-import { MEAL_LABEL, MEAL_ORDER } from "@/lib/menu-labels";
+import { RECIPE_KINDS, istSnack, recipeKindLabel } from "@/lib/menu-labels";
 import { rechne, summe, einheitenFuer, type FoodValues } from "@/lib/nutrition";
 
 interface Food extends FoodValues { id: string; name: string; unit: string }
@@ -42,7 +43,10 @@ export function RecipeList({
   );
 
   const sichtbar = useMemo(() => recipes.filter((r) => {
-    if (filter && r.meal_type !== filter) return false;
+    // "haupt" fasst alles zusammen, was kein Snack ist - auch Altbestand,
+    // der noch als Fruehstueck oder Abendessen abgelegt wurde.
+    if (filter === "snack" && !istSnack(r.meal_type)) return false;
+    if (filter === "haupt" && istSnack(r.meal_type)) return false;
     if (kategorieFilter && r.category_id !== kategorieFilter) return false;
     if (!suche.trim()) return true;
     const q = suche.trim().toLowerCase();
@@ -74,52 +78,26 @@ export function RecipeList({
           </button>
         </div>
 
+        {/* Neues Rezept: Name und Zutaten in einem Schritt. Vorher musste man
+            erst anlegen und die Zutaten danach einzeln nachtragen - das war
+            der haeufigste Grund fuer leere Rezepte. */}
         {neu && (
-          <form
-            action={(fd) => lauf(createRecipe, fd)}
-            className="mb-4 flex flex-wrap items-end gap-3 rounded-xl bg-sand/60 p-3">
-            <div className="min-w-40 flex-1">
-              <label htmlFor="r-name" className="mb-1.5 block text-xs text-ink-muted">Name</label>
-              <Input id="r-name" name="name" required placeholder="z.B. Asia-Couscous" />
-            </div>
-            <div className="w-36">
-              <label htmlFor="r-typ" className="mb-1.5 block text-xs text-ink-muted">Slot</label>
-              <Select id="r-typ" name="meal_type" defaultValue="mittagessen">
-                {MEAL_ORDER.map((s) => (
-                  <option key={s} value={s}>{MEAL_LABEL[s]}</option>
-                ))}
-              </Select>
-            </div>
-            <div className="w-28">
-              <label htmlFor="r-port" className="mb-1.5 block text-xs text-ink-muted">
-                Portionen
-              </label>
-              <Input id="r-port" name="portions" type="number" min={1} max={14}
-                defaultValue={3} />
-            </div>
-            {categories.length > 0 && (
-              <div className="w-40">
-                <label htmlFor="r-kat" className="mb-1.5 block text-xs text-ink-muted">
-                  Vorlage
-                </label>
-                <Select id="r-kat" name="category_id" defaultValue="">
-                  <option value="">Keine</option>
-                  {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </Select>
-              </div>
-            )}
-            <Button type="submit">Anlegen</Button>
-          </form>
+          <div className="mb-4">
+            <MenuWrite
+              foods={foods}
+              categories={categories}
+              onFertig={() => { setNeu(false); router.refresh(); }}
+            />
+          </div>
         )}
 
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <Input value={suche} onChange={(e) => setSuche(e.target.value)}
             placeholder="Rezept oder Zutat suchen …" className="min-w-48 flex-1" />
-          <Select value={filter} onChange={(e) => setFilter(e.target.value)} className="w-36">
-            <option value="">Alle Slots</option>
-            {MEAL_ORDER.map((s) => (
-              <option key={s} value={s}>{MEAL_LABEL[s]}</option>
-            ))}
+          <Select value={filter} onChange={(e) => setFilter(e.target.value)} className="w-40">
+            <option value="">Hauptmahlzeit und Snack</option>
+            <option value="haupt">Nur Hauptmahlzeiten</option>
+            <option value="snack">Nur Snacks</option>
           </Select>
           {categories.length > 0 && (
             <Select value={kategorieFilter} onChange={(e) => setKategorieFilter(e.target.value)}
@@ -154,7 +132,7 @@ export function RecipeList({
                         {r.name}
                       </span>
                       <span className="tabular block text-xs text-ink-muted">
-                        {MEAL_LABEL[r.meal_type] ?? r.meal_type} ·{" "}
+                        {recipeKindLabel(r.meal_type)} ·{" "}
                         {Math.round(n.kcal)} kcal · {Math.round(n.protein)} g P je Portion
                         {r.items.length > 0 && ` · ${r.items.length} Zutaten`}
                         {r.category_id && kategorieName.get(r.category_id) &&
@@ -213,18 +191,14 @@ export function RecipeList({
                             <label className="mb-1 block text-xs text-ink-muted">Name</label>
                             <Input name="name" defaultValue={r.name} />
                           </div>
-                          <div className="w-32">
-                            <label className="mb-1 block text-xs text-ink-muted">Slot</label>
-                            <Select name="meal_type" defaultValue={r.meal_type}>
-                              {MEAL_ORDER.map((s) => (
-                                <option key={s} value={s}>{MEAL_LABEL[s]}</option>
+                          <div className="w-40">
+                            <label className="mb-1 block text-xs text-ink-muted">Sorte</label>
+                            <Select name="meal_type"
+                              defaultValue={istSnack(r.meal_type) ? "snack" : "mittagessen"}>
+                              {RECIPE_KINDS.map((k) => (
+                                <option key={k.value} value={k.value}>{k.label}</option>
                               ))}
                             </Select>
-                          </div>
-                          <div className="w-24">
-                            <label className="mb-1 block text-xs text-ink-muted">Portionen</label>
-                            <Input name="portions" type="number" min={1} max={14}
-                              defaultValue={r.default_portions} />
                           </div>
                           {categories.length > 0 && (
                             <div className="w-40">

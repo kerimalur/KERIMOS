@@ -2,14 +2,15 @@ import Link from "next/link";
 import { fetchPrepStand } from "@/lib/supabase/menu";
 import { Card } from "@/components/ui";
 
-const MENU_APP = "https://men-plan-kerim-alurs-projects.vercel.app";
-
 /**
  * Meal Prep: wie weit die Boxen reichen und was als Nächstes ansteht.
  *
  * Die Karte entscheidet nichts selbst, sie stellt die Frage und bietet die
  * drei Wege an: schon gekocht, Einkaufsliste schreiben, Menü planen. Sie
  * erscheint nur, wenn tatsächlich etwas ansteht - sonst ist sie weg.
+ *
+ * Alle Wege führen in den Essen-Bereich von KerimOS. Die frühere
+ * eigenständige Menü-App wird nicht mehr angesteuert.
  */
 export async function PrepCard() {
   const stand = await fetchPrepStand();
@@ -44,9 +45,8 @@ export async function PrepCard() {
       )}
 
       <div className="mt-3 flex flex-wrap gap-2">
-        <Link href={`${MENU_APP}/prep`} target="_blank" rel="noopener noreferrer"
-          className={knopf}>
-          Schon geprept — Boxen eintragen ↗
+        <Link href="/m/Essen/prep" className={knopf}>
+          Schon geprept — Boxen eintragen
         </Link>
         <Link href="/m/Essen/einkauf" className={knopf}>
           Einkaufsliste schreiben

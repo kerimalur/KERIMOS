@@ -542,7 +542,7 @@ export const CYCLE_STATUS = ["geplant", "eingekauft", "gekocht", "erledigt"];
  * ändern sich nicht mehr, wenn später ein Rezept angepasst wird. Die
  * Zutatenliste kommt dagegen aus dem Rezept, weil sie nur zum Kochen dient.
  */
-export async function fetchCycles(limit = 8): Promise<PrepCycle[]> {
+export async function fetchCycles(limit = 24): Promise<PrepCycle[]> {
   const supabase = createMenuClient();
   if (!supabase) return [];
 
@@ -629,6 +629,70 @@ export async function fetchCycles(limit = 8): Promise<PrepCycle[]> {
     status: c.status as string,
     batches: batchesNachCycle.get(c.id as string) ?? [],
   }));
+}
+
+/* -------------------------------------------------------- Tagesvorlagen */
+
+export interface DayTemplateItem {
+  id: string;
+  meal_type: string;
+  recipe_id: string;
+  recipeName: string;
+  sort_order: number;
+}
+
+export interface DayTemplate {
+  id: string;
+  name: string;
+  with_snacks: boolean;
+  items: DayTemplateItem[];
+}
+
+/**
+ * Tagesvorlagen: ein fertig zusammengestellter Tag aus Rezepten.
+ *
+ * Gedacht für die Tage, die sich ohnehin wiederholen - man lädt die Vorlage
+ * auf ein Datum, statt jede Mahlzeit neu zusammenzuklicken. Die Vorlage
+ * verweist nur auf Rezepte; ändert man ein Rezept, ändert sich die Vorlage
+ * automatisch mit.
+ */
+export async function fetchDayTemplates(): Promise<DayTemplate[]> {
+  const supabase = createMenuClient();
+  if (!supabase) return [];
+
+  const { data: vorlagen } = await supabase.from("day_templates")
+    .select("id, name, with_snacks").order("name");
+  const liste = (vorlagen ?? []) as { id: string; name: string; with_snacks: boolean }[];
+  if (liste.length === 0) return [];
+
+  const { data: itemRows } = await supabase.from("day_template_items")
+    .select("id, template_id, meal_type, recipe_id, sort_order")
+    .in("template_id", liste.map((v) => v.id)).order("sort_order");
+  const items = (itemRows ?? []) as {
+    id: string; template_id: string; meal_type: string;
+    recipe_id: string; sort_order: number;
+  }[];
+
+  const recipeIds = [...new Set(items.map((i) => i.recipe_id))];
+  const namen = new Map<string, string>();
+  if (recipeIds.length > 0) {
+    const { data: rez } = await supabase.from("recipes")
+      .select("id, name").in("id", recipeIds);
+    for (const r of rez ?? []) namen.set(r.id as string, r.name as string);
+  }
+
+  const nachVorlage = new Map<string, DayTemplateItem[]>();
+  for (const i of items) {
+    const list = nachVorlage.get(i.template_id) ?? [];
+    list.push({
+      id: i.id, meal_type: i.meal_type, recipe_id: i.recipe_id,
+      recipeName: namen.get(i.recipe_id) ?? "Gelöschtes Rezept",
+      sort_order: i.sort_order,
+    });
+    nachVorlage.set(i.template_id, list);
+  }
+
+  return liste.map((v) => ({ ...v, items: nachVorlage.get(v.id) ?? [] }));
 }
 
 /* ------------------------------------------------------------ Tagesplan */

@@ -4,12 +4,13 @@ import { useRouter } from "next/navigation";
 import {
   toggleMealEaten, toggleMealItemEaten, togglePortionConsumed,
   removePortionFromDay, deletePlanMeal, setMenuDayMarker, convertPortionToMeal,
+  applyDayTemplate,
 } from "@/lib/actions";
-import { Card, cx } from "@/components/ui";
+import { Button, Card, Select, cx } from "@/components/ui";
 import { MEAL_ORDER, MEAL_LABEL } from "@/lib/menu-labels";
 import { MealForm, type FoodOption, type RezeptOption } from "@/components/meal-form";
 import { MealEdit } from "@/components/meal-edit";
-import type { DayView } from "@/lib/supabase/menu";
+import type { DayView, DayTemplate } from "@/lib/supabase/menu";
 
 /** "300 g Reis" — Menge weggelassen, wenn sie fehlt. */
 function menge(amount: number, unit: string): string {
@@ -23,10 +24,12 @@ function menge(amount: number, unit: string): string {
  * Mahlzeiten, alles abhakbar. Die Summen kommen aus der Datenbank, das
  * Abgehakte wird lokal sofort gespiegelt, damit das Antippen nicht wartet.
  */
-export function PlanDay({ tag, foods, rezepte }: {
+export function PlanDay({ tag, foods, rezepte, vorlagen = [] }: {
   tag: DayView;
   foods: FoodOption[];
   rezepte: RezeptOption[];
+  /** Tagesvorlagen, die sich auf diesen Tag laden lassen. */
+  vorlagen?: DayTemplate[];
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -36,6 +39,25 @@ export function PlanDay({ tag, foods, rezepte }: {
   const [neuFuer, setNeuFuer] = useState<string | null>(null);
   // Mahlzeit, die gerade bearbeitet wird
   const [editId, setEditId] = useState<string | null>(null);
+  // Gewaehlte Tagesvorlage, noch nicht geladen
+  const [vorlageId, setVorlageId] = useState("");
+
+  /**
+   * Vorlage auf diesen Tag laden. Die Vorlage ergaenzt den Tag, sie raeumt
+   * ihn nicht auf - schon Geplantes bleibt stehen. Wer den Tag leer haben
+   * will, loescht ihn vorher; das soll nicht aus Versehen passieren.
+   */
+  async function vorlageLaden() {
+    if (!vorlageId || busy) return;
+    setBusy(true);
+    const fd = new FormData();
+    fd.set("date", tag.date);
+    fd.set("template_id", vorlageId);
+    await applyDayTemplate(fd);
+    setBusy(false);
+    setVorlageId("");
+    router.refresh();
+  }
 
   const state = (id: string, echt: boolean) => lokal[id] ?? echt;
 
@@ -132,6 +154,36 @@ export function PlanDay({ tag, foods, rezepte }: {
           ))}
         </div>
       </Card>
+
+      {/* Ganzen Tag auf einmal setzen. Steht bewusst ueber den Slots: wer
+          einen Standardtag isst, will gar nicht erst Slot fuer Slot klicken. */}
+      {vorlagen.length > 0 && (
+        <Card className="p-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="min-w-48 flex-1">
+              <label htmlFor="vorlage" className="mb-1.5 block text-[11px] font-medium
+                                                 uppercase tracking-[0.12em] text-ink-muted">
+                Tagesvorlage laden
+              </label>
+              <Select id="vorlage" value={vorlageId}
+                onChange={(e) => setVorlageId(e.target.value)}>
+                <option value="">— Vorlage wählen —</option>
+                {vorlagen.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name}{v.with_snacks ? " (mit Snacks)" : ""}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <Button onClick={vorlageLaden} disabled={busy || !vorlageId}>
+              {busy ? "…" : "Auf diesen Tag laden"}
+            </Button>
+          </div>
+          <p className="mt-2 text-xs text-ink-muted">
+            Die Vorlage ergänzt den Tag — schon Geplantes bleibt stehen.
+          </p>
+        </Card>
+      )}
 
       {/* Slots */}
       {MEAL_ORDER.map((slot) => {

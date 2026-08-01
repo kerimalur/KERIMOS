@@ -67,8 +67,22 @@ export function PrepPlanner({
   const [von, setVon] = useState(heute);
   const [bis, setBis] = useState(heute);
   const [name, setName] = useState("");
-  const [offen, setOffen] = useState<string | null>(cycles[0]?.id ?? null);
   const [schreiben, setSchreiben] = useState(false);
+
+  /**
+   * Ein Zyklus ist vorbei, sobald sein letzter gedeckter Tag in der
+   * Vergangenheit liegt. Solche Zyklen wandern in einen eingeklappten
+   * Bereich - sonst wird die Seite mit jedem Meal Prep länger, obwohl
+   * man ohnehin nur die laufenden braucht.
+   *
+   * Gelöscht wird dabei nichts: die Boxen bleiben in der Datenbank und
+   * tauchen in der Plan-Ansicht bei ihrem Datum weiterhin auf.
+   */
+  const aktiv = cycles.filter((c) => c.end_date >= heute);
+  const vergangen = cycles.filter((c) => c.end_date < heute);
+
+  const [offen, setOffen] = useState<string | null>(aktiv[0]?.id ?? null);
+  const [zeigeAlte, setZeigeAlte] = useState(false);
 
   /**
    * Boxen je Menü: eine Portion pro Tag. Genau die Rechnung hinter
@@ -118,6 +132,126 @@ export function PrepPlanner({
     const fd = new FormData();
     for (const [k, v] of Object.entries(werte)) fd.set(k, v);
     return fd;
+  };
+
+  /**
+   * Eine Zyklus-Karte. `alt` = der Zeitraum ist vorbei; solche Karten
+   * werden leiser dargestellt und liegen im eingeklappten Bereich.
+   */
+  const zyklusKarte = (c: PrepCycle, alt = false) => {
+        const auf = offen === c.id;
+        const boxen = c.batches.reduce((s, b) => s + b.boxen.length, 0);
+        const portionen = c.batches.reduce((s, b) => s + b.portions, 0);
+        const kosten = c.batches.reduce((s, b) => s + b.cost * b.portions, 0);
+
+        return (
+          <Card key={c.id} className={cx(alt && "opacity-60")}>
+            <div className="flex flex-wrap items-center gap-3">
+              <button onClick={() => setOffen(auf ? null : c.id)}
+                className="min-w-0 flex-1 text-left">
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-ink">
+                    {c.name || `Kochtag ${kurz(c.cook_date)}`}
+                  </span>
+                  <span className={cx("rounded-md px-2 py-0.5 text-[11px] font-medium",
+                    STATUS_FARBE[c.status] ?? "bg-sand text-ink-soft")}>
+                    {c.status}
+                  </span>
+                </span>
+                <span className="tabular mt-0.5 block text-xs text-ink-muted">
+                  {kurz(c.start_date)} – {kurz(c.end_date)} · {c.batches.length} Töpfe ·{" "}
+                  {boxen} von {portionen} Boxen verteilt
+                  {kosten > 0 && ` · CHF ${kosten.toFixed(2)}`}
+                </span>
+              </button>
+
+              <Select value={c.status}
+                onChange={(e) => lauf(setCycleStatus,
+                  form({ id: c.id, status: e.target.value }))}
+                className="w-36" aria-label="Status">
+                {["geplant", "eingekauft", "gekocht", "erledigt"].map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </Select>
+
+              <button onClick={() => lauf(deleteCycle, form({ id: c.id }))}
+                aria-label="Zyklus löschen"
+                className="px-1 text-sm text-ink-faint transition hover:text-bad">
+                ✕
+              </button>
+            </div>
+
+            {auf && (
+              <div className="mt-4 space-y-3">
+                {c.batches.map((b) => (
+                  <div key={b.id} className="rounded-xl bg-sand/50 p-3">
+                    <div className="flex flex-wrap items-end justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-ink">{b.recipeName}</div>
+                        <div className="tabular text-xs text-ink-muted">
+                          {MEAL_LABEL[b.meal_type] ?? b.meal_type} ·{" "}
+                          {Math.round(b.kcal)} kcal · {Math.round(b.protein)} g P je Box
+                          {b.cost > 0 && ` · CHF ${b.cost.toFixed(2)}`}
+                        </div>
+                      </div>
+                      <form action={(fd) => lauf(updateBatchPortions, fd)}
+                        className="flex items-end gap-2">
+                        <input type="hidden" name="id" value={b.id} />
+                        <div className="w-24">
+                          <label className="mb-1 block text-xs text-ink-muted">
+                            Portionen
+                          </label>
+                          <Input name="portions" type="number" min={1} max={14}
+                            defaultValue={b.portions} />
+                        </div>
+                        <button className="pb-2 text-xs text-accent-soft hover:underline">
+                          Speichern
+                        </button>
+                      </form>
+                    </div>
+
+                    {/* Kochliste: Menge pro Box und für den ganzen Topf */}
+                    {b.zutaten.length > 0 && (
+                      <ul className="mt-2.5 divide-y divide-line/60">
+                        {b.zutaten.map((z, i) => (
+                          <li key={i} className="flex items-baseline gap-2 py-1 text-xs">
+                            <span className="min-w-0 flex-1 truncate text-ink-soft">
+                              {z.name}
+                            </span>
+                            <span className="tabular shrink-0 text-ink">
+                              {z.total} {z.unit}
+                            </span>
+                            <span className="tabular w-24 shrink-0 text-right text-ink-faint">
+                              {z.proPortion} {z.unit} / Box
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    {/* Verteilung */}
+                    <div className="mt-2.5 flex flex-wrap gap-1.5">
+                      {b.boxen.map((p) => (
+                        <span key={p.id}
+                          className={cx("rounded-md px-2 py-0.5 text-[11px]",
+                            p.consumed
+                              ? "bg-good-tint text-good line-through"
+                              : "bg-card text-ink-soft")}>
+                          {kurz(p.date)}
+                        </span>
+                      ))}
+                      {b.boxen.length < b.portions && (
+                        <span className="rounded-md bg-warn-tint px-2 py-0.5 text-[11px] text-warn">
+                          {b.portions - b.boxen.length} unverteilt
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        );
   };
 
   return (
@@ -270,125 +404,41 @@ export function PrepPlanner({
         )}
       </Card>
 
-      {/* Bestehende Zyklen */}
-      {cycles.length === 0 ? (
-        <Empty>Noch kein Zyklus angelegt.</Empty>
+      {/* Laufende Zyklen */}
+      {aktiv.length === 0 ? (
+        <Empty>
+          {vergangen.length > 0
+            ? "Kein laufender Zyklus - die bisherigen sind abgelaufen."
+            : "Noch kein Zyklus angelegt."}
+        </Empty>
       ) : (
-        cycles.map((c) => {
-          const auf = offen === c.id;
-          const boxen = c.batches.reduce((s, b) => s + b.boxen.length, 0);
-          const portionen = c.batches.reduce((s, b) => s + b.portions, 0);
-          const kosten = c.batches.reduce((s, b) => s + b.cost * b.portions, 0);
+        aktiv.map((c) => zyklusKarte(c))
+      )}
 
-          return (
-            <Card key={c.id}>
-              <div className="flex flex-wrap items-center gap-3">
-                <button onClick={() => setOffen(auf ? null : c.id)}
-                  className="min-w-0 flex-1 text-left">
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium text-ink">
-                      {c.name || `Kochtag ${kurz(c.cook_date)}`}
-                    </span>
-                    <span className={cx("rounded-md px-2 py-0.5 text-[11px] font-medium",
-                      STATUS_FARBE[c.status] ?? "bg-sand text-ink-soft")}>
-                      {c.status}
-                    </span>
-                  </span>
-                  <span className="tabular mt-0.5 block text-xs text-ink-muted">
-                    {kurz(c.start_date)} – {kurz(c.end_date)} · {c.batches.length} Töpfe ·{" "}
-                    {boxen} von {portionen} Boxen verteilt
-                    {kosten > 0 && ` · CHF ${kosten.toFixed(2)}`}
-                  </span>
-                </button>
+      {/* Vergangene Zyklen liegen eingeklappt darunter: sie bleiben
+          erreichbar, machen die Seite aber nicht mit jedem Meal Prep laenger. */}
+      {vergangen.length > 0 && (
+        <div>
+          <button onClick={() => setZeigeAlte(!zeigeAlte)}
+            className="flex w-full items-center gap-2 rounded-xl border border-line/70
+                       bg-card px-4 py-2.5 text-left text-xs text-ink-muted transition
+                       duration-150 ease-tactile hover:border-line-strong hover:text-ink-soft
+                       active:scale-[0.99]">
+            <span className="text-ink-faint">{zeigeAlte ? "\u25be" : "\u25b8"}</span>
+            {vergangen.length === 1
+              ? "1 vergangener Zyklus"
+              : `${vergangen.length} vergangene Zyklen`}
+            <span className="ml-auto text-ink-faint">
+              {zeigeAlte ? "einklappen" : "anzeigen"}
+            </span>
+          </button>
 
-                <Select value={c.status}
-                  onChange={(e) => lauf(setCycleStatus,
-                    form({ id: c.id, status: e.target.value }))}
-                  className="w-36" aria-label="Status">
-                  {["geplant", "eingekauft", "gekocht", "erledigt"].map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </Select>
-
-                <button onClick={() => lauf(deleteCycle, form({ id: c.id }))}
-                  aria-label="Zyklus löschen"
-                  className="px-1 text-sm text-ink-faint transition hover:text-bad">
-                  ✕
-                </button>
-              </div>
-
-              {auf && (
-                <div className="mt-4 space-y-3">
-                  {c.batches.map((b) => (
-                    <div key={b.id} className="rounded-xl bg-sand/50 p-3">
-                      <div className="flex flex-wrap items-end justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="text-sm font-medium text-ink">{b.recipeName}</div>
-                          <div className="tabular text-xs text-ink-muted">
-                            {MEAL_LABEL[b.meal_type] ?? b.meal_type} ·{" "}
-                            {Math.round(b.kcal)} kcal · {Math.round(b.protein)} g P je Box
-                            {b.cost > 0 && ` · CHF ${b.cost.toFixed(2)}`}
-                          </div>
-                        </div>
-                        <form action={(fd) => lauf(updateBatchPortions, fd)}
-                          className="flex items-end gap-2">
-                          <input type="hidden" name="id" value={b.id} />
-                          <div className="w-24">
-                            <label className="mb-1 block text-xs text-ink-muted">
-                              Portionen
-                            </label>
-                            <Input name="portions" type="number" min={1} max={14}
-                              defaultValue={b.portions} />
-                          </div>
-                          <button className="pb-2 text-xs text-accent-soft hover:underline">
-                            Speichern
-                          </button>
-                        </form>
-                      </div>
-
-                      {/* Kochliste: Menge pro Box und für den ganzen Topf */}
-                      {b.zutaten.length > 0 && (
-                        <ul className="mt-2.5 divide-y divide-line/60">
-                          {b.zutaten.map((z, i) => (
-                            <li key={i} className="flex items-baseline gap-2 py-1 text-xs">
-                              <span className="min-w-0 flex-1 truncate text-ink-soft">
-                                {z.name}
-                              </span>
-                              <span className="tabular shrink-0 text-ink">
-                                {z.total} {z.unit}
-                              </span>
-                              <span className="tabular w-24 shrink-0 text-right text-ink-faint">
-                                {z.proPortion} {z.unit} / Box
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-
-                      {/* Verteilung */}
-                      <div className="mt-2.5 flex flex-wrap gap-1.5">
-                        {b.boxen.map((p) => (
-                          <span key={p.id}
-                            className={cx("rounded-md px-2 py-0.5 text-[11px]",
-                              p.consumed
-                                ? "bg-good-tint text-good line-through"
-                                : "bg-card text-ink-soft")}>
-                            {kurz(p.date)}
-                          </span>
-                        ))}
-                        {b.boxen.length < b.portions && (
-                          <span className="rounded-md bg-warn-tint px-2 py-0.5 text-[11px] text-warn">
-                            {b.portions - b.boxen.length} unverteilt
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-          );
-        })
+          {zeigeAlte && (
+            <div className="mt-4 space-y-5">
+              {vergangen.map((c) => zyklusKarte(c, true))}
+            </div>
+          )}
+        </div>
       )}
     </>
   );
