@@ -49,7 +49,7 @@ export default async function FixkostenPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-ink">Fixkosten &amp; feste Einnahmen</h1>
+        <h1 className="font-display text-xl font-semibold text-ink">Fixkosten &amp; feste Einnahmen</h1>
         <p className="mt-1 text-sm text-ink-muted">
           {chf(monthlyOut)} raus · {chf(monthlyIn)} rein · Saldo{" "}
           <span className={monthlyIn - monthlyOut >= 0 ? "text-good" : "text-bad"}>

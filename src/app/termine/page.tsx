@@ -15,7 +15,7 @@ export default async function TerminePage() {
   if (error) {
     return (
       <div className="space-y-5">
-        <h1 className="text-xl font-medium text-ink">Termine</h1>
+        <h1 className="font-display text-xl font-bold text-ink">Termine</h1>
         <Card>
           <CardTitle>Tabelle fehlt noch</CardTitle>
           <p className="text-sm text-ink-muted">
@@ -37,7 +37,7 @@ export default async function TerminePage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-medium text-ink">Termine</h1>
+        <h1 className="font-display text-xl font-bold text-ink">Termine</h1>
         <p className="mt-1 max-w-2xl text-sm text-ink-muted">
           Hier eintragen, unterwegs sehen: die anstehenden Termine stehen auf der
           Startseite und im Handy-Einstieg. Zum Ändern den Termin antippen.

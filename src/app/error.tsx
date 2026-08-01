@@ -19,7 +19,7 @@ export default function Error({
   return (
     <div className="mx-auto max-w-lg py-16">
       <div className="rounded-2xl border border-line/70 bg-card p-6">
-        <h1 className="text-lg font-medium text-ink">Da ist etwas schiefgegangen</h1>
+        <h1 className="font-display text-lg font-bold text-ink">Da ist etwas schiefgegangen</h1>
         <p className="mt-2 text-sm text-ink-muted">
           Meist genügt ein neuer Versuch. Bleibt es dabei, steht die Ursache unten —
           häufig fehlt eine Umgebungsvariable oder die Datenbank war kurz nicht erreichbar.
@@ -27,7 +27,7 @@ export default function Error({
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button onClick={reset}
-            className="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-soft">
+            className="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-ink-on transition hover:bg-accent-soft">
             Nochmal versuchen
           </button>
           <a href="/"

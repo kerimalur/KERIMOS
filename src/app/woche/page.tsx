@@ -82,7 +82,7 @@ export default async function WochePage({
     return (
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-xl font-semibold text-ink">Woche</h1>
+          <h1 className="font-display text-xl font-semibold text-ink">Woche</h1>
           <WeekNav weekStart={week} isCurrent={week === current} />
         </div>
         <Empty>
@@ -97,7 +97,7 @@ export default async function WochePage({
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-ink">Woche</h1>
+          <h1 className="font-display text-xl font-semibold text-ink">Woche</h1>
           <p className="mt-1 text-sm text-ink-muted">Wohin ist die Zeit gegangen?</p>
         </div>
         <WeekNav weekStart={week} isCurrent={week === current} />

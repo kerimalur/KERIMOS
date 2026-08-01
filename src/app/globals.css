@@ -2,20 +2,57 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: light; }
+:root { color-scheme: dark; }
 
 body {
   @apply bg-paper text-ink antialiased;
+  /* Der Grund ist kein flaches Schwarz, sondern ein warmer Verlauf.
+     Die driftenden Farbwolken liegen darüber (siehe .kt-bg). */
+  background-image: radial-gradient(120% 90% at 20% 0%, #221C14 0%, #15110C 55%, #0C0A08 100%);
+  background-attachment: fixed;
 }
 
 .tabular { font-variant-numeric: tabular-nums; }
 
+/* ── Ambient: langsam driftende Farbwolken hinter allem.
+   Rein dekorativ, nimmt keine Klicks entgegen. */
+.kt-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.kt-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px);
+  opacity: 0.26;
+  mix-blend-mode: screen;
+}
+.kt-grain {
+  position: absolute;
+  inset: 0;
+  background-image: repeating-radial-gradient(circle at 50% 50%,
+    rgba(255,255,255,.035) 0 1px, transparent 1px 3px);
+  opacity: 0.5;
+}
+.kt-vignette {
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 260px 80px rgba(0,0,0,.55);
+}
+
+/* Alles Bedienbare liegt über dem Ambient-Layer */
+.kt-content { position: relative; z-index: 1; }
+
+/* ── Formularelemente */
 input[type="range"] {
-  @apply h-1.5 w-full cursor-pointer appearance-none rounded-full bg-line;
+  @apply h-1.5 w-full cursor-pointer appearance-none rounded-full bg-sand;
 }
 input[type="range"]::-webkit-slider-thumb {
   @apply h-4 w-4 appearance-none rounded-full bg-accent;
-  box-shadow: 0 0 0 4px rgba(91, 140, 123, 0.15);
+  box-shadow: 0 0 0 4px rgba(231, 169, 107, 0.18);
 }
 input[type="range"]::-moz-range-thumb {
   @apply h-4 w-4 rounded-full border-0 bg-accent;
@@ -29,4 +66,36 @@ input[type="color"] {
   @apply cursor-pointer p-0.5;
 }
 
-::selection { background: #DCE9E3; }
+/* Datums- und Zeitfelder zeigen ihr Icon sonst pechschwarz auf Dunkel */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator,
+input[type="month"]::-webkit-calendar-picker-indicator,
+input[type="week"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) opacity(0.55);
+  cursor: pointer;
+}
+
+/* ── Scrollbar passend zum warmen Dunkel */
+* {
+  scrollbar-color: #3E3222 transparent;
+  scrollbar-width: thin;
+}
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: #3E3222;
+  border-radius: 99px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background-clip: content-box; background-color: #55452E; }
+
+::selection { background: rgba(231, 169, 107, 0.3); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}

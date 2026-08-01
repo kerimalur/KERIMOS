@@ -113,7 +113,7 @@ export function DayCalendar({
               {STEPS.map((m) => (
                 <button key={m} onClick={() => setStep(m)}
                   className={cx("rounded-lg px-2 py-1 text-xs font-medium transition",
-                    step === m ? "bg-accent text-white" : "bg-sand text-ink-muted hover:text-ink-soft")}>
+                    step === m ? "bg-accent text-ink-on" : "bg-sand text-ink-muted hover:text-ink-soft")}>
                   {m < 60 ? `${m}m` : `${m / 60}h`}
                 </button>
               ))}
@@ -190,11 +190,11 @@ export function DayCalendar({
               <input type="hidden" name="id" value={selectedBlock.entry.id} />
               <input type="time" name="von" required
                 defaultValue={minuteToTime(selectedBlock.start)}
-                className="rounded-lg border border-line bg-white px-2 py-1 text-xs text-ink outline-none focus:border-accent" />
+                className="rounded-lg border border-line bg-field px-2 py-1 text-xs text-ink outline-none focus:border-accent" />
               <span className="text-xs text-ink-muted">–</span>
               <input type="time" name="bis" required
                 defaultValue={minuteToTime(Math.min(selectedBlock.end, 1439))}
-                className="rounded-lg border border-line bg-white px-2 py-1 text-xs text-ink outline-none focus:border-accent" />
+                className="rounded-lg border border-line bg-field px-2 py-1 text-xs text-ink outline-none focus:border-accent" />
               <button className="text-xs font-medium text-accent-soft transition hover:underline">
                 Speichern
               </button>
@@ -286,7 +286,7 @@ export function DayCalendar({
                 <form action={setEntryStart} className="ml-auto flex items-center gap-1.5">
                   <input type="hidden" name="id" value={e.id} />
                   <input type="time" name="start" step={300}
-                    className="rounded-lg border border-line bg-white px-2 py-1 text-xs text-ink outline-none focus:border-accent" />
+                    className="rounded-lg border border-line bg-field px-2 py-1 text-xs text-ink outline-none focus:border-accent" />
                   <button className="text-xs text-accent-soft hover:underline">
                     Uhrzeit setzen
                   </button>

@@ -149,7 +149,7 @@ export default async function RueckblickPage({
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-medium text-ink">Wochenrückblick</h1>
+          <h1 className="font-display text-xl font-bold text-ink">Wochenrückblick</h1>
           <p className="mt-1 max-w-2xl text-sm text-ink-muted">
             Fünf Minuten am Sonntag. Die Zahlen werden eingefroren — sonst lassen sich
             Monate später nicht mehr vergleichen, weil sich die Berechnung inzwischen
@@ -208,20 +208,20 @@ export default async function RueckblickPage({
             <Label htmlFor="went_well">Was lief gut?</Label>
             <textarea id="went_well" name="went_well" rows={2}
               defaultValue={review?.went_well ?? wellVorschlag}
-              className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none transition placeholder:text-ink-faint hover:border-line-strong focus:border-accent focus:ring-2 focus:ring-accent/15"
+              className="w-full rounded-xl border border-line bg-field px-3 py-2 text-sm text-ink outline-none transition placeholder:text-ink-faint hover:border-line-strong focus:border-accent focus:ring-2 focus:ring-accent/15"
               placeholder="Konkret — nicht „war ok“" />
           </div>
           <div>
             <Label htmlFor="went_poorly">Was nicht?</Label>
             <textarea id="went_poorly" name="went_poorly" rows={2}
               defaultValue={review?.went_poorly ?? poorlyVorschlag}
-              className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none transition placeholder:text-ink-faint hover:border-line-strong focus:border-accent focus:ring-2 focus:ring-accent/15" />
+              className="w-full rounded-xl border border-line bg-field px-3 py-2 text-sm text-ink outline-none transition placeholder:text-ink-faint hover:border-line-strong focus:border-accent focus:ring-2 focus:ring-accent/15" />
           </div>
           <div>
             <Label htmlFor="next_week_focus">Worauf kommt es nächste Woche an?</Label>
             <textarea id="next_week_focus" name="next_week_focus" rows={2}
               defaultValue={review?.next_week_focus ?? ""}
-              className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none transition placeholder:text-ink-faint hover:border-line-strong focus:border-accent focus:ring-2 focus:ring-accent/15"
+              className="w-full rounded-xl border border-line bg-field px-3 py-2 text-sm text-ink outline-none transition placeholder:text-ink-faint hover:border-line-strong focus:border-accent focus:ring-2 focus:ring-accent/15"
               placeholder="Eine Sache, nicht fünf" />
           </div>
           <Button type="submit">{review ? "Aktualisieren" : "Festhalten"}</Button>

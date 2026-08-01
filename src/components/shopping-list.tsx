@@ -53,7 +53,7 @@ export function ShoppingList({ items }: { items: ShoppingItem[] }) {
           "grid h-5 w-5 shrink-0 place-items-center rounded-md border text-[11px] transition",
           i.checked
             ? "border-good bg-good-tint text-good"
-            : "border-line bg-white text-transparent hover:border-line-strong"
+            : "border-line bg-field text-transparent hover:border-line-strong"
         )}>
         ✓
       </button>

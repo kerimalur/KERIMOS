@@ -25,7 +25,7 @@ export default async function QuickPage() {
   return (
     <div className="mx-auto max-w-md space-y-5 py-4">
       <div>
-        <h1 className="text-xl font-medium text-ink">Schnellerfassung</h1>
+        <h1 className="font-display text-xl font-bold text-ink">Schnellerfassung</h1>
         <p className="mt-1 text-sm text-ink-muted">Für unterwegs — zwei Taps, fertig.</p>
       </div>
 

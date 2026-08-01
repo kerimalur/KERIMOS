@@ -67,7 +67,7 @@ export function QuickSearch({ links }: { links: NavLink[] }) {
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 bg-ink/20 p-4 pt-[12vh]"
+        <div className="fixed inset-0 z-50 bg-black/60 p-4 pt-[12vh]"
           onClick={() => setOpen(false)}>
           <div className="mx-auto max-w-lg overflow-hidden rounded-2xl border border-line bg-card shadow-xl"
             onClick={(e) => e.stopPropagation()}>
@@ -97,7 +97,7 @@ export function QuickSearch({ links }: { links: NavLink[] }) {
                     onMouseEnter={() => setCursor(i)}
                     className={cx("flex w-full items-center gap-3 px-4 py-2 text-left",
                       i === cursor && "bg-sand")}>
-                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-xs text-white"
+                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-xs text-ink-on"
                       style={{ background: l.color }}>
                       {l.icon ?? l.title[0]}
                     </span>

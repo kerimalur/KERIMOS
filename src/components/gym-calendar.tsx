@@ -92,7 +92,7 @@ export function GymCalendar({ trainedDays }: { trainedDays: Record<string, strin
               style={background ? { background } : undefined}
               className={cx(
                 "tabular mx-auto grid h-8 w-8 place-items-center rounded-lg text-xs",
-                splits.length > 0 ? "font-medium text-white" : "text-ink-soft",
+                splits.length > 0 ? "font-medium text-ink-on" : "text-ink-soft",
                 key === today && "ring-2 ring-accent/60 ring-offset-1 ring-offset-card"
               )}
             >

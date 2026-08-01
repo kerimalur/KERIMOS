@@ -261,24 +261,24 @@ export function RunwaySimulator({
               <AreaChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: -12 }}>
                 <defs>
                   <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#5B8C7B" stopOpacity={0.22} />
-                    <stop offset="100%" stopColor="#5B8C7B" stopOpacity={0} />
+                    <stop offset="0%" stopColor="#5FC2A6" stopOpacity={0.22} />
+                    <stop offset="100%" stopColor="#5FC2A6" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid stroke="#E8E3D8" vertical={false} />
-                <XAxis dataKey="month" stroke="#8A8478" fontSize={11}
+                <CartesianGrid stroke="#2E2519" vertical={false} />
+                <XAxis dataKey="month" stroke="#9A8C74" fontSize={11}
                   tickLine={false} axisLine={false} minTickGap={24} />
-                <YAxis stroke="#8A8478" fontSize={11} tickLine={false} axisLine={false}
+                <YAxis stroke="#9A8C74" fontSize={11} tickLine={false} axisLine={false}
                   tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
                 <Tooltip
                   formatter={(v: number) => chf(v)}
                   contentStyle={{
-                    background: "#FFFDF9", border: "1px solid #E8E3D8",
+                    background: "#1E1811", border: "1px solid #2E2519",
                     borderRadius: 8, fontSize: 12,
                   }}
                 />
-                <ReferenceLine y={0} stroke="#B9847A" strokeDasharray="4 4" />
-                <Area type="monotone" dataKey="Vermögen" stroke="#5B8C7B" strokeWidth={2}
+                <ReferenceLine y={0} stroke="#E28B72" strokeDasharray="4 4" />
+                <Area type="monotone" dataKey="Vermögen" stroke="#5FC2A6" strokeWidth={2}
                   fill="url(#fade)" />
               </AreaChart>
             </ResponsiveContainer>

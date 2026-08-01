@@ -143,11 +143,11 @@ export function TodayEntries({
           <div className="flex items-center gap-2">
             <input type="time" value={von} onChange={(e) => setVon(e.target.value)}
               aria-label="Von"
-              className="flex-1 rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none focus:border-accent" />
+              className="flex-1 rounded-xl border border-line bg-field px-3 py-2 text-sm text-ink outline-none focus:border-accent" />
             <span className="text-xs text-ink-muted">bis</span>
             <input type="time" value={bis} onChange={(e) => setBis(e.target.value)}
               aria-label="Bis"
-              className="flex-1 rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none focus:border-accent" />
+              className="flex-1 rounded-xl border border-line bg-field px-3 py-2 text-sm text-ink outline-none focus:border-accent" />
           </div>
           <div className="flex items-center justify-between">
             <span className="text-xs text-ink-muted">
@@ -220,11 +220,11 @@ export function TodayEntries({
                   <div className="mt-2 flex items-center gap-2 rounded-xl bg-sand/60 p-2.5">
                     <input type="time" value={eVon} onChange={(ev) => setEVon(ev.target.value)}
                       aria-label="Von"
-                      className="flex-1 rounded-xl border border-line bg-white px-3 py-1.5 text-sm text-ink outline-none focus:border-accent" />
+                      className="flex-1 rounded-xl border border-line bg-field px-3 py-1.5 text-sm text-ink outline-none focus:border-accent" />
                     <span className="text-xs text-ink-muted">bis</span>
                     <input type="time" value={eBis} onChange={(ev) => setEBis(ev.target.value)}
                       aria-label="Bis"
-                      className="flex-1 rounded-xl border border-line bg-white px-3 py-1.5 text-sm text-ink outline-none focus:border-accent" />
+                      className="flex-1 rounded-xl border border-line bg-field px-3 py-1.5 text-sm text-ink outline-none focus:border-accent" />
                     <Button onClick={saveEdit} className="px-3 py-1.5 text-xs"
                       disabled={busy || toMin(eVon) === null || toMin(eBis) === null
                         || (toMin(eBis) ?? 0) <= (toMin(eVon) ?? 0)}>

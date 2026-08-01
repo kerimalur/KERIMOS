@@ -52,7 +52,7 @@ export default async function Cockpit() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-medium text-ink">Geld</h1>
+        <h1 className="font-display text-xl font-bold text-ink">Geld</h1>
         <p className="mt-1 text-sm text-ink-muted">
           Stand {dateLabel(new Date().toISOString())}
         </p>

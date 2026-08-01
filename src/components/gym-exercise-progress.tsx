@@ -125,20 +125,20 @@ export function GymExerciseProgress({
           ) : (
             <ResponsiveContainer width="100%" height={200}>
               <LineChart data={daten} margin={{ top: 8, right: 8, bottom: 0, left: -20 }}>
-                <CartesianGrid stroke="#E8E3D8" vertical={false} />
-                <XAxis dataKey="tag" stroke="#8A8478" fontSize={11}
+                <CartesianGrid stroke="#2E2519" vertical={false} />
+                <XAxis dataKey="tag" stroke="#9A8C74" fontSize={11}
                   tickLine={false} axisLine={false} />
-                <YAxis stroke="#8A8478" fontSize={11} tickLine={false} axisLine={false} />
+                <YAxis stroke="#9A8C74" fontSize={11} tickLine={false} axisLine={false} />
                 <Tooltip
                   formatter={(v: number) =>
                     gewaehlt.isCardio ? `${v} min` : `${v} kg`}
                   contentStyle={{
-                    background: "#FFFDF9", border: "1px solid #E8E3D8",
+                    background: "#1E1811", border: "1px solid #2E2519",
                     borderRadius: 8, fontSize: 12,
                   }}
                 />
-                <Line type="monotone" dataKey="wert" stroke="#5B8C7B" strokeWidth={2}
-                  dot={{ r: 3, fill: "#5B8C7B" }} />
+                <Line type="monotone" dataKey="wert" stroke="#5FC2A6" strokeWidth={2}
+                  dot={{ r: 3, fill: "#5FC2A6" }} />
               </LineChart>
             </ResponsiveContainer>
           )}

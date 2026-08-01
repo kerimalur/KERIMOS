@@ -85,7 +85,7 @@ export function FocusStarter({
 
   return (
     <Card>
-      <h1 className="text-lg font-medium text-ink">Fokus starten</h1>
+      <h1 className="font-display text-lg font-bold text-ink">Fokus starten</h1>
       <p className="mt-1.5 text-sm text-ink-muted">
         Wähl aus, womit du arbeitest — auch mehreres. KerimOS öffnet alles, zählt die
         Zeit als eine Sitzung und trägt sie beim Beenden ein.
@@ -94,7 +94,7 @@ export function FocusStarter({
       <div className="mt-5 space-y-4">
         {groups.map(([group, items]) => (
           <div key={group}>
-            <h2 className="mb-2 text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted">
+            <h2 className="font-display mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">
               {group}
             </h2>
             <div className="flex flex-wrap gap-1.5">

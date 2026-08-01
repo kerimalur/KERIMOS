@@ -9,7 +9,7 @@ export function SetupWizard() {
 
   return (
     <Card className="mx-auto max-w-lg">
-      <h2 className="text-lg font-semibold text-ink">Kurz einrichten</h2>
+      <h2 className="font-display text-lg font-semibold text-ink">Kurz einrichten</h2>
       <p className="mt-1 text-sm text-ink-muted">
         Zwei Zahlen genügen, damit der Runway ab sofort stimmt. Alles Weitere kannst du
         später verfeinern.

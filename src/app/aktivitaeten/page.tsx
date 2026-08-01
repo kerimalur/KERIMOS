@@ -17,7 +17,7 @@ export default async function AktivitaetenPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-medium text-ink">Aktivitäten</h1>
+        <h1 className="font-display text-xl font-bold text-ink">Aktivitäten</h1>
         <p className="mt-1 max-w-2xl text-sm text-ink-muted">
           Jede Aktivität gehört zu einem Lebensbereich. Die Wochen-Auswertung rechnet
           genau darüber — wie viel ging an Ziele, wie viel an Leerlauf. Genau eine
@@ -48,7 +48,7 @@ export default async function AktivitaetenPage() {
           </div>
           <div className="w-16">
             <Label htmlFor="color">Farbe</Label>
-            <input id="color" name="color" type="color" defaultValue="#8A8478"
+            <input id="color" name="color" type="color" defaultValue="#9A8C74"
               className="h-9 w-full rounded-xl border border-line bg-card" />
           </div>
           <label className="flex items-center gap-2 pb-2 text-sm text-ink-soft">

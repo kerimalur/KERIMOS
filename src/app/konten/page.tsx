@@ -29,7 +29,7 @@ export default async function KontenPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-medium text-ink">Konten</h1>
+        <h1 className="font-display text-xl font-bold text-ink">Konten</h1>
         <p className="mt-1 text-sm text-ink-muted">
           {accounts.length} Konten · {bookings} Buchungen erfasst
         </p>

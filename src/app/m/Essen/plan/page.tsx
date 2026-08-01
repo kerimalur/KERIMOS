@@ -202,7 +202,7 @@ export default async function EssenPlanPage({
               <Link key={iso} href={`/m/Essen/plan?ansicht=tag&d=${iso}`}
                 className={cx(
                   "grid aspect-square place-items-center rounded-lg text-xs transition",
-                  iso === heute ? "bg-accent text-white"
+                  iso === heute ? "bg-accent text-ink-on"
                     : voll ? "bg-good-tint text-ink"
                       : teilweise ? "bg-warn-tint text-ink"
                         : "text-ink-muted hover:bg-sand"
@@ -210,7 +210,7 @@ export default async function EssenPlanPage({
                 <span className="tabular font-medium">{Number(iso.slice(8, 10))}</span>
                 {kcal > 0 && (
                   <span className={cx("text-[9px]",
-                    iso === heute ? "text-white/80" : "text-ink-muted")}>
+                    iso === heute ? "text-ink-on/80" : "text-ink-muted")}>
                     {Math.round(kcal)}
                   </span>
                 )}

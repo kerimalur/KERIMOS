@@ -17,14 +17,14 @@ function kacheln(größe: number) {
 
   const feld = (deckkraft: number) => ({
     width: kachel, height: kachel, borderRadius: radius,
-    background: "#FFFFFF", opacity: deckkraft,
+    background: "#241708", opacity: deckkraft,
   });
 
   return (
     <div
       style={{
         width: "100%", height: "100%", display: "flex",
-        alignItems: "center", justifyContent: "center", background: "#5B8C7B",
+        alignItems: "center", justifyContent: "center", background: "#E7A96B",
       }}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: lücke }}>

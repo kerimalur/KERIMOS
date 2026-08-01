@@ -163,7 +163,7 @@ export default async function TradingPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-medium text-ink">Trading</h1>
+        <h1 className="font-display text-xl font-bold text-ink">Trading</h1>
         <p className="mt-1 max-w-2xl text-sm text-ink-muted">
           GVA-Board live vom Screener, Backtest-Fortschritt aus der Trading-Datenbank.
           Roadmap-Schritt 2: {BACKTEST_ZIEL} dokumentierte Trades, bevor FTMO ein Thema ist.

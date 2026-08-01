@@ -34,7 +34,7 @@ export default async function SchichtenPage() {
   if (shiftError) {
     return (
       <div className="space-y-5">
-        <h1 className="text-xl font-medium text-ink">Schichten</h1>
+        <h1 className="font-display text-xl font-bold text-ink">Schichten</h1>
         <Card>
           <CardTitle>Tabelle fehlt noch</CardTitle>
           <p className="text-sm text-ink-muted">
@@ -51,7 +51,7 @@ export default async function SchichtenPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-medium text-ink">Schichten</h1>
+        <h1 className="font-display text-xl font-bold text-ink">Schichten</h1>
         <p className="mt-1 max-w-2xl text-sm text-ink-muted">
           Einmal definieren, dann pro Arbeitstag mit zwei Klicks eintragen — die Blöcke
           landen als normale Zeiteinträge im Kalender und bleiben dort änderbar,

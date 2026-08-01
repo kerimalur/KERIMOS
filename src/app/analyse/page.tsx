@@ -82,7 +82,7 @@ export default async function AnalysePage({
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-medium text-ink">Analyse</h1>
+          <h1 className="font-display text-xl font-bold text-ink">Analyse</h1>
           <p className="mt-1 text-sm text-ink-muted">
             {months.length > 0
               ? `${monthLabel(months[0].month)} bis ${monthLabel(months[months.length - 1].month)}`

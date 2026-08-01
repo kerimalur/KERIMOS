@@ -235,7 +235,7 @@ export default async function ModusPage({
           <Link href="/" className="text-xs text-ink-muted transition hover:text-ink-soft">
             ← Startseite
           </Link>
-          <h1 className="mt-1 text-2xl font-medium leading-tight text-ink">{gruppe}</h1>
+          <h1 className="font-display mt-1 text-2xl font-bold leading-tight text-ink">{gruppe}</h1>
         </div>
         <Link href="/links" className="text-xs text-ink-muted transition hover:text-ink-soft">
           Kacheln verwalten

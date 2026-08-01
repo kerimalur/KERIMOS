@@ -101,7 +101,7 @@ export function GymSettings({
               className={cx(
                 "aspect-square rounded-xl text-base font-medium transition active:scale-95",
                 ziel === n
-                  ? "bg-accent text-white"
+                  ? "bg-accent text-ink-on"
                   : "bg-sand text-ink-muted hover:text-ink-soft"
               )}>
               {n}

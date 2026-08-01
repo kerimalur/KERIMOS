@@ -54,7 +54,7 @@ export function LifeAreas({ areas }: { areas: LifeArea[] }) {
                 <Input name="name" defaultValue={a.name} required className="w-40 py-1 text-xs" />
                 <input type="color" name="color" defaultValue={a.color}
                   aria-label="Farbe"
-                  className="h-7 w-8 cursor-pointer rounded border border-line bg-white" />
+                  className="h-7 w-8 cursor-pointer rounded border border-line bg-field" />
                 <Button type="submit" disabled={busy} className="px-2.5 py-1 text-xs">
                   OK
                 </Button>
@@ -105,8 +105,8 @@ export function LifeAreas({ areas }: { areas: LifeArea[] }) {
           </div>
           <div>
             <Label htmlFor="area_color">Farbe</Label>
-            <input id="area_color" type="color" name="color" defaultValue="#8A8478"
-              className="h-9 w-14 cursor-pointer rounded-xl border border-line bg-white" />
+            <input id="area_color" type="color" name="color" defaultValue="#9A8C74"
+              className="h-9 w-14 cursor-pointer rounded-xl border border-line bg-field" />
           </div>
           <Button type="submit" disabled={busy}>Anlegen</Button>
         </form>

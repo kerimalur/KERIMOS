@@ -169,7 +169,7 @@ export function Launcher({ links }: { links: NavLink[] }) {
         {arranging ? (
           <div className="flex items-center gap-2">
             <button onClick={save} disabled={saving}
-              className="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-soft disabled:opacity-50">
+              className="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-ink-on transition hover:bg-accent-soft disabled:opacity-50">
               {saving ? "Speichere…" : "Fertig"}
             </button>
             <button onClick={() => setArranging(false)}
@@ -198,7 +198,7 @@ export function Launcher({ links }: { links: NavLink[] }) {
           </span>
           <span className="ml-auto flex items-center gap-2">
             <button onClick={() => proceed(true)}
-              className="rounded-xl bg-accent px-3.5 py-1.5 text-sm font-medium text-white transition hover:bg-accent-soft">
+              className="rounded-xl bg-accent px-3.5 py-1.5 text-sm font-medium text-ink-on transition hover:bg-accent-soft">
               Mit Fokus
             </button>
             <button onClick={() => proceed(false)}
@@ -215,7 +215,7 @@ export function Launcher({ links }: { links: NavLink[] }) {
 
       {!query && !arranging && recent.length > 0 && (
         <section>
-          <h2 className="mb-3 text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted">
+          <h2 className="font-display mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">
             Zuletzt benutzt
           </h2>
           <div className="flex flex-wrap gap-2">
@@ -243,7 +243,7 @@ export function Launcher({ links }: { links: NavLink[] }) {
         <section key={group}
           onDragOver={(e) => arranging && e.preventDefault()}
           onDrop={(e) => { if (!arranging) return; e.preventDefault(); move(null, group); }}>
-          <h2 className="mb-3 text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted">
+          <h2 className="font-display mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">
             {group}
           </h2>
           <div className={cx(

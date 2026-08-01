@@ -23,7 +23,7 @@ export default async function LinksPage() {
     <div className="space-y-5 py-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-medium text-ink">Kacheln</h1>
+          <h1 className="font-display text-xl font-bold text-ink">Kacheln</h1>
           <p className="mt-1 max-w-2xl text-sm text-ink-muted">
             Was hier steht, erscheint auf der Startseite. Ein Bild ersetzt das Symbol.
             Wählst du bei einer Kachel unter „zählt als“ eine Aktivität, startet ihr
@@ -147,7 +147,7 @@ export default async function LinksPage() {
             </div>
             <div>
               <Label htmlFor="color">Farbe</Label>
-              <input id="color" name="color" type="color" defaultValue="#5B8C7B"
+              <input id="color" name="color" type="color" defaultValue="#5FC2A6"
                 className="h-9 w-full rounded-xl border border-line bg-card" />
             </div>
             <div>

@@ -21,7 +21,7 @@ export default async function KategorienPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-ink">Kategorien</h1>
+        <h1 className="font-display text-xl font-semibold text-ink">Kategorien</h1>
         <p className="mt-1 text-sm text-ink-muted">
           Als <span className="text-ink-soft">fix</span> markierte Ausgaben fallen ohnehin an -
           sie sind die Basis der Fixkosten-Rechnung.
@@ -82,7 +82,7 @@ export default async function KategorienPage() {
             </div>
             <div>
               <Label htmlFor="color">Farbe</Label>
-              <input id="color" name="color" type="color" defaultValue="#8A8478"
+              <input id="color" name="color" type="color" defaultValue="#9A8C74"
                 className="h-9 w-full rounded-lg border border-line bg-card" />
             </div>
             <label className="flex items-center gap-2 text-sm text-ink-soft">

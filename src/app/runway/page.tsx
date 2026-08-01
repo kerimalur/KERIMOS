@@ -41,7 +41,7 @@ export default async function RunwayPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-ink">Runway</h1>
+        <h1 className="font-display text-xl font-semibold text-ink">Runway</h1>
         <p className="mt-1 max-w-2xl text-sm text-ink-muted">
           Wie lange trägt dich dein Geld, wenn sich etwas ändert? Die Ausgangswerte
           stammen aus den letzten drei vollen Monaten — in den Gutschriften stecken

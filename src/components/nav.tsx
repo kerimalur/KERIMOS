@@ -96,13 +96,13 @@ export function Nav({ email }: { email?: string }) {
   const config = section === "geld" ? GELD : section === "zeit" ? ZEIT : TRADING;
 
   return (
-    <header className="sticky top-0 z-20 border-b border-line/70 bg-paper/85 backdrop-blur">
+    <header className="sticky top-0 z-20 border-b border-line/70 bg-card/80 backdrop-blur-xl">
       <div className="mx-auto max-w-6xl px-5">
         <div className="flex flex-wrap items-center gap-x-1 gap-y-2 pt-4">
-          <Link href="/" className="mr-5 flex items-center gap-2.5"
+          <Link href="/" className="mr-5 flex items-center gap-2.5 transition duration-150 ease-tactile active:scale-95"
             title="Zurück zur Auswahl">
             <Logo inverted className="h-7 w-7 rounded-lg" />
-            <span className="text-sm font-medium text-ink">
+            <span className="font-display text-sm font-bold text-ink">
               {SECTION_LABEL[section]}
             </span>
           </Link>
@@ -110,9 +110,11 @@ export function Nav({ email }: { email?: string }) {
           <nav className="flex flex-wrap items-center gap-1">
             {[config.home, ...config.primary].map((l) => (
               <Link key={l.href} href={l.href}
-                className={cx("rounded-lg px-3 py-1.5 text-sm transition",
-                  isActive(l.href) ? "bg-sand text-ink"
-                    : "text-ink-muted hover:bg-sand/60 hover:text-ink-soft")}>
+                className={cx(
+                  "rounded-xl px-3 py-1.5 text-sm transition duration-150 ease-tactile active:scale-95",
+                  isActive(l.href)
+                    ? "bg-accent font-medium text-ink-on shadow-glow-accent"
+                    : "text-ink-muted hover:bg-sand hover:text-ink-soft")}>
                 {l.label}
               </Link>
             ))}
@@ -142,7 +144,7 @@ export function Nav({ email }: { email?: string }) {
             ) : (
               <Link key={l.href} href={l.href}
                 className={cx("text-xs transition",
-                  isActive(l.href) ? "text-accent-soft" : "text-ink-faint hover:text-ink-muted")}>
+                  isActive(l.href) ? "font-medium text-accent" : "text-ink-faint hover:text-ink-muted")}>
                 {l.label}
               </Link>
             )

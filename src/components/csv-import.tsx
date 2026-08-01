@@ -334,7 +334,7 @@ export function CsvImport({ accounts }: { accounts: Account[] }) {
             <Label htmlFor="saldo">Schlusssaldo laut Auszug</Label>
             <input id="saldo" value={saldo} onChange={(e) => setSaldo(e.target.value)}
               inputMode="decimal" placeholder="optional"
-              className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink
+              className="w-full rounded-xl border border-line bg-field px-3 py-2 text-sm text-ink
                          outline-none transition placeholder:text-ink-faint
                          hover:border-line-strong focus:border-accent focus:ring-2 focus:ring-accent/15" />
           </div>

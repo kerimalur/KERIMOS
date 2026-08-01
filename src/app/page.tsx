@@ -67,7 +67,7 @@ export default async function Start({
     return (
       <div className="mx-auto max-w-lg py-16">
         <Card>
-          <h1 className="text-lg font-medium text-ink">Navigator einrichten</h1>
+          <h1 className="font-display text-lg font-bold text-ink">Navigator einrichten</h1>
           <p className="mt-2 text-sm text-ink-muted">
             KerimOS legt dir Kacheln für deine Modi an — Traden, Programmieren,
             Gym, Essen, Geld, Zeit. Alles danach änderbar — Kacheln verwaltest
@@ -149,7 +149,7 @@ export default async function Start({
         <div className="flex items-center gap-3.5">
           <Logo inverted className="h-11 w-11 rounded-2xl" />
           <div>
-            <h1 className="text-2xl font-medium leading-tight text-ink">KerimOS</h1>
+            <h1 className="font-display text-2xl font-bold leading-tight text-ink">KerimOS</h1>
             <p className="text-sm text-ink-muted">Was willst du jetzt tun?</p>
           </div>
         </div>
@@ -189,7 +189,7 @@ export default async function Start({
         />
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {modi.map(([name, ls]) => {
+          {modi.map(([name, ls], i) => {
             const zahlen = kennzahlen[name];
             // Geld und Zeit springen direkt in ihren Bereich - der
             // Arbeitsplatz dazwischen bringt dort nichts.
@@ -197,12 +197,15 @@ export default async function Start({
             // Das Modus-Bild ist das Bild der ersten Kachel, die eines hat -
             // hochgeladen wird es wie gewohnt unter "Kacheln verwalten".
             const mitBild = ls.find((l) => l.image_url);
-            const farbe = ls[0]?.color ?? "#8A8478";
+            const farbe = ls[0]?.color ?? "#9A8C74";
 
             return (
               <Link key={name} href={ziel}
-                className="group relative flex aspect-[16/10] flex-col justify-end overflow-hidden
-                           rounded-2xl border border-line/70 transition hover:border-line-strong">
+                className="group relative flex aspect-[16/10] animate-pop flex-col justify-end
+                           overflow-hidden rounded-2xl border border-line/70 bg-card shadow-tile
+                           transition duration-200 ease-tactile
+                           hover:-translate-y-1 hover:border-line-strong active:scale-[0.98]"
+                style={{ animationDelay: `${i * 55}ms`, boxShadow: `0 14px 28px -18px ${farbe}55` }}>
                 {mitBild?.image_url ? (
                   <>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -210,12 +213,14 @@ export default async function Start({
                       style={{ objectPosition: mitBild.image_position ?? "50% 50%" }}
                       className="absolute inset-0 h-full w-full object-cover transition
                                  duration-300 group-hover:scale-[1.03]" />
-                    {/* Verlauf, damit die Schrift auf jedem Bild lesbar bleibt */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-ink/85 via-ink/35 to-ink/5" />
+                    {/* Verlauf, damit die Schrift auf jedem Bild lesbar bleibt.
+                        Bewusst schwarz und nicht `ink` - `ink` ist im dunklen
+                        Design die helle Textfarbe und wuerde das Bild ausbleichen. */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-black/5" />
                   </>
                 ) : (
-                  <div className="absolute inset-0" style={{ background: farbe + "1F" }}>
-                    <span className="absolute right-4 top-3 text-5xl opacity-25"
+                  <div className="absolute inset-0" style={{ background: farbe + "26" }}>
+                    <span className="absolute right-4 top-3 text-5xl opacity-30"
                       style={{ color: farbe }}>
                       {ls[0]?.icon ?? name[0]}
                     </span>
@@ -224,8 +229,8 @@ export default async function Start({
 
                 <div className="relative p-4">
                   <div className={mitBild?.image_url
-                    ? "text-2xl font-medium leading-tight text-white drop-shadow"
-                    : "text-2xl font-medium leading-tight text-ink"}>
+                    ? "font-display text-2xl font-bold leading-tight text-white drop-shadow"
+                    : "font-display text-2xl font-bold leading-tight text-ink"}>
                     {name}
                   </div>
 

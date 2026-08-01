@@ -14,7 +14,7 @@ export default function GymLayout({ children }: { children: React.ReactNode }) {
         <Link href="/" className="text-xs text-ink-muted transition hover:text-ink-soft">
           ← Startseite
         </Link>
-        <h1 className="mt-1 text-2xl font-medium leading-tight text-ink">Gym</h1>
+        <h1 className="font-display mt-1 text-2xl font-bold leading-tight text-ink">Gym</h1>
       </div>
 
       <GymTabs />

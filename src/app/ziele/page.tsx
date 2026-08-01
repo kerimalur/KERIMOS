@@ -46,7 +46,7 @@ export default async function ZielePage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-medium text-ink">Ziele</h1>
+        <h1 className="font-display text-xl font-bold text-ink">Ziele</h1>
         <p className="mt-1 max-w-2xl text-sm text-ink-muted">
           Die Ampel vergleicht deinen Fortschritt mit der verstrichenen Zeit. Ein Ziel
           bei 40 Prozent ist grün, wenn erst ein Drittel der Frist um ist — und rot,
@@ -77,7 +77,7 @@ export default async function ZielePage() {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="font-medium text-ink">{g.title}</h2>
+                  <h2 className="font-display font-bold text-ink">{g.title}</h2>
                   <Badge>{GOAL_KIND_LABEL[g.kind]}</Badge>
                   <Badge tone={s.tone === "done" ? "good" : s.tone === "neutral" ? "neutral" : s.tone}>
                     {TONE_LABEL[s.tone]}
@@ -116,7 +116,7 @@ export default async function ZielePage() {
                     s.tone === "bad" ? "bg-bad" : s.tone === "warn" ? "bg-warn" : "bg-accent")}
                     style={{ width: `${Math.min(100, s.share * 100)}%` }} />
                   {s.timeShare !== null && (
-                    <div className="absolute top-0 h-full w-px bg-ink-muted"
+                    <div className="absolute top-0 h-full w-px bg-line-strong"
                       style={{ left: `${s.timeShare * 100}%` }}
                       title="Hier müsstest du zeitlich stehen" />
                   )}
@@ -152,7 +152,7 @@ export default async function ZielePage() {
                       <input type="hidden" name="done" value={String(!m.done_at)} />
                       <button className={cx(
                         "grid h-4 w-4 place-items-center rounded border text-[10px] transition",
-                        m.done_at ? "border-accent bg-accent text-white" : "border-line hover:border-line-strong"
+                        m.done_at ? "border-accent bg-accent text-ink-on" : "border-line hover:border-line-strong"
                       )}>
                         {m.done_at ? "✓" : ""}
                       </button>

@@ -19,7 +19,7 @@ export function WeatherIcon({
   };
 
   const sonne = (cx: number, cy: number, r: number) => (
-    <g stroke="#C68D6B" {...stroke}>
+    <g stroke="#E7A96B" {...stroke}>
       <circle cx={cx} cy={cy} r={r} />
       {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => {
         const rad = (deg * Math.PI) / 180;
@@ -36,10 +36,10 @@ export function WeatherIcon({
     <path
       d={`M ${cx + r * 0.55} ${cy - r} a ${r} ${r} 0 1 0 ${r * 0.75} ${r * 1.5}
           a ${r * 0.85} ${r * 0.85} 0 1 1 ${-r * 0.75} ${-r * 1.5} z`}
-      stroke="#8FA6B8" {...stroke} />
+      stroke="#6FA3D8" {...stroke} />
   );
 
-  const wolke = (dx = 0, dy = 0, farbe = "#8A8478") => (
+  const wolke = (dx = 0, dy = 0, farbe = "#9A8C74") => (
     <path
       d={`M ${8 + dx} ${26 + dy} h ${13} a 5.5 5.5 0 0 0 0.6 -10.9
           a 7.5 7.5 0 0 0 -14 -2.4 a 5.8 5.8 0 0 0 0.4 13.3 z`}
@@ -47,7 +47,7 @@ export function WeatherIcon({
   );
 
   const tropfen = (xs: number[]) => (
-    <g stroke="#8FA6B8" {...stroke}>
+    <g stroke="#6FA3D8" {...stroke}>
       {xs.map((x) => <line key={x} x1={x} y1={29} x2={x - 2} y2={34} />)}
     </g>
   );
@@ -63,7 +63,7 @@ export function WeatherIcon({
       {name === "schnee" && (
         <>
           {wolke(4, -3)}
-          <g stroke="#8FA6B8" {...stroke}>
+          <g stroke="#6FA3D8" {...stroke}>
             {[15, 22, 29].map((x) => (
               <g key={x}>
                 <line x1={x - 2} y1={31} x2={x + 2} y2={31} />
@@ -76,7 +76,7 @@ export function WeatherIcon({
       {name === "gewitter" && (
         <>
           {wolke(4, -3)}
-          <path d="M 21 28 l -4 6 h 4 l -2 5" stroke="#C68D6B" {...stroke} />
+          <path d="M 21 28 l -4 6 h 4 l -2 5" stroke="#E7A96B" {...stroke} />
         </>
       )}
       {name === "nebel" && (

@@ -102,7 +102,7 @@ export default async function KalenderPage({
     return (
       <div className="py-10">
         <Card className="mx-auto max-w-lg">
-          <h2 className="text-lg font-medium text-ink">Zeit-Modul einrichten</h2>
+          <h2 className="font-display text-lg font-bold text-ink">Zeit-Modul einrichten</h2>
           <p className="mt-2 text-sm text-ink-muted">
             KerimOS legt dir ein Set an Aktivitäten an, sortiert nach Lebensbereich —
             Ziele, Arbeit, Pflicht, Regeneration, Soziales, Spass und Leerlauf.
@@ -122,7 +122,7 @@ export default async function KalenderPage({
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-medium text-ink">Kalender</h1>
+        <h1 className="font-display text-xl font-bold text-ink">Kalender</h1>
         <p className="mt-1 max-w-2xl text-sm text-ink-muted">
           Dieselben Daten wie im Check-in, nur räumlich. Wo das Raster leer bleibt, ist
           Zeit vergangen, die du nicht zugeordnet hast.

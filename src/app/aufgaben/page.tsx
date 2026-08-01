@@ -30,7 +30,7 @@ export default async function AufgabenPage({
   if (error) {
     return (
       <div className="space-y-5">
-        <h1 className="text-xl font-medium text-ink">Aufgaben</h1>
+        <h1 className="font-display text-xl font-bold text-ink">Aufgaben</h1>
         <Card>
           <CardTitle>Tabelle fehlt noch</CardTitle>
           <p className="text-sm text-ink-muted">
@@ -66,7 +66,7 @@ export default async function AufgabenPage({
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-medium text-ink">Aufgaben</h1>
+        <h1 className="font-display text-xl font-bold text-ink">Aufgaben</h1>
         <p className="mt-1 max-w-2xl text-sm text-ink-muted">
           Was ansteht, mit Deadline und Lebensbereich. Die offenen Aufgaben
           stehen auch auf der Startseite und im Handy-Einstieg — dort reicht
@@ -110,7 +110,7 @@ export default async function AufgabenPage({
             <Label htmlFor="details">Details</Label>
             <textarea id="details" name="details" rows={2}
               placeholder="optional — was gehört dazu, worauf achten?"
-              className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink
+              className="w-full rounded-xl border border-line bg-field px-3 py-2 text-sm text-ink
                          placeholder:text-ink-faint outline-none transition
                          hover:border-line-strong focus:border-accent focus:ring-2
                          focus:ring-accent/15" />

@@ -48,7 +48,7 @@ export default async function HeutePage() {
       <div className="flex items-center gap-3">
         <Logo inverted className="h-9 w-9 rounded-xl" />
         <div>
-          <h1 className="text-lg font-medium leading-tight text-ink">Heute</h1>
+          <h1 className="font-display text-lg font-bold leading-tight text-ink">Heute</h1>
           <p className="text-xs text-ink-muted">{datum}</p>
         </div>
       </div>

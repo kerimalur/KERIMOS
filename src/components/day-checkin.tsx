@@ -119,7 +119,7 @@ export function DayCheckinBoard({
                 className={cx(
                   "rounded-md px-2 py-1 text-xs font-medium transition",
                   step === m
-                    ? "bg-accent text-white"
+                    ? "bg-accent text-ink-on"
                     : "bg-sand text-ink-muted hover:text-ink"
                 )}
               >
@@ -191,7 +191,7 @@ export function DayCheckinBoard({
                 <li key={e.id} className="flex items-center justify-between gap-3 py-2.5">
                   <span className="flex min-w-0 items-center gap-2">
                     <span className="h-2 w-2 shrink-0 rounded-full"
-                      style={{ background: e.activity?.color ?? "#8A8478" }} />
+                      style={{ background: e.activity?.color ?? "#9A8C74" }} />
                     <span className="truncate text-sm text-ink">
                       {e.activity?.name ?? "Unbekannt"}
                     </span>

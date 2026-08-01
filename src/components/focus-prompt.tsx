@@ -113,7 +113,7 @@ function SessionRow({
             {quickDurations(elapsed).map((m) => (
               <button key={m} onClick={() => setMinutes(m)}
                 className={cx("rounded-lg px-2 py-1 text-xs font-medium transition",
-                  minutes === m ? "bg-accent text-white"
+                  minutes === m ? "bg-accent text-ink-on"
                                 : "bg-sand text-ink-muted hover:text-ink-soft")}>
                 {m === elapsed ? "bis jetzt" : m < 60 ? `${m}m` : `${Math.round(m / 6) / 10}h`}
               </button>

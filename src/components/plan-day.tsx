@@ -93,7 +93,7 @@ export function PlanDay({ tag, foods, rezepte }: {
 
   const pille = (an: boolean) => cx(
     "rounded-lg px-3 py-1.5 text-xs font-medium transition",
-    an ? "bg-accent text-white" : "bg-sand text-ink-muted hover:text-ink-soft"
+    an ? "bg-accent text-ink-on" : "bg-sand text-ink-muted hover:text-ink-soft"
   );
 
   const offenKcal = Math.max(0, Math.round(tag.kcal - tag.gegessenKcal));
@@ -173,8 +173,8 @@ export function PlanDay({ tag, foods, rezepte }: {
                       aria-label={an ? "Nicht gegessen" : "Als gegessen markieren"}
                       className={cx(
                         "grid h-5 w-5 shrink-0 place-items-center rounded-md border text-[11px] transition",
-                        an ? "border-good bg-good text-white"
-                          : "border-line bg-white text-transparent hover:border-line-strong"
+                        an ? "border-good bg-good text-ink-on"
+                          : "border-line bg-field text-transparent hover:border-line-strong"
                       )}>✓</button>
                     <span className={cx("min-w-0 flex-1 truncate text-sm",
                       an ? "text-ink-faint line-through" : "text-ink")}>
@@ -221,8 +221,8 @@ export function PlanDay({ tag, foods, rezepte }: {
                       aria-label={an ? "Nicht gegessen" : "Als gegessen markieren"}
                       className={cx(
                         "grid h-5 w-5 shrink-0 place-items-center rounded-md border text-[11px] transition",
-                        an ? "border-good bg-good text-white"
-                          : "border-line bg-white text-transparent hover:border-line-strong"
+                        an ? "border-good bg-good text-ink-on"
+                          : "border-line bg-field text-transparent hover:border-line-strong"
                       )}>✓</button>
                     <span className={cx("min-w-0 flex-1 truncate text-sm font-medium",
                       an ? "text-ink-faint line-through" : "text-ink")}>
@@ -255,8 +255,8 @@ export function PlanDay({ tag, foods, rezepte }: {
                               aria-label={`${i.food_name} abhaken`}
                               className={cx(
                                 "grid h-4 w-4 shrink-0 place-items-center rounded border text-[9px] transition",
-                                iAn ? "border-good bg-good text-white"
-                                  : "border-line bg-white text-transparent"
+                                iAn ? "border-good bg-good text-ink-on"
+                                  : "border-line bg-field text-transparent"
                               )}>✓</button>
                             <span className={cx("min-w-0 flex-1 truncate text-xs",
                               iAn ? "text-ink-faint line-through" : "text-ink-soft")}>

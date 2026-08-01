@@ -94,7 +94,7 @@ export default async function TransaktionenPage({
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-medium text-ink">Transaktionen</h1>
+        <h1 className="font-display text-xl font-bold text-ink">Transaktionen</h1>
         <p className="mt-1 text-sm text-ink-muted">
           {total} Buchungen in der aktuellen Auswahl
         </p>
@@ -148,7 +148,7 @@ export default async function TransaktionenPage({
                               name="category_id"
                               defaultValue={t.category_id ?? ""}
                               className={cx(
-                                "rounded-lg border bg-white px-2 py-1 text-xs outline-none",
+                                "rounded-lg border bg-field px-2 py-1 text-xs outline-none",
                                 cat ? "border-line text-ink-soft" : "border-warn/50 text-warn"
                               )}
                             >
@@ -181,7 +181,7 @@ export default async function TransaktionenPage({
                           <form action={linkTransactionToActivity} className="flex items-center gap-1">
                             <input type="hidden" name="id" value={t.id} />
                             <select name="activity_id" defaultValue={t.activity_id ?? ""}
-                              className="rounded border border-line bg-white px-1.5 py-0.5 text-[11px] text-ink-muted outline-none">
+                              className="rounded border border-line bg-field px-1.5 py-0.5 text-[11px] text-ink-muted outline-none">
                               <option value="">— Aktivität —</option>
                               {activities.map((a) => (
                                 <option key={a.id} value={a.id}>{a.name}</option>

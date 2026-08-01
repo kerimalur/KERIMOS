@@ -56,22 +56,22 @@ export function GymWeight({ entries }: { entries: BodyWeightEntry[] }) {
         <div style={{ height: 140 }}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={points} margin={{ top: 4, right: 6, bottom: 0, left: -16 }}>
-              <CartesianGrid stroke="#E8E3D8" vertical={false} />
-              <XAxis dataKey="day" tickFormatter={dayLabel} stroke="#8A8478"
+              <CartesianGrid stroke="#2E2519" vertical={false} />
+              <XAxis dataKey="day" tickFormatter={dayLabel} stroke="#9A8C74"
                 fontSize={10} tickLine={false} axisLine={false} minTickGap={24} />
-              <YAxis stroke="#8A8478" fontSize={10} tickLine={false} axisLine={false}
+              <YAxis stroke="#9A8C74" fontSize={10} tickLine={false} axisLine={false}
                 width={42} domain={["dataMin - 1", "dataMax + 1"]}
                 tickFormatter={(v: number) => `${v}`} />
               <Tooltip
                 labelFormatter={(v) => dayLabel(String(v))}
                 formatter={(value: number) => [`${value.toFixed(1)} kg`, "Gewicht"]}
                 contentStyle={{
-                  background: "#FFFDF9", border: "1px solid #E8E3D8",
+                  background: "#1E1811", border: "1px solid #2E2519",
                   borderRadius: 8, fontSize: 12,
                 }}
               />
-              <Line type="monotone" dataKey="weight" stroke="#8FA6B8" strokeWidth={2}
-                dot={{ r: 2.5, fill: "#8FA6B8" }} activeDot={{ r: 4 }} />
+              <Line type="monotone" dataKey="weight" stroke="#6FA3D8" strokeWidth={2}
+                dot={{ r: 2.5, fill: "#6FA3D8" }} activeDot={{ r: 4 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>

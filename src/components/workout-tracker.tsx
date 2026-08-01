@@ -562,7 +562,7 @@ function SatzZeile({
           className={cx(
             "flex h-8 w-8 items-center justify-center rounded-lg border text-sm transition active:scale-90",
             satz.erledigt
-              ? "border-good bg-good text-white"
+              ? "border-good bg-good text-ink-on"
               : "border-line bg-card text-ink-faint hover:border-good/50 hover:text-good"
           )}>
           ✓
@@ -650,7 +650,7 @@ function TauschDialog({
   }, [suche, alternativen, alleAlternativen, aktuelleId]);
 
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-ink/30 p-0 backdrop-blur-sm sm:items-center sm:p-6">
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-6">
       <div className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-line bg-card p-5 sm:rounded-2xl">
         <div className="mb-3 flex items-center justify-between gap-3">
           <CardTitle className="mb-0">Andere Übung für {muskel}</CardTitle>
@@ -708,7 +708,7 @@ function Zusammenfassung({
         <span className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-good-tint text-2xl text-good">
           ✓
         </span>
-        <h2 className="text-xl font-medium text-ink">Training abgeschlossen</h2>
+        <h2 className="font-display text-xl font-bold text-ink">Training abgeschlossen</h2>
         <p className="mt-1 text-sm text-ink-muted">
           Ab jetzt erholt sich der Körper — die Zeiten unten sind Schätzungen.
         </p>
@@ -750,7 +750,7 @@ function Zusammenfassung({
       <Card>
         <div className="flex flex-wrap gap-2">
           <Link href="/gym"
-            className="inline-flex items-center justify-center rounded-xl bg-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-soft">
+            className="inline-flex items-center justify-center rounded-xl bg-accent px-4 py-2 text-sm font-medium text-ink-on transition hover:bg-accent-soft">
             Zur Übersicht
           </Link>
           <Link href="/gym/verlauf"

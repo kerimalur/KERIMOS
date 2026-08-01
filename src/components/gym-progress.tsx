@@ -8,10 +8,10 @@ import type { ExerciseSeries } from "@/lib/supabase/gym";
 
 /** Feste Farbe je Split, damit Push und Pull auf einen Blick unterscheidbar bleiben. */
 export const SPLIT_COLOR: Record<string, string> = {
-  Push: "#C68D6B",
-  Pull: "#5B8C7B",
+  Push: "#E7A96B",
+  Pull: "#5FC2A6",
 };
-export const FALLBACK_COLOR = "#8FA6B8";
+export const FALLBACK_COLOR = "#6FA3D8";
 
 function dayLabel(iso: string): string {
   const d = new Date(iso + "T12:00:00");
@@ -60,10 +60,10 @@ export function GymProgress({ data }: { data: Record<string, ExerciseSeries[]> }
             <div style={{ height: 120 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={ex.points} margin={{ top: 4, right: 6, bottom: 0, left: -22 }}>
-                  <CartesianGrid stroke="#E8E3D8" vertical={false} />
-                  <XAxis dataKey="day" tickFormatter={dayLabel} stroke="#8A8478"
+                  <CartesianGrid stroke="#2E2519" vertical={false} />
+                  <XAxis dataKey="day" tickFormatter={dayLabel} stroke="#9A8C74"
                     fontSize={10} tickLine={false} axisLine={false} minTickGap={18} />
-                  <YAxis stroke="#8A8478" fontSize={10} tickLine={false} axisLine={false}
+                  <YAxis stroke="#9A8C74" fontSize={10} tickLine={false} axisLine={false}
                     width={38} />
                   <Tooltip
                     labelFormatter={(v) => dayLabel(String(v))}
@@ -72,7 +72,7 @@ export function GymProgress({ data }: { data: Record<string, ExerciseSeries[]> }
                       return [`${value} kg${reps ? ` · ${reps} Wdh.` : ""}`, "Top-Satz"];
                     }}
                     contentStyle={{
-                      background: "#FFFDF9", border: "1px solid #E8E3D8",
+                      background: "#1E1811", border: "1px solid #2E2519",
                       borderRadius: 8, fontSize: 12,
                     }}
                   />

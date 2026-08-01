@@ -38,10 +38,10 @@ export default function LoginPage() {
   return (
     <div className="mx-auto mt-20 max-w-sm">
       <div className="mb-8 text-center">
-        <div className="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-xl bg-accent text-lg font-bold text-white">
+        <div className="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-xl bg-accent text-lg font-bold text-ink-on">
           K
         </div>
-        <h1 className="text-xl font-semibold text-ink">KerimOS</h1>
+        <h1 className="font-display text-xl font-semibold text-ink">KerimOS</h1>
         <p className="mt-1 text-sm text-ink-muted">Zeit, Geld und Ziele an einem Ort.</p>
       </div>
 
