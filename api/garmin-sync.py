@@ -73,7 +73,10 @@ class Gym:
         r = requests.post(
             f"{self.base}/{table}", headers=headers, json=rows, timeout=30
         )
-        r.raise_for_status()
+        if r.status_code >= 400:
+            # PostgREST schreibt den eigentlichen Grund in den Body -
+            # raise_for_status() alleine wirft ihn weg und man sieht nur "400".
+            raise RuntimeError(f"{table}: {r.status_code} {r.text[:300]}")
         return r.json() if return_rows else []
 
     def upsert_setting(self, key: str, value: str) -> None:
@@ -244,7 +247,7 @@ def uebung_aufloesen(mapping: dict, kategorie: str, name: str):
 
 
 def verarbeite_aktivitaet(gym: Gym, api, aktivitaet: dict, mapping: dict,
-                          user_id: str) -> dict:
+                          user_id: str, training_day_id: str) -> dict:
     """Importiert eine einzelne Garmin-Aktivitaet. Gibt einen Statusbericht zurueck."""
     activity_id = aktivitaet.get("activityId")
 
@@ -329,7 +332,7 @@ def verarbeite_aktivitaet(gym: Gym, api, aktivitaet: dict, mapping: dict,
     # --- Session anlegen --------------------------------------------------
     session = gym.insert("workout_sessions", {
         "user_id": user_id,
-        "training_day_id": None,
+        "training_day_id": training_day_id,
         "started_at": start.isoformat() if start else None,
         "completed_at": ende.isoformat() if ende else None,
         "notes": " | ".join(notizteile),
@@ -351,6 +354,32 @@ def verarbeite_aktivitaet(gym: Gym, api, aktivitaet: dict, mapping: dict,
         "saetze": len(logzeilen),
         "ungemappt": ungemappt,
     }
+
+
+def ermittle_training_day(gym: Gym, user_id: str) -> str:
+    """
+    Trainingstag fuer importierte Einheiten.
+
+    `workout_sessions.training_day_id` ist NOT NULL, eine von der Uhr
+    importierte Einheit gehoert aber zu keinem geplanten Split. Statt die
+    Spalte aufzuweichen bekommt der Import einen eigenen Trainingstag
+    namens "Garmin".
+    """
+    treffer = gym.select("training_days", {
+        "user_id": f"eq.{user_id}",
+        "name": "eq.Garmin",
+        "select": "id",
+        "limit": 1,
+    })
+    if treffer:
+        return treffer[0]["id"]
+
+    angelegt = gym.insert("training_days", {
+        "user_id": user_id,
+        "name": "Garmin",
+        "description": "Von der Uhr importierte Einheiten - kein geplanter Split",
+    }, return_rows=True)
+    return angelegt[0]["id"]
 
 
 def ermittle_user_id(gym: Gym) -> str:
@@ -384,6 +413,7 @@ def sync() -> dict:
     gym = Gym()
     user_id = ermittle_user_id(gym)
 
+    training_day_id = ermittle_training_day(gym, user_id)
     api, methode = garmin_login(gym)
     mapping = lade_mapping(gym)
 
@@ -393,7 +423,8 @@ def sync() -> dict:
     berichte = []
     for aktivitaet in aktivitaeten:
         try:
-            berichte.append(verarbeite_aktivitaet(gym, api, aktivitaet, mapping, user_id))
+            berichte.append(verarbeite_aktivitaet(
+                gym, api, aktivitaet, mapping, user_id, training_day_id))
         except Exception as fehler:
             berichte.append({
                 "activity_id": aktivitaet.get("activityId"),
