@@ -8,6 +8,10 @@ build
 .env.local
 .env*.local
 
+# Python (Sync-Function und Werkzeuge)
+__pycache__/
+*.pyc
+
 # Werkzeuge
 *.log
 *.tsbuildinfo
