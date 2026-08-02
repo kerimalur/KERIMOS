@@ -99,8 +99,22 @@ export async function triggerGarminSync(): Promise<string> {
     revalidatePath("/gym/verlauf");
 
     if (!ergebnis.ok) return `Fehler: ${ergebnis.fehler ?? "unbekannt"}`;
-    return `${ergebnis.gefunden} Aktivitäten gefunden, ${ergebnis.importiert} importiert, ` +
+
+    const kern =
+      `${ergebnis.gefunden} Krafttrainings gefunden, ${ergebnis.importiert} importiert, ` +
       `${ergebnis.uebersprungen} schon vorhanden.`;
+
+    // Bei null Treffern hilft nur die Liste dessen, was tatsächlich da war.
+    const typen: string[] = ergebnis.vorhandene_typen ?? [];
+    if (ergebnis.gefunden === 0) {
+      if (typen.length === 0) {
+        return `${kern} Garmin hat für die letzten ${ergebnis.zeitraum_tage} Tage ` +
+          `überhaupt keine Aktivität geliefert.`;
+      }
+      return `${kern} Vorhanden waren nur: ${typen.join(", ")}.`;
+    }
+
+    return kern;
   } catch (fehler) {
     return `Sync nicht erreichbar: ${fehler instanceof Error ? fehler.message : fehler}`;
   }

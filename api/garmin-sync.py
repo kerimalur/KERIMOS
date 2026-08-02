@@ -38,7 +38,7 @@ import requests
 
 TOKEN_SETTING_KEY = "garmin_session"
 LOOKBACK_DAYS = 7
-GARMIN_ACTIVITY_TYPES = ("strength_training", "indoor_cardio")
+GARMIN_ACTIVITY_TYPES = ("strength", "fitness_equipment", "indoor_cardio")
 
 
 # --------------------------------------------------------------- Supabase
@@ -170,23 +170,34 @@ def garmin_login(gym: Gym):
     return api, "passwort"
 
 
-def fetch_strength_activities(api) -> list:
-    """Krafttrainings der letzten LOOKBACK_DAYS Tage."""
+def typ_name(aktivitaet: dict) -> str:
+    """Garmins Typbezeichnung, z.B. 'strength_training'."""
+    typ = aktivitaet.get("activityType") or {}
+    if isinstance(typ, dict):
+        return str(typ.get("typeKey") or "").lower()
+    return str(typ).lower()
+
+
+def fetch_alle_aktivitaeten(api) -> list:
+    """
+    Alle Aktivitaeten der letzten LOOKBACK_DAYS Tage - ungefiltert.
+
+    Bewusst ohne Typ-Filter auf Garmin-Seite: welche Bezeichnung dort genau
+    akzeptiert wird, unterscheidet sich je nach Geraet und API-Version, und
+    ein nicht erkannter Filter liefert stillschweigend eine leere Liste.
+    Lieber alles holen und hier selbst aussortieren.
+    """
     ende = datetime.now().date()
     start = ende - timedelta(days=LOOKBACK_DAYS)
-    gesehen, ergebnis = set(), []
+    try:
+        return api.get_activities_by_date(start.isoformat(), ende.isoformat()) or []
+    except Exception:
+        return []
 
-    for typ in GARMIN_ACTIVITY_TYPES:
-        try:
-            for a in api.get_activities_by_date(start.isoformat(), ende.isoformat(), typ):
-                aid = a.get("activityId")
-                if aid and aid not in gesehen:
-                    gesehen.add(aid)
-                    ergebnis.append(a)
-        except Exception:
-            continue  # Ein unbekannter Typ darf den Rest nicht blockieren.
 
-    return ergebnis
+def ist_krafttraining(aktivitaet: dict) -> bool:
+    name = typ_name(aktivitaet)
+    return any(teil in name for teil in GARMIN_ACTIVITY_TYPES)
 
 
 # ------------------------------------------------------------ Verarbeitung
@@ -354,7 +365,9 @@ def sync() -> dict:
 
     api, methode = garmin_login(gym)
     mapping = lade_mapping(gym)
-    aktivitaeten = fetch_strength_activities(api)
+
+    alle = fetch_alle_aktivitaeten(api)
+    aktivitaeten = [a for a in alle if ist_krafttraining(a)]
 
     berichte = []
     for aktivitaet in aktivitaeten:
@@ -367,14 +380,26 @@ def sync() -> dict:
                 "fehler": str(fehler),
             })
 
-    return {
+    ergebnis = {
         "ok": True,
         "login": methode,
+        "zeitraum_tage": LOOKBACK_DAYS,
+        "aktivitaeten_gesamt": len(alle),
         "gefunden": len(aktivitaeten),
         "importiert": sum(1 for b in berichte if b["status"] == "importiert"),
         "uebersprungen": sum(1 for b in berichte if b["status"] == "uebersprungen"),
         "details": berichte,
     }
+
+    # Wenn nichts passendes dabei war, zeigen was Garmin ueberhaupt geliefert
+    # hat - sonst raet man, ob der Filter oder die Uhr das Problem ist.
+    if not aktivitaeten:
+        ergebnis["vorhandene_typen"] = sorted({
+            f"{typ_name(a) or 'unbekannt'} ({str(a.get('startTimeLocal'))[:10]})"
+            for a in alle
+        })
+
+    return ergebnis
 
 
 # ---------------------------------------------------------------- Handler
