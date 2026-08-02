@@ -7,7 +7,7 @@ Function, taeglich per Cron.
 
 Ablauf:
   1. Anmeldung bei Garmin - bevorzugt mit gecachtem Token aus der Tabelle
-     `settings`, sonst frischer Login mit E-Mail/Passwort.
+     `private_tokens`, sonst frischer Login mit E-Mail/Passwort.
   2. Krafttrainings der letzten 7 Tage holen.
   3. Pro Aktivitaet die einzelnen Saetze abrufen.
   4. Aktivitaeten, die schon importiert sind (garmin_activity_id), ueberspringen.
@@ -111,7 +111,7 @@ class Gym:
         headers = dict(self.headers)
         headers["Prefer"] = "resolution=merge-duplicates,return=minimal"
         requests.post(
-            f"{self.base}/settings",
+            f"{self.base}/private_tokens",
             headers=headers,
             json={
                 "key": key,
@@ -122,7 +122,11 @@ class Gym:
         )
 
     def get_setting(self, key: str):
-        rows = self.select("settings", {"key": f"eq.{key}", "select": "value", "limit": 1})
+        # private_tokens statt settings: settings ist fuer die Rolle anon
+        # offen, und der Garmin-Token darf dort nicht liegen.
+        rows = self.select(
+            "private_tokens", {"key": f"eq.{key}", "select": "value", "limit": 1}
+        )
         return rows[0]["value"] if rows else None
 
 
@@ -152,7 +156,7 @@ def garmin_login(gym: Gym):
     """
     Meldet sich bei Garmin an.
 
-    Der Normalfall ist der gespeicherte Token aus der Tabelle `settings`.
+    Der Normalfall ist der gespeicherte Token aus `private_tokens`.
     Ein Passwort-Login von hier aus schlaegt fast immer mit 429 fehl, weil
     Garmin Anmeldungen aus Rechenzentren drosselt - deshalb ist er nur noch
     Notnagel und wirft im Fehlerfall einen erklaerenden Hinweis.

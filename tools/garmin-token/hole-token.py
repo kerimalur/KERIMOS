@@ -92,7 +92,7 @@ def main() -> None:
 
     print("Schreibe Token in die Gym-Datenbank…")
     antwort = requests.post(
-        f"{supabase_url}/rest/v1/settings",
+        f"{supabase_url}/rest/v1/private_tokens",
         headers={
             "apikey": supabase_key,
             "Authorization": f"Bearer {supabase_key}",
