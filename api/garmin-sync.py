@@ -79,6 +79,11 @@ class Gym:
             raise RuntimeError(f"{table}: {r.status_code} {r.text[:300]}")
         return r.json() if return_rows else []
 
+    def delete(self, table: str, params: dict) -> None:
+        requests.delete(
+            f"{self.base}/{table}", headers=self.headers, params=params, timeout=30
+        )
+
     def upsert_setting(self, key: str, value: str) -> None:
         headers = dict(self.headers)
         headers["Prefer"] = "resolution=merge-duplicates,return=minimal"
@@ -306,9 +311,11 @@ def verarbeite_aktivitaet(gym: Gym, api, aktivitaet: dict, mapping: dict,
 
         satzzaehler[exercise_id] = satzzaehler.get(exercise_id, 0) + 1
 
-        # Garmin liefert Gramm.
+        # Garmin liefert Gramm. Koerpergewichtsuebungen (Klimmzuege,
+        # Liegestuetze) kommen ohne Gewicht - die Spalte ist NOT NULL und in
+        # dieser Datenbank steht dafuer seit jeher 0.
         gewicht = satz.get("weight")
-        gewicht_kg = round(float(gewicht) / 1000.0, 2) if gewicht else None
+        gewicht_kg = round(float(gewicht) / 1000.0, 2) if gewicht else 0
 
         satzstart = parse_zeit(satz.get("startTime"))
         logzeilen.append({
@@ -345,7 +352,15 @@ def verarbeite_aktivitaet(gym: Gym, api, aktivitaet: dict, mapping: dict,
     if logzeilen:
         for zeile in logzeilen:
             zeile["workout_session_id"] = session_id
-        gym.insert("exercise_logs", logzeilen)
+        try:
+            gym.insert("exercise_logs", logzeilen)
+        except Exception:
+            # Ohne Saetze ist die Session wertlos - und sie wuerde wegen der
+            # eindeutigen garmin_activity_id jeden weiteren Versuch blockieren.
+            # PostgREST kennt keine Transaktion ueber zwei Aufrufe, also hier
+            # von Hand zuruecknehmen.
+            gym.delete("workout_sessions", {"id": f"eq.{session_id}"})
+            raise
 
     return {
         "activity_id": activity_id,
