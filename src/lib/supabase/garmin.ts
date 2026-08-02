@@ -127,6 +127,48 @@ export async function fetchGarminTage(limit = 10): Promise<GarminTag[]> {
   return (data ?? []) as unknown as GarminTag[];
 }
 
+export interface GarminEnergie {
+  /** Werte von heute - der Tag läuft noch, also unvollständig. */
+  heute: GarminTag | null;
+  /** Ø Kalorienverbrauch abgeschlossener Tage, die verlässliche Referenz. */
+  schnittVerbrauch: number | null;
+  /** Ø Schritte abgeschlossener Tage. */
+  schnittSchritte: number | null;
+  /** Wie viele abgeschlossene Tage in den Schnitt eingehen. */
+  tage: number;
+}
+
+/**
+ * Energie-Lage für die Startseite.
+ *
+ * Der heutige Verbrauch ist um 8 Uhr morgens naturgemäss winzig - eine
+ * Bilanz daraus wäre irreführend. Deshalb kommt zusätzlich der Schnitt der
+ * abgeschlossenen Tage mit, und die Karte rechnet die Bilanz dagegen.
+ */
+export async function fetchGarminEnergie(): Promise<GarminEnergie> {
+  const tage = await fetchGarminTage(8);
+  const heutigesDatum = new Date().toLocaleDateString("sv-SE", {
+    timeZone: "Europe/Zurich",
+  });
+
+  const heute = tage.find((t) => t.datum === heutigesDatum) ?? null;
+  const abgeschlossen = tage.filter(
+    (t) => t.datum !== heutigesDatum && (t.kalorien_gesamt ?? 0) > 0,
+  );
+
+  const mittel = (werte: number[]) =>
+    werte.length === 0 ? null : Math.round(werte.reduce((s, v) => s + v, 0) / werte.length);
+
+  return {
+    heute,
+    schnittVerbrauch: mittel(abgeschlossen.map((t) => t.kalorien_gesamt ?? 0)),
+    schnittSchritte: mittel(
+      abgeschlossen.filter((t) => t.schritte !== null).map((t) => t.schritte as number),
+    ),
+    tage: abgeschlossen.length,
+  };
+}
+
 /** Die zuletzt importierten Garmin-Sessions, damit sichtbar ist, ob der Sync läuft. */
 export async function fetchGarminSessions(limit = 10): Promise<GarminSession[]> {
   const supabase = createGymClient();

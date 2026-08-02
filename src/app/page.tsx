@@ -9,6 +9,7 @@ import { AppointmentsCard } from "@/components/appointments-card";
 import { TasksCard } from "@/components/tasks-card";
 import { MorningCard } from "@/components/morning-card";
 import { PrepCard } from "@/components/prep-card";
+import { EnergyCard } from "@/components/energy-card";
 import { NewsCard } from "@/components/news-card";
 import { Logo } from "@/components/logo";
 import { QuickSearch } from "@/components/quick-search";
@@ -162,6 +163,7 @@ export default async function Start({
         <AppointmentsCard />
         <TradingCard />
         <TodayCard />
+        <EnergyCard />
         <PrepCard />
         <NewsCard />
 
