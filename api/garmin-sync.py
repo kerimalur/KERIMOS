@@ -175,12 +175,19 @@ def garmin_login(gym: Gym):
             # Sitzungsdaten interpretiert (statt als Pfad zu einem Ordner).
             # login() setzt dabei auch display_name und Einheitensystem.
             api.login(tokenstore=cached)
-            # Ein echter Aufruf ist der einzige verlaessliche Gueltigkeitstest.
-            api.get_user_summary(datetime.now().date().isoformat())
 
-            aktualisiert = token_traeger(api).dumps()
-            if aktualisiert != cached:
-                gym.upsert_setting(TOKEN_SETTING_KEY, aktualisiert)
+            # Bewusst KEIN zusaetzlicher Testaufruf mehr. Frueher stand hier
+            # get_user_summary() als Gueltigkeitsprobe - die liefert aber
+            # sporadisch "500 IllegalStateException" von Garmin, ohne dass am
+            # Token etwas falsch waere. Der Token flog dann raus und der
+            # Passwort-Login scheiterte an der 429-Drosselung. Ob der Token
+            # taugt, zeigt sich beim eigentlichen Abruf von selbst.
+            try:
+                aktualisiert = token_traeger(api).dumps()
+                if aktualisiert != cached:
+                    gym.upsert_setting(TOKEN_SETTING_KEY, aktualisiert)
+            except Exception:
+                pass  # Zurueckschreiben ist Kuer, kein Grund zum Abbruch
 
             return api, "token"
         except Exception as fehler:
