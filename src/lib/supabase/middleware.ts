@@ -3,7 +3,10 @@ import { NextResponse, type NextRequest } from "next/server";
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
-const PUBLIC_PATHS = ["/login", "/auth"];
+// /api/garmin-sync ist zusätzlich schon im Matcher ausgenommen; hier
+// nochmal, damit ein späterer Umbau des Matchers den Sync nicht still
+// wieder auf die Anmeldeseite schickt.
+const PUBLIC_PATHS = ["/login", "/auth", "/api/garmin-sync"];
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
