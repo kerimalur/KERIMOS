@@ -67,10 +67,13 @@ export async function fetchModusKennzahlen(): Promise<ModusDaten> {
         if (dran) zeilen.push({ text: `${dran} wäre dran`, betont: true });
       }
 
+      // Immer anzeigen, auch bei null. Eine fehlende Zeile sieht aus wie ein
+      // Fehler; "0 Schritte" um 6 Uhr morgens ist dagegen die Wahrheit und
+      // zeigt nebenbei, dass die Uhr noch nicht synchronisiert hat.
       const t = tag?.[0] as
         { schritte: number | null; kalorien_gesamt: number | null } | undefined;
-      if (t?.schritte) zeilen.push({ text: `${nr(t.schritte)} Schritte` });
-      if (t?.kalorien_gesamt) zeilen.push({ text: `${nr(t.kalorien_gesamt)} kcal verbrannt` });
+      zeilen.push({ text: `${nr(t?.schritte ?? 0)} Schritte` });
+      zeilen.push({ text: `${nr(t?.kalorien_gesamt ?? 0)} kcal verbrannt` });
 
       return zeilen;
     })(),

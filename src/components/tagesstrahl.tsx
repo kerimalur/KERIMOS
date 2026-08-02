@@ -82,16 +82,21 @@ export async function Tagesstrahl() {
     });
   }
 
-  if (anker.length < 2) return null;
+  // Schon ein einzelner Anker lohnt die Linie - ein Termin allein ist
+  // genau das, was den Tag prägt.
+  if (anker.length === 0) return null;
 
   anker.sort((a, b) => a.minute - b.minute);
 
   // Skala von erstem bis letztem Punkt, mit etwas Luft an den Rändern,
-  // damit die Beschriftungen nicht abgeschnitten werden.
+  // damit die Beschriftungen nicht abgeschnitten werden. Bei nur einem
+  // Punkt gäbe es keine Spanne - der steht dann mittig.
+  const einzeln = anker.length === 1;
   const ersterPunkt = anker[0].minute;
   const letzterPunkt = anker[anker.length - 1].minute;
   const spanne = Math.max(60, letzterPunkt - ersterPunkt);
-  const pct = (m: number) => 6 + ((m - ersterPunkt) / spanne) * 88;
+  const pct = (m: number) =>
+    einzeln ? 50 : 6 + ((m - ersterPunkt) / spanne) * 88;
 
   const jetztTeile = new Intl.DateTimeFormat("en-GB", {
     timeZone: ZONE, hour: "2-digit", minute: "2-digit", hour12: false,
