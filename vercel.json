@@ -3,7 +3,6 @@
   "regions": ["dub1"],
   "functions": {
     "api/garmin-sync.py": {
-      "runtime": "python3.12",
       "maxDuration": 60
     }
   },
