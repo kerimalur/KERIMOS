@@ -15,12 +15,17 @@ export default async function Cockpit() {
 
   const [
     { data: accounts }, { data: inputsRows }, { data: cashflow }, { data: recent },
+    offeneZahl,
   ] = await Promise.all([
     supabase.from("v_account_balances").select("*").eq("archived", false).order("sort_order"),
     supabase.rpc("runway_inputs", { months_lookback: 3 }),
     supabase.from("v_monthly_cashflow").select("*").order("month", { ascending: false }).limit(6),
     supabase.from("transactions").select("*").order("occurred_on", { ascending: false }).limit(6),
+    supabase.from("transactions").select("id", { count: "exact", head: true })
+      .is("category_id", null).eq("is_transfer", false).lt("amount", 0),
   ]);
+
+  const offen = offeneZahl.count ?? 0;
 
   const accountList = (accounts ?? []) as AccountBalance[];
   if (accountList.length === 0) {
@@ -51,11 +56,22 @@ export default async function Cockpit() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-xl font-bold text-ink">Geld</h1>
-        <p className="mt-1 text-sm text-ink-muted">
-          Stand {dateLabel(new Date().toISOString())}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="font-display text-xl font-bold text-ink">Geld</h1>
+          <p className="mt-1 text-sm text-ink-muted">
+            Stand {dateLabel(new Date().toISOString())}
+          </p>
+        </div>
+        {/* Solange Buchungen ohne Kategorie herumliegen, ist jede Auswertung
+            darunter unvollständig - deshalb der Weg dorthin ganz oben. */}
+        {offen > 0 && (
+          <Link href="/geld/offen"
+            className="rounded-xl border border-warn/30 bg-warn-tint px-3 py-2 text-sm
+                       text-ink-soft transition hover:border-warn/60">
+            {offen} Buchungen ohne Kategorie zuordnen →
+          </Link>
+        )}
       </div>
 
       {/* Kennzahlen */}
