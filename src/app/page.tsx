@@ -156,6 +156,26 @@ export default async function Start({
         <QuickSearch links={links} />
       </div>
 
+      {/* Schmale Modus-Leiste. Die grossen Kacheln weiter unten bleiben der
+          Einstieg zum Stöbern - wer aber weiss, wo er hin will, soll nicht
+          erst an allen Karten vorbeiscrollen müssen. */}
+      <nav className="mb-5 flex flex-wrap gap-1.5">
+        {modi.map(([name, ls]) => {
+          const ziel = MODE_DIRECT[name] ?? `/m/${encodeURIComponent(name)}`;
+          const farbe = ls[0]?.color ?? "#9A8C74";
+          return (
+            <Link key={name} href={ziel}
+              className="flex items-center gap-1.5 rounded-lg border border-line/70 bg-card
+                         px-2.5 py-1.5 text-xs font-medium text-ink-soft transition
+                         hover:border-line-strong hover:text-ink">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full"
+                style={{ background: farbe }} />
+              {name}
+            </Link>
+          );
+        })}
+      </nav>
+
       <div className="space-y-5">
         <MorningCard />
         <TasksCard />

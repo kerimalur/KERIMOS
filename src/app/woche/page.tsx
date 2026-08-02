@@ -114,11 +114,11 @@ export default async function WochePage({
           <span className="font-semibold text-accent">{pct(summary.goalShare)}</span>.
           {summary.totalUnaccounted > 0 && (
             <>
-              {" "}Bei{" "}
+              {" "}
               <span className="font-semibold text-ink-muted">
                 {fmtHours(summary.totalUnaccounted)}
               </span>{" "}
-              weisst du selbst nicht, wo sie geblieben sind.
+              sind noch nicht zugeordnet.
             </>
           )}
         </p>
@@ -128,6 +128,43 @@ export default async function WochePage({
             {fmtHours(prevSummary.totalUnaccounted)} unerfasst
           </p>
         )}
+
+        {/* Die Lücken einzeln benennen. Eine Gesamtzahl sagt nur, dass etwas
+            fehlt - erst der einzelne Tag macht sie nachtragbar. */}
+        {(() => {
+          const luecken = weekDays
+            .map((d) => ({ datum: d, offen: Number(byDate.get(d)?.unaccounted_minutes ?? 0) }))
+            .filter((l) => l.offen >= 30 && l.datum <= today);
+
+          if (luecken.length === 0) return null;
+
+          return (
+            <div className="mt-4 border-t border-line pt-3">
+              <div className="mb-2 text-xs text-ink-muted">
+                Wo sie fehlen — antippen zum Nachtragen:
+              </div>
+              <ul className="flex flex-wrap gap-1.5">
+                {luecken.map((l) => (
+                  <li key={l.datum}>
+                    <Link href="/zeit"
+                      className="flex items-center gap-2 rounded-lg border border-line/70
+                                 bg-sand/60 px-2.5 py-1.5 text-xs transition
+                                 hover:border-line-strong">
+                      <span className="text-ink-soft">
+                        {new Date(l.datum + "T12:00:00").toLocaleDateString("de-CH", {
+                          weekday: "short", day: "2-digit", month: "2-digit",
+                        })}
+                      </span>
+                      <span className="tabular font-medium text-ink">
+                        {fmtHours(l.offen)}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })()}
       </Card>
 
       {/* Verteilung */}
