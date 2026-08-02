@@ -22,7 +22,7 @@ const TABS = [
 
 /** Unterseiten, die unter "Mehr" einsortiert sind. */
 const UNTER_MEHR = [
-  "/gym/uebungen", "/gym/balance", "/gym/fortschritt",
+  "/gym/uebungen", "/gym/fortschritt",
   "/gym/trainingstage", "/gym/kalender", "/gym/workout",
 ];
 

@@ -52,6 +52,10 @@ export async function AppointmentsCard() {
     const ab = t.show_from ?? addDays(t.starts_on, -2);
     return ab <= heute;
   }).slice(0, 6);
+
+  // Nichts anzuzeigen heisst: keine Karte. Eine Box, die "nichts geplant"
+  // meldet, kostet Platz und Aufmerksamkeit, ohne etwas beizutragen.
+  if (termine.length === 0) return null;
   const heutige = termine.filter((t) => t.starts_on === heute);
   const spaeter = termine.filter((t) => t.starts_on > heute);
 
@@ -62,16 +66,9 @@ export async function AppointmentsCard() {
           className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted transition hover:text-ink-soft">
           Termine →
         </Link>
-        {termine.length === 0 && (
-          <span className="text-xs text-ink-faint">nichts geplant</span>
-        )}
       </div>
 
-      {termine.length === 0 ? (
-        <p className="text-sm text-ink-muted">
-          Nichts, was heute zählt.
-        </p>
-      ) : (
+      {(
         <ul className="space-y-1.5">
           {heutige.map((t) => (
             <li key={t.id} className="flex items-baseline gap-2.5 text-sm">

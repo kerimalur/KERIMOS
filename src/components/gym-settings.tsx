@@ -12,8 +12,6 @@ const BEREICHE = [
     text: "Datenbank durchsuchen, eigene Übung anlegen" },
   { href: "/gym/fortschritt", titel: "Fortschritt",
     text: "Verlauf je Übung, geschätztes 1RM, Cardio" },
-  { href: "/gym/balance", titel: "Muskelbalance",
-    text: "Gegenspieler-Paare und Volumen je Muskelgruppe" },
   { href: "/gym/trainingstage", titel: "Trainingstage",
     text: "Splits und Übungslisten — nur nötig fürs manuelle Erfassen" },
   { href: "/gym/kalender", titel: "Wochenplan",

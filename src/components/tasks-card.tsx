@@ -25,6 +25,10 @@ export async function TasksCard() {
   const tasks = (taskRows ?? []) as Task[];
   const areas = (areaRows ?? []) as LifeArea[];
 
+  // Keine offene Aufgabe heisst: keine Karte. Ein leeres Kästchen mit
+  // Schnellerfassung gehört auf die Aufgabenseite, nicht ins Cockpit.
+  if (tasks.length === 0) return null;
+
   // Unteraufgaben nur für die tatsächlich angezeigten Aufgaben nachladen
   let subtasks: Subtask[] = [];
   if (tasks.length > 0) {

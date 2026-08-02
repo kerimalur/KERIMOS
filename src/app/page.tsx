@@ -8,7 +8,6 @@ import { TodayCard } from "@/components/today-card";
 import { AppointmentsCard } from "@/components/appointments-card";
 import { TasksCard } from "@/components/tasks-card";
 import { MorningCard } from "@/components/morning-card";
-import { PrepCard } from "@/components/prep-card";
 import { NewsCard } from "@/components/news-card";
 import { Logo } from "@/components/logo";
 import { QuickSearch } from "@/components/quick-search";
@@ -182,7 +181,8 @@ export default async function Start({
         <AppointmentsCard />
         <TradingCard />
         <TodayCard />
-        <PrepCard />
+        {/* Meal Prep lebt im Essen-Bereich - auf der Startseite war es eine
+            Frage, die man dort ohnehin nicht beantwortet. */}
         <NewsCard />
 
         {reviewFehlt && (

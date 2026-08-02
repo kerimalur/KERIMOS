@@ -1,7 +1,7 @@
 import Link from "next/link";
 import {
   createGymClient, gymConfigured, buildSeries,
-  fetchCalendarEntries, fetchTrainingDays, fetchMuscleBalance,
+  fetchCalendarEntries, fetchTrainingDays,
   fetchWeeklyGoal, countSessionsSince,
   type GymTopSet, type BodyWeightEntry,
 } from "@/lib/supabase/gym";
@@ -55,26 +55,49 @@ export default async function GymPage() {
 
   const [
     { data, error }, { data: weightData },
-    entries, days, balance, wochenZiel, dieseWoche,
+    entries, days, wochenZiel, dieseWoche,
   ] = await Promise.all([
     supabase!.from("v_exercise_progress").select("*").order("day", { ascending: true }),
     supabase!.from("body_weight_entries")
       .select("entry_date, weight_kg").order("entry_date", { ascending: true }),
     fetchCalendarEntries(heute),
     fetchTrainingDays(),
-    fetchMuscleBalance(),
     fetchWeeklyGoal(),
     countSessionsSince(weekStart(heute)),
   ]);
 
+  // Was wurde an welchem Tag tatsächlich trainiert? Zwei Dinge hängen daran:
+  // ein heute schon absolvierter Plan darf nicht als "nächstes Training"
+  // stehenbleiben, und der Vorschlag für die nächste Einheit ergibt sich aus
+  // dem, was zuletzt dran war. Seit die Uhr trackt, hakt niemand mehr die
+  // Kalendereinträge ab - der Abgleich muss also über die Sätze laufen.
+  const proTag = new Map<string, string>();
+  for (const r of ((data ?? []) as GymTopSet[])) {
+    if (!proTag.has(r.day)) proTag.set(r.day, r.split ?? "Training");
+  }
+  const trainierteTage = [...proTag.keys()].sort();
+  const letzterTag = trainierteTage[trainierteTage.length - 1] ?? null;
+  const letzterSplit = letzterTag ? proTag.get(letzterTag) ?? null : null;
+
+  // Push und Pull wechseln sich ab. Alles andere lässt sich nicht ableiten.
+  const naechsterSplit =
+    letzterSplit?.toLowerCase() === "pull" ? "Push"
+      : letzterSplit?.toLowerCase() === "push" ? "Pull"
+        : null;
+
   const cockpit = (
     <GymCockpit
-      entries={entries.filter((e) => e.status === "planned")}
+      entries={entries.filter(
+        (e) => e.status === "planned" && !proTag.has(e.scheduled_date),
+      )}
+      letzterSplit={letzterSplit}
+      letzterTag={letzterTag}
+      naechsterSplit={naechsterSplit}
+      /* Muskelbalance ist raus - sie hat nie eine Entscheidung verändert. */
       days={days.map((d) => ({
         id: d.id, name: d.name,
         anzahlUebungen: d.exercises.length, muscles: d.muscles,
       }))}
-      balance={balance}
       heute={heute}
       morgen={addDays(heute, 1)}
       wochenZiel={wochenZiel}

@@ -14,22 +14,11 @@ interface Entry {
 interface DayLite {
   id: string; name: string; anzahlUebungen: number; muscles: string[];
 }
-interface MuscleLoad { id: string; name: string; sets: number; lastTrainedAt: string | null }
-
 /** "heute" · "morgen" · "Do, 06.08.2026" */
 function datumText(iso: string, heute: string, morgen: string): string {
   if (iso === heute) return "heute";
   if (iso === morgen) return "morgen";
   return `${dayNameShort(iso)}, ${dateLabel(iso)}`;
-}
-
-/** "vor 5 Tagen" - und ob das schon zu lange her ist. */
-function seitText(iso: string | null): { text: string; hinterher: boolean } {
-  if (!iso) return { text: "nie trainiert", hinterher: true };
-  const tage = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
-  if (tage === 0) return { text: "heute", hinterher: false };
-  if (tage === 1) return { text: "gestern", hinterher: false };
-  return { text: `vor ${tage} Tagen`, hinterher: tage >= 7 };
 }
 
 /**
@@ -38,22 +27,25 @@ function seitText(iso: string | null): { text: string; hinterher: boolean } {
  * Einheit an und wechselt in die Gym-App.
  */
 export function GymCockpit({
-  entries, days, balance, heute, morgen, wochenZiel, dieseWoche,
+  entries, days, heute, morgen, wochenZiel, dieseWoche,
+  letzterSplit, letzterTag, naechsterSplit,
 }: {
   entries: Entry[];
   days: DayLite[];
-  balance: MuscleLoad[];
   heute: string;
   morgen: string;
   wochenZiel: number;
   dieseWoche: number;
+  /** Split der letzten tatsächlich trainierten Einheit. */
+  letzterSplit: string | null;
+  /** Tag dazu, ISO. */
+  letzterTag: string | null;
+  /** Der logische Gegenpart - null, wenn nicht ableitbar. */
+  naechsterSplit: string | null;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [fehler, setFehler] = useState<string | null>(null);
-
-  const maxSets = Math.max(1, ...balance.map((m) => m.sets));
-  const hinterher = balance.filter((m) => seitText(m.lastTrainedAt).hinterher).length;
 
   async function starten(dayId: string, entry?: Entry) {
     if (busy) return;
@@ -116,13 +108,40 @@ export function GymCockpit({
             Planen →
           </Link>
         </div>
+        {/* Vorschlag aus dem, was zuletzt dran war. Steht auch dann da, wenn
+            nichts geplant ist - seit die Uhr trackt, plant Kerim kaum noch
+            im Kalender, braucht aber trotzdem die Antwort "was heute?". */}
+        {naechsterSplit && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl bg-sand/60 px-3 py-2">
+            <span className="text-xs text-ink-muted">
+              Zuletzt {letzterSplit} {letzterTag ? datumText(letzterTag, heute, morgen) : ""} —
+              dran wäre
+            </span>
+            <span className="text-sm font-medium text-ink">{naechsterSplit}</span>
+            {(() => {
+              const tag = days.find(
+                (d) => d.name.toLowerCase() === naechsterSplit.toLowerCase(),
+              );
+              if (!tag) return null;
+              return (
+                <Button onClick={() => starten(tag.id)} disabled={busy}
+                  className="ml-auto shrink-0 px-3 py-1.5 text-xs">
+                  Start
+                </Button>
+              );
+            })()}
+          </div>
+        )}
+
         {entries.length === 0 ? (
-          <Empty>
-            Nichts geplant.{" "}
-            <Link href="/gym/kalender" className="text-accent-soft hover:underline">
-              Training einplanen
-            </Link>
-          </Empty>
+          naechsterSplit ? null : (
+            <Empty>
+              Nichts geplant.{" "}
+              <Link href="/gym/kalender" className="text-accent-soft hover:underline">
+                Training einplanen
+              </Link>
+            </Empty>
+          )
         ) : (
           <ul className="divide-y divide-line">
             {entries.slice(0, 5).map((e) => (
@@ -183,50 +202,6 @@ export function GymCockpit({
         )}
       </Card>
 
-      {/* Muskelbalance */}
-      <Card>
-        <div className="mb-3 flex items-center justify-between">
-          <CardTitle className="mb-0">Muskelbalance · 4 Wochen</CardTitle>
-          <Link href="/gym/balance"
-            className="text-xs font-medium text-accent-soft transition hover:underline">
-            Analyse →
-          </Link>
-        </div>
-        {hinterher > 0 && (
-          <p className="mb-3 rounded-xl bg-warn-tint px-3 py-2 text-xs text-warn">
-            {hinterher} {hinterher === 1 ? "Muskelgruppe" : "Muskelgruppen"} seit
-            über einer Woche nicht trainiert.
-          </p>
-        )}
-        {balance.length === 0 ? (
-          <Empty>Noch keine Trainingsdaten.</Empty>
-        ) : (
-          <ul className="space-y-2.5">
-            {balance.map((m) => {
-              const s = seitText(m.lastTrainedAt);
-              return (
-                <li key={m.id}>
-                  <div className="mb-1 flex items-baseline justify-between gap-2">
-                    <span className="truncate text-sm text-ink-soft">{m.name}</span>
-                    <span className="shrink-0 text-xs text-ink-muted">
-                      {m.sets} {m.sets === 1 ? "Satz" : "Sätze"}
-                    </span>
-                  </div>
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-line">
-                    <div className={cx("h-full rounded-full",
-                      s.hinterher ? "bg-warn" : "bg-accent")}
-                      style={{ width: `${m.sets === 0 ? 3 : (m.sets / maxSets) * 100}%` }} />
-                  </div>
-                  <span className={cx("mt-0.5 block text-[11px]",
-                    s.hinterher ? "text-warn" : "text-ink-faint")}>
-                    {s.text}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </Card>
     </>
   );
 }
