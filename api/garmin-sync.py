@@ -257,10 +257,31 @@ def verarbeite_aktivitaet(gym: Gym, api, aktivitaet: dict, mapping: dict,
 
     # --- Saetze holen -----------------------------------------------------
     daten = api.get_activity_exercise_sets(activity_id)
-    saetze = (daten or {}).get("exerciseSets") or []
+
+    # Garmin liefert die Saetze je nach Geraet unter unterschiedlichen
+    # Schluesseln. Der Reihe nach durchprobieren, statt einen anzunehmen.
+    saetze = []
+    if isinstance(daten, dict):
+        for schluessel in ("exerciseSets", "activityExerciseSets", "sets"):
+            wert = daten.get(schluessel)
+            if isinstance(wert, list) and wert:
+                saetze = wert
+                break
+    elif isinstance(daten, list):
+        saetze = daten
+
     aktive = [s for s in saetze if str(s.get("setType", "")).upper() == "ACTIVE"]
+
     if not aktive:
-        return {"activity_id": activity_id, "status": "keine_saetze"}
+        # Diagnose mitgeben - sonst raet man, ob die Uhr keine Saetze
+        # aufgezeichnet hat oder ob der Schluessel nur anders heisst.
+        return {
+            "activity_id": activity_id,
+            "status": "keine_saetze",
+            "roh_saetze": len(saetze),
+            "antwort_schluessel": sorted(daten.keys())[:12] if isinstance(daten, dict) else str(type(daten)),
+            "set_typen": sorted({str(s.get("setType")) for s in saetze})[:8],
+        }
 
     start = parse_zeit(aktivitaet.get("startTimeLocal"))
     dauer = float(aktivitaet.get("duration") or 0)

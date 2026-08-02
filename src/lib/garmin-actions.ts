@@ -114,6 +114,12 @@ export async function triggerGarminSync(): Promise<string> {
       return `${kern} Vorhanden waren nur: ${typen.join(", ")}.`;
     }
 
+    // Trainings da, aber keines übernommen: die Rohmeldung durchreichen,
+    // sonst sieht man nur eine Null und weiss nicht warum.
+    if (ergebnis.importiert === 0 && ergebnis.uebersprungen === 0) {
+      return `${kern} Details: ${JSON.stringify(ergebnis.details)}`;
+    }
+
     return kern;
   } catch (fehler) {
     return `Sync nicht erreichbar: ${fehler instanceof Error ? fehler.message : fehler}`;
