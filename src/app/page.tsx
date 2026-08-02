@@ -148,7 +148,20 @@ export default async function Start({
         <div className="flex items-center gap-3.5">
           <Logo inverted className="h-11 w-11 rounded-2xl" />
           <div>
-            <h1 className="font-display text-2xl font-bold leading-tight text-ink">KerimOS</h1>
+            <h1 className="font-display text-2xl font-bold leading-tight text-ink">
+              {(() => {
+                // Tageszeit in Zürcher Zeit - der Server steht in Dublin.
+                const stunde = Number(new Intl.DateTimeFormat("en-US", {
+                  timeZone: "Europe/Zurich", hour: "numeric", hour12: false,
+                }).format(new Date()));
+                if (stunde < 5) return "Noch wach, Kerim?";
+                if (stunde < 11) return "Morgen, Kerim";
+                if (stunde < 14) return "Mittag, Kerim";
+                if (stunde < 18) return "Nachmittag, Kerim";
+                if (stunde < 22) return "Abend, Kerim";
+                return "Späte Runde, Kerim";
+              })()}
+            </h1>
             <p className="text-sm text-ink-muted">Was willst du jetzt tun?</p>
           </div>
         </div>

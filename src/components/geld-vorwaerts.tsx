@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Card, Bar } from "@/components/ui";
+import { CountUp } from "@/components/count-up";
 import { chf } from "@/lib/format";
 
 /**
@@ -83,12 +84,15 @@ export async function GeldVorwaerts() {
       </div>
 
       <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <span className={
-          "font-display text-3xl font-bold tabular-nums " +
-          (vorwaerts >= 0 ? "text-good-bright" : "text-bad-bright")
-        }>
-          {vorwaerts >= 0 ? "+" : ""}{chf(Math.round(vorwaerts))}
-        </span>
+        <CountUp
+          value={Math.round(vorwaerts)}
+          prefix={vorwaerts >= 0 ? "+ " : ""}
+          suffix=" CHF"
+          className={
+            "font-display text-3xl font-bold tabular-nums " +
+            (vorwaerts >= 0 ? "text-good-bright" : "text-bad-bright")
+          }
+        />
         <span className="text-xs text-ink-muted">
           Ø aus {abgeschlosseneMonate} {abgeschlosseneMonate === 1 ? "Monat" : "Monaten"}
           {" · "}{chf(Math.round(schnittEin))} ein, {chf(Math.round(schnittAus))} aus
