@@ -3,14 +3,13 @@ import { createClient } from "@/lib/supabase/server";
 import { QuickTrack } from "@/components/quick-track";
 import { TodayEntries, type HeuteEintrag } from "@/components/today-entries";
 import { FocusPrompt } from "@/components/focus-prompt";
-import { TradingCard } from "@/components/trading-card";
-import { TodayCard } from "@/components/today-card";
 import { AppointmentsCard } from "@/components/appointments-card";
 import { TasksCard } from "@/components/tasks-card";
 import { MorningCard } from "@/components/morning-card";
-import { NewsCard } from "@/components/news-card";
+import { Tagessatz } from "@/components/tagessatz";
+import { Tagesstrahl } from "@/components/tagesstrahl";
 import { Logo } from "@/components/logo";
-import { heuteISO, ZONE } from "@/lib/time";
+import { heuteISO } from "@/lib/time";
 import type { Activity, FocusSession } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -38,28 +37,25 @@ export default async function HeutePage() {
   const sessions = (focusRows ?? []) as FocusSession[];
   const activities = (actRows ?? []) as Activity[];
 
-  const datum = new Date().toLocaleDateString("de-CH", {
-    weekday: "long", day: "numeric", month: "long", timeZone: ZONE,
-  });
+  // Datum und Begrüssung kommen jetzt aus Tagessatz - dort stehen sie
+  // zusammen mit Wetter und Tageslage.
 
   return (
     <div className="mx-auto max-w-md space-y-4 py-4">
-      <div className="flex items-center gap-3">
-        <Logo inverted className="h-9 w-9 rounded-xl" />
-        <div>
-          <h1 className="font-display text-lg font-bold leading-tight text-ink">Heute</h1>
-          <p className="text-xs text-ink-muted">{datum}</p>
+      <div className="flex items-start gap-3">
+        <Logo inverted className="mt-0.5 h-9 w-9 shrink-0 rounded-xl" />
+        <div className="min-w-0 flex-1">
+          <Tagessatz />
         </div>
       </div>
 
-      {/* Erst der Überblick, dann das Erfassen - unterwegs schaut man
-          häufiger, als man eintippt. */}
+      <Tagesstrahl />
+
+      {/* Nur was eine Entscheidung braucht - Trading, Kalorien und Verlauf
+          leben in ihren Modi, genau wie auf der Startseite. */}
       <MorningCard />
       <TasksCard />
       <AppointmentsCard />
-      <TodayCard />
-      <TradingCard />
-      <NewsCard />
 
       <QuickTrack sessions={sessions} activities={activities} />
 
