@@ -69,12 +69,30 @@ export async function triggerGarminSync(): Promise<string> {
       : "http://localhost:3000";
 
   const geheimnis = process.env.CRON_SECRET;
+  const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+
+  const headers: Record<string, string> = {};
+  if (geheimnis) headers.Authorization = `Bearer ${geheimnis}`;
+  // Das Projekt steht hinter Vercel Authentication. Ohne diesen Header
+  // antwortet Vercel dem eigenen Server mit der Login-Seite statt mit der
+  // Function. Der Cron braucht ihn nicht - der läuft intern.
+  if (bypass) headers["x-vercel-protection-bypass"] = bypass;
 
   try {
     const antwort = await fetch(`${basis}/api/garmin-sync`, {
-      headers: geheimnis ? { Authorization: `Bearer ${geheimnis}` } : {},
+      headers,
       cache: "no-store",
     });
+
+    const typ = antwort.headers.get("content-type") ?? "";
+    if (!typ.includes("application/json")) {
+      return bypass
+        ? `Unerwartete Antwort (${antwort.status}) von ${basis} — kein JSON.`
+        : "Vercel hat die Login-Seite geliefert statt den Sync. " +
+          "In den Projekt-Einstellungen unter Deployment Protection " +
+          "\"Protection Bypass for Automation\" aktivieren und neu deployen.";
+    }
+
     const ergebnis = await antwort.json();
 
     revalidatePath("/gym/garmin");
