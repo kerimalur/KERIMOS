@@ -6,6 +6,7 @@ import { chf, monthsToHuman, dateLabel } from "@/lib/format";
 import { Card, CardTitle, Stat, Badge, Empty } from "@/components/ui";
 import { SetupWizard } from "@/components/setup-wizard";
 import { CashflowChart } from "@/components/cashflow-chart";
+import { GeldVorwaerts } from "@/components/geld-vorwaerts";
 import type { AccountBalance, MonthlyCashflow, RunwayInputs, Transaction } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -73,6 +74,9 @@ export default async function Cockpit() {
           </Link>
         )}
       </div>
+
+      {/* Die Hauptfrage zuerst: komme ich vorwärts, und wo geht es hin? */}
+      <GeldVorwaerts />
 
       {/* Kennzahlen */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
