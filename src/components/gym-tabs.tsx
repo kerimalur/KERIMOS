@@ -16,7 +16,7 @@ const TABS = [
 ];
 
 /** Unterseiten, die unter "Mehr" einsortiert sind. */
-const UNTER_MEHR = ["/gym/uebungen", "/gym/balance", "/gym/fortschritt"];
+const UNTER_MEHR = ["/gym/uebungen", "/gym/balance", "/gym/fortschritt", "/gym/garmin"];
 
 export function GymTabs() {
   const path = usePathname();

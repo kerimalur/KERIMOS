@@ -14,6 +14,8 @@ const BEREICHE = [
     text: "Verlauf je Übung, geschätztes 1RM, Cardio" },
   { href: "/gym/balance", titel: "Muskelbalance",
     text: "Gegenspieler-Paare und Volumen je Muskelgruppe" },
+  { href: "/gym/garmin", titel: "Garmin",
+    text: "Übungen zuordnen, Import von der Uhr prüfen" },
 ];
 
 /**
