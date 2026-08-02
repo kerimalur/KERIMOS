@@ -92,12 +92,19 @@ export async function fetchModusKennzahlen(): Promise<ModusDaten> {
         return [{ text: "Heute nichts geplant", betont: true }];
       }
 
-      // Höchstens drei Mahlzeiten - mehr sprengt die Kachelhöhe, und die
-      // vollständige Liste steht ohnehin im Essen-Bereich.
-      const zeilen: ModusZeile[] = menu.meals.slice(0, 3).map((m) => ({
-        text: `${m.name} · ${nr(Number(m.kcal_total ?? 0))} kcal`,
-        betont: false,
-      }));
+      // Alle Mahlzeiten des Tages, inklusive Snack - vier Zeilen passen auf
+      // die Kachel. Je Mahlzeit Kalorien und Protein, weil das Protein für
+      // Kerim die eigentliche Zielgrösse ist.
+      const zeilen: ModusZeile[] = menu.meals.map((m) => {
+        const kcal = nr(Number(m.kcal_total ?? 0));
+        const protein = Number(m.protein_total ?? 0);
+        return {
+          text: protein > 0
+            ? `${m.name} · ${kcal} kcal · ${nr(protein)} g`
+            : `${m.name} · ${kcal} kcal`,
+          betont: false,
+        };
+      });
       zeilen.push({
         text: `${nr(menu.kcal)} kcal · ${nr(menu.protein)} g Protein`,
         betont: true,

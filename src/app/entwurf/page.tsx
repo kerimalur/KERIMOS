@@ -3,7 +3,6 @@ import { createClient } from "@/lib/supabase/server";
 import { Tagessatz } from "@/components/tagessatz";
 import { AppointmentsCard } from "@/components/appointments-card";
 import { TasksCard } from "@/components/tasks-card";
-import { PrepCard } from "@/components/prep-card";
 import { Logo } from "@/components/logo";
 import { QuickSearch } from "@/components/quick-search";
 import { Tagesstrahl } from "@/components/tagesstrahl";
@@ -72,7 +71,6 @@ export default async function EntwurfStartseite() {
       <div className="mb-7 space-y-3">
         <TasksCard />
         <AppointmentsCard />
-        <PrepCard />
       </div>
 
       {/* Wo arbeitest du jetzt */}
