@@ -2,7 +2,7 @@ import { GarminPanel } from "@/components/garmin-panel";
 import { Empty } from "@/components/ui";
 import { gymConfigured, fetchExercises } from "@/lib/supabase/gym";
 import {
-  fetchGarminMappings, fetchUnmappedGarmin, fetchGarminSessions,
+  fetchGarminMappings, fetchUnmappedGarmin, fetchGarminSessions, fetchGarminTage,
 } from "@/lib/supabase/garmin";
 
 export const dynamic = "force-dynamic";
@@ -10,11 +10,12 @@ export const dynamic = "force-dynamic";
 export default async function GymGarminPage() {
   if (!gymConfigured()) return <Empty>Gym-Datenbank nicht verbunden.</Empty>;
 
-  const [exercises, mappings, unmapped, sessions] = await Promise.all([
+  const [exercises, mappings, unmapped, sessions, tage] = await Promise.all([
     fetchExercises(),
     fetchGarminMappings(),
     fetchUnmappedGarmin(),
     fetchGarminSessions(),
+    fetchGarminTage(),
   ]);
 
   return (
@@ -23,6 +24,7 @@ export default async function GymGarminPage() {
       mappings={mappings}
       unmapped={unmapped}
       sessions={sessions}
+      tage={tage}
     />
   );
 }

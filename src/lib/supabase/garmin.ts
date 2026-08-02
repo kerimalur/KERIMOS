@@ -99,6 +99,34 @@ export async function fetchUnmappedGarmin(): Promise<{ key: string; saetze: numb
     .sort((a, b) => b.saetze - a.saetze || a.key.localeCompare(b.key));
 }
 
+export interface GarminTag {
+  datum: string;
+  schritte: number | null;
+  kalorien_gesamt: number | null;
+  kalorien_aktiv: number | null;
+  ruhepuls: number | null;
+  body_battery_hoechster: number | null;
+  body_battery_tiefster: number | null;
+  hrv_nacht: number | null;
+  stress_schnitt: number | null;
+}
+
+/** Schritte, Kalorien und Erholungswerte der letzten Tage. */
+export async function fetchGarminTage(limit = 10): Promise<GarminTag[]> {
+  const supabase = createGymClient();
+  if (!supabase) return [];
+
+  // Select bewusst als ein einziges Literal: verkettete Strings kann der
+  // Supabase-Typgenerator nicht auflösen und liefert GenericStringError.
+  const { data } = await supabase
+    .from("garmin_daily")
+    .select("datum, schritte, kalorien_gesamt, kalorien_aktiv, ruhepuls, body_battery_hoechster, body_battery_tiefster, hrv_nacht, stress_schnitt")
+    .order("datum", { ascending: false })
+    .limit(limit);
+
+  return (data ?? []) as unknown as GarminTag[];
+}
+
 /** Die zuletzt importierten Garmin-Sessions, damit sichtbar ist, ob der Sync läuft. */
 export async function fetchGarminSessions(limit = 10): Promise<GarminSession[]> {
   const supabase = createGymClient();

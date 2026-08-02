@@ -2,14 +2,17 @@
 import { useState, useTransition } from "react";
 import { Card, CardTitle, Select, Button, Badge, Empty } from "@/components/ui";
 import { saveGarminMapping, deleteGarminMapping, triggerGarminSync } from "@/lib/garmin-actions";
-import type { GarminMapping, GarminSession } from "@/lib/supabase/garmin";
+import type { GarminMapping, GarminSession, GarminTag } from "@/lib/supabase/garmin";
 
 interface Props {
   exercises: { id: string; name: string }[];
   mappings: GarminMapping[];
   unmapped: { key: string; saetze: number }[];
   sessions: GarminSession[];
+  tage: GarminTag[];
 }
+
+const zahl = (v: number | null) => (v === null ? "—" : v.toLocaleString("de-CH"));
 
 /** "2026-08-01T07:15:00+02:00" -> "Fr, 01.08. 07:15" */
 function zeitLabel(iso: string | null): string {
@@ -22,7 +25,7 @@ function zeitLabel(iso: string | null): string {
   });
 }
 
-export function GarminPanel({ exercises, mappings, unmapped, sessions }: Props) {
+export function GarminPanel({ exercises, mappings, unmapped, sessions, tage }: Props) {
   const [meldung, setMeldung] = useState<string | null>(null);
   const [laeuft, starte] = useTransition();
 
@@ -122,6 +125,57 @@ export function GarminPanel({ exercises, mappings, unmapped, sessions }: Props) 
             ))}
           </ul>
         )}
+      </Card>
+
+      {/* --------------------------------------- Schritte und Kalorien */}
+      <Card>
+        <CardTitle>Tagesdaten</CardTitle>
+        {tage.length === 0 ? (
+          <Empty>Noch keine Tagesdaten. Kommen beim nächsten Sync.</Empty>
+        ) : (
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-ink-muted">
+                  <th className="pb-2 pr-3 font-medium">Tag</th>
+                  <th className="pb-2 pr-3 text-right font-medium">Schritte</th>
+                  <th className="pb-2 pr-3 text-right font-medium">kcal ges.</th>
+                  <th className="pb-2 pr-3 text-right font-medium">kcal aktiv</th>
+                  <th className="pb-2 pr-3 text-right font-medium">Ruhepuls</th>
+                  <th className="pb-2 text-right font-medium">Body Batt.</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {tage.map((t) => (
+                  <tr key={t.datum}>
+                    <td className="py-2 pr-3 text-ink">
+                      {new Date(t.datum).toLocaleDateString("de-CH", {
+                        weekday: "short", day: "2-digit", month: "2-digit",
+                      })}
+                    </td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{zahl(t.schritte)}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-ink">
+                      {zahl(t.kalorien_gesamt)}
+                    </td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-ink-muted">
+                      {zahl(t.kalorien_aktiv)}
+                    </td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{zahl(t.ruhepuls)}</td>
+                    <td className="py-2 text-right tabular-nums text-ink-muted">
+                      {t.body_battery_tiefster === null && t.body_battery_hoechster === null
+                        ? "—"
+                        : `${zahl(t.body_battery_tiefster)}–${zahl(t.body_battery_hoechster)}`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="mt-3 text-xs text-ink-muted">
+          &bdquo;kcal ges.&ldquo; ist Grundumsatz plus Aktivität — die Zahl, gegen die
+          du deine Zufuhr rechnen willst.
+        </p>
       </Card>
 
       {/* ------------------------------------------- Zuletzt importiert */}
