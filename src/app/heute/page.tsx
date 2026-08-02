@@ -9,7 +9,6 @@ import { AppointmentsCard } from "@/components/appointments-card";
 import { TasksCard } from "@/components/tasks-card";
 import { MorningCard } from "@/components/morning-card";
 import { PrepCard } from "@/components/prep-card";
-import { EnergyCard } from "@/components/energy-card";
 import { NewsCard } from "@/components/news-card";
 import { Logo } from "@/components/logo";
 import { heuteISO, ZONE } from "@/lib/time";
@@ -61,7 +60,6 @@ export default async function HeutePage() {
       <AppointmentsCard />
       <TodayCard />
       <TradingCard />
-      <EnergyCard />
       <PrepCard />
       <NewsCard />
 

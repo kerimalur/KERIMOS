@@ -1157,6 +1157,11 @@ export async function createAppointment(fd: FormData) {
   const start = zuMinute(str(fd, "start"));
   const ende = zuMinute(str(fd, "end"));
 
+  // Ab wann der Termin auf der Startseite steht. Ohne Angabe zwei Tage
+  // vorher - so verstopft ein Fest in sechs Wochen nicht das Cockpit.
+  const abEingabe = str(fd, "show_from");
+  const showFrom = abEingabe || addDays(startsOn, -2);
+
   check(await supabase.from("appointments").insert({
     user_id: userId,
     title,
@@ -1166,6 +1171,7 @@ export async function createAppointment(fd: FormData) {
     end_minute: start !== null && ende !== null && ende > start ? ende : null,
     location: str(fd, "location") || null,
     note: str(fd, "note") || null,
+    show_from: showFrom,
   }), "Termin anlegen");
   revalidateTermine();
 }

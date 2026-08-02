@@ -2,6 +2,7 @@ import Link from "next/link";
 import { addBodyWeight } from "@/lib/actions";
 import { createGymClient, gymConfigured, type BodyWeightEntry } from "@/lib/supabase/gym";
 import { fetchTodayMenu, menuConfigured, MEAL_LABEL } from "@/lib/supabase/menu";
+import { fetchGarminEnergie } from "@/lib/supabase/garmin";
 import { fetchWeather } from "@/lib/weather";
 import { WeatherIcon } from "@/components/weather-icon";
 import { Button, Card, Input } from "@/components/ui";
@@ -36,7 +37,7 @@ const AUSDAUER_ZIEL = "1–2";
 export async function TodayCard() {
   const gym = gymConfigured() ? createGymClient() : null;
 
-  const [menu, weight, training, woche, wetter] = await Promise.all([
+  const [menu, weight, training, woche, wetter, energie] = await Promise.all([
     menuConfigured() ? fetchTodayMenu() : Promise.resolve(null),
     (async () => {
       if (!gym) return null;
@@ -68,7 +69,19 @@ export async function TodayCard() {
       };
     })(),
     fetchWeather(),
+    // Verbrauch und Schritte von der Uhr. Gehört zur Zufuhr in dasselbe
+    // Kästchen - zwei getrennte Karten für dieselbe Frage waren ein Fehler.
+    gymConfigured() ? fetchGarminEnergie() : Promise.resolve(null),
   ]);
+
+  // Bilanz gegen den Ø-Verbrauch abgeschlossener Tage, nicht gegen den
+  // heutigen Zwischenstand: um 8 Uhr hat die Uhr erst ein paar hundert
+  // Kalorien gezählt, eine Bilanz daraus wäre jeden Morgen dramatisch
+  // und bedeutungslos.
+  const verbrauch = energie?.schnittVerbrauch ?? null;
+  const bilanz = verbrauch && menu && menu.kcal > 0
+    ? Math.round(menu.kcal - verbrauch) : null;
+  const schritte = energie?.heute?.schritte ?? null;
 
   return (
     <Card className="p-5">
@@ -128,6 +141,27 @@ export async function TodayCard() {
                 })()}
               </p>
             </>
+          )}
+
+          {/* Verbrauch und Bilanz - dieselbe Frage wie die Zufuhr darüber,
+              deshalb hier und nicht in einer zweiten Karte. */}
+          {verbrauch !== null && (
+            <p className="tabular mt-1.5 border-t border-line/70 pt-1.5 text-xs">
+              <span className="text-ink-muted">Verbrauch Ø {verbrauch.toLocaleString("de-CH")}</span>
+              {bilanz !== null && (
+                <>
+                  <span className="text-ink-muted"> · </span>
+                  <span className={bilanz < 0 ? "text-good" : "text-accent"}>
+                    {bilanz > 0 ? "+" : ""}{bilanz.toLocaleString("de-CH")} kcal
+                  </span>
+                </>
+              )}
+              {schritte !== null && (
+                <span className="text-ink-muted">
+                  {" "}· {schritte.toLocaleString("de-CH")} Schritte
+                </span>
+              )}
+            </p>
           )}
         </div>
 
@@ -196,8 +230,10 @@ export async function TodayCard() {
               )}
             </>
           )}
-          <Link href="/m/Gym" className="mt-1.5 inline-block text-xs text-accent-soft hover:underline">
-            Zum Gym-Modus →
+          {/* Direkt ins Gym statt über die Auswahlseite /m/Gym: es gibt nur
+              noch einen Gym-Bereich, also nichts zu wählen. */}
+          <Link href="/gym" className="mt-1.5 inline-block text-xs text-accent-soft hover:underline">
+            Zum Gym →
           </Link>
         </div>
 

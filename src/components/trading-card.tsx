@@ -12,12 +12,41 @@ const eventTime = (iso: string) =>
   });
 
 /**
+ * Wochentag und Stunde in Zürcher Zeit - der Server steht in Dublin, die
+ * lokale Zeit des Prozesses taugt für diese Entscheidung nicht.
+ */
+function zuerichJetzt(): { tag: number; stunde: number } {
+  const jetzt = new Date();
+  const teile = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Europe/Zurich", weekday: "short", hour: "numeric", hour12: false,
+  }).formatToParts(jetzt);
+
+  const wochentage = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const kurz = teile.find((t) => t.type === "weekday")?.value ?? "Mon";
+  return {
+    tag: Math.max(0, wochentage.indexOf(kurz)),
+    stunde: Number(teile.find((t) => t.type === "hour")?.value ?? 12),
+  };
+}
+
+/**
  * Kompakte Trading-Karte fürs Cockpit: GVA-Status (Hits + Paare in Reichweite)
  * und Backtest-Fortschritt. Server Component — Details auf /trading.
  */
 export async function TradingCard() {
+  // Am Wochenende ist der Devisenmarkt zu. Eine GVA-Linie hat dann keine
+  // Aussage - sie zeigt einen Stand, auf den niemand reagieren kann. Statt
+  // Setups steht dann der Backtest im Vordergrund, das ist die Arbeit, die
+  // am Wochenende tatsächlich ansteht.
+  const { tag, stunde } = zuerichJetzt();
+  const samstag = tag === 6;
+  const sonntag = tag === 0;
+  // Sydney öffnet Sonntag 22:00 Zürcher Zeit - ab Mittag lohnt der Ausblick.
+  const wochenausblick = sonntag && stunde >= 12;
+  const marktZu = samstag || sonntag;
+
   const [screener, sessions, events] = await Promise.all([
-    fetchScreener(),
+    marktZu ? Promise.resolve(null) : fetchScreener(),
     (async () => {
       const supabase = createTradingClient();
       if (!supabase) return null;
@@ -25,7 +54,7 @@ export async function TradingCard() {
         .from("backtest_sessions").select("id, trades");
       return (data ?? []) as Pick<BacktestSessionRow, "id" | "trades">[];
     })(),
-    fetchTodayEvents(),
+    marktZu ? Promise.resolve([]) : fetchTodayEvents(),
   ]);
 
   const pairs = (screener?.data ?? []) as ScreenerPair[];
@@ -55,7 +84,15 @@ export async function TradingCard() {
       </div>
 
       <div className="mt-3">
-        {!screener ? (
+        {marktZu ? (
+          <p className="text-sm text-ink-muted">
+            {wochenausblick
+              ? "Markt öffnet heute 22:00. Gute Zeit für den Wochenausblick."
+              : samstag
+                ? "Markt zu. Heute zählt nur der Backtest."
+                : "Markt zu bis heute Abend."}
+          </p>
+        ) : !screener ? (
           <p className="text-sm text-ink-muted">
             GVA-Screener startet gerade — Board in einer Minute wieder da.
           </p>
@@ -87,7 +124,10 @@ export async function TradingCard() {
         )}
       </div>
 
-      {/* Wirtschaftskalender: die High-Impact-Termine des Tages */}
+      {/* Wirtschaftskalender: die High-Impact-Termine des Tages.
+          Am Wochenende gibt es keine - dann bleibt die Zeile ganz weg,
+          statt "keine News" zu melden, was ohnehin klar ist. */}
+      {!marktZu && (
       <div className="mt-3 border-t border-line/70 pt-2.5 text-xs">
         {events.length === 0 ? (
           <span className="text-ink-faint">Keine High-Impact-News heute.</span>
@@ -108,6 +148,7 @@ export async function TradingCard() {
           </span>
         )}
       </div>
+      )}
     </Card>
   );
 }

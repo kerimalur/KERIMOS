@@ -76,6 +76,21 @@ export default async function TerminePage() {
             <Label htmlFor="note">Notiz</Label>
             <Input id="note" name="note" placeholder="optional" />
           </div>
+
+          {/* Steuert, ab wann der Termin auf der Startseite auftaucht.
+              Leer = zwei Tage vorher. Wer etwas vorbereiten muss, setzt
+              hier den Tag, an dem die Vorbereitung beginnt. */}
+          <div className="rounded-xl bg-sand/60 p-3">
+            <Label htmlFor="show_from">
+              Muss ich etwas vorbereiten? Dann ab wann erinnern
+            </Label>
+            <Input id="show_from" name="show_from" type="date" />
+            <p className="mt-1 text-xs text-ink-muted">
+              Leer lassen, wenn nichts vorzubereiten ist — dann erscheint der
+              Termin zwei Tage vorher auf der Startseite.
+            </p>
+          </div>
+
           <Button type="submit">Termin anlegen</Button>
         </form>
       </Card>

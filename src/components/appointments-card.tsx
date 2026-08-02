@@ -11,6 +11,8 @@ interface Termin {
   start_minute: number | null;
   end_minute: number | null;
   location: string | null;
+  /** Ab wann der Termin hier auftaucht. Null = zwei Tage vor starts_on. */
+  show_from: string | null;
 }
 
 const hhmm = (m: number) =>
@@ -24,7 +26,14 @@ const zeit = (t: Termin) =>
       : `${hhmm(t.start_minute)}–${hhmm(t.end_minute)}`;
 
 /**
- * Anstehende Termine: heute zuerst, dann die nächsten zwei Wochen.
+ * Anstehende Termine - aber nur die, die den Tag tatsächlich beeinflussen.
+ *
+ * Ein Fest in sechs Wochen ändert heute nichts und gehört deshalb nicht auf
+ * die Startseite, sondern in den Kalender. Massgeblich ist `show_from`:
+ * ohne Vorbereitung setzt das Formular zwei Tage vor dem Termin, mit
+ * Vorbereitung wählt Kerim den Tag selbst. Termine ohne Wert erscheinen
+ * ersatzweise zwei Tage vorher.
+ *
  * Fehlt die Tabelle noch, bleibt die Karte still weg.
  */
 export async function AppointmentsCard() {
@@ -32,14 +41,17 @@ export async function AppointmentsCard() {
   const heute = heuteISO();
 
   const { data, error } = await supabase.from("appointments")
-    .select("id, title, starts_on, start_minute, end_minute, location")
-    .gte("starts_on", heute).lte("starts_on", addDays(heute, 14))
+    .select("id, title, starts_on, start_minute, end_minute, location, show_from")
+    .gte("starts_on", heute)
     .order("starts_on").order("start_minute", { nullsFirst: true })
-    .limit(6);
+    .limit(20);
 
   if (error) return null;
 
-  const termine = (data ?? []) as Termin[];
+  const termine = ((data ?? []) as Termin[]).filter((t) => {
+    const ab = t.show_from ?? addDays(t.starts_on, -2);
+    return ab <= heute;
+  }).slice(0, 6);
   const heutige = termine.filter((t) => t.starts_on === heute);
   const spaeter = termine.filter((t) => t.starts_on > heute);
 
@@ -57,7 +69,7 @@ export async function AppointmentsCard() {
 
       {termine.length === 0 ? (
         <p className="text-sm text-ink-muted">
-          Keine Termine in den nächsten zwei Wochen.
+          Nichts, was heute zählt.
         </p>
       ) : (
         <ul className="space-y-1.5">
