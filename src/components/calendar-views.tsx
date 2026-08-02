@@ -171,10 +171,18 @@ export function DayCalendar({
       <Card>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <CardTitle className="mb-0">Tag</CardTitle>
-          <span className="tabular text-xs text-ink-muted">
-            {cursor === null
-              ? "Auf eine Stunde klicken, um dort einzutragen"
-              : `${fmtHours(filled)} von 24 h belegt`}
+          <span className="flex items-center gap-3">
+            <span className="tabular text-xs text-ink-muted">
+              {cursor === null
+                ? "Auf eine Stunde klicken, um dort einzutragen"
+                : `${fmtHours(filled)} von 24 h belegt`}
+            </span>
+            {/* Dieselben Daten als durchgehende Achse - dort sind die
+                Lücken auf einen Blick sichtbar statt Zelle für Zelle. */}
+            <Link href="/achse"
+              className="shrink-0 text-xs font-medium text-accent-soft transition hover:underline">
+              Als Achse →
+            </Link>
           </span>
         </div>
 

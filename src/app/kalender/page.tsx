@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { CalendarNav, type CalView } from "@/components/calendar-nav";
 import { DayCalendar, WeekCalendar, MonthCalendar } from "@/components/calendar-views";
 import { Button, Card, CardTitle, Empty, Stat } from "@/components/ui";
+import { SchichtErinnerung } from "@/components/schicht-erinnerung";
 import { seedActivities } from "@/lib/actions";
 import {
   addDays, toISODate, weekStart as toWeekStart, fmtHours, pct, summarizeWeek, heuteISO,
@@ -128,6 +129,10 @@ export default async function KalenderPage({
           Zeit vergangen, die du nicht zugeordnet hast.
         </p>
       </div>
+
+      {/* Ohne eingetragene Schichten lässt sich die Woche nicht planen -
+          deshalb steht die Erinnerung vor allem anderen. */}
+      <SchichtErinnerung />
 
       <CalendarNav view={view} date={date} anchor={anchor} />
 
