@@ -1,2 +1,4 @@
-garminconnect==0.2.25
+# 0.3.x hat die interne API umgestellt (api.garth -> api.client) und nutzt
+# curl-cffi, was gegen Garmins 429-Drosselung besser durchkommt.
+garminconnect==0.3.2
 requests>=2.31.0

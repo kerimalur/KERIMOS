@@ -97,11 +97,38 @@ class Gym:
 
 # ----------------------------------------------------------------- Garmin
 
+TOKEN_HINWEIS = (
+    "Garmin-Anmeldung vom Server nicht möglich. Garmin drosselt Logins aus "
+    "Rechenzentren (429). Bitte lokal einmal ausführen: "
+    "python tools/garmin-token/hole-token.py"
+)
+
+
+def token_traeger(api):
+    """
+    Das Objekt, das die Sitzungs-Token haelt.
+
+    garminconnect 0.3.x nennt es `client`, aeltere Versionen `garth`. Beides
+    kann `dumps()` und `loads()` - nur der Name hat sich geaendert.
+    """
+    traeger = getattr(api, "client", None) or getattr(api, "garth", None)
+    if traeger is None:
+        raise RuntimeError("garminconnect: weder .client noch .garth vorhanden")
+    return traeger
+
+
 def garmin_login(gym: Gym):
     """
-    Meldet sich bei Garmin an. Nutzt bevorzugt den gecachten Garth-Token, damit
-    nicht bei jedem Cron-Lauf ein frischer Login passiert - Garmin drosselt das
-    sonst irgendwann.
+    Meldet sich bei Garmin an.
+
+    Der Normalfall ist der gespeicherte Token aus der Tabelle `settings`.
+    Ein Passwort-Login von hier aus schlaegt fast immer mit 429 fehl, weil
+    Garmin Anmeldungen aus Rechenzentren drosselt - deshalb ist er nur noch
+    Notnagel und wirft im Fehlerfall einen erklaerenden Hinweis.
+
+    Der Token wird nach erfolgreicher Nutzung zurueckgeschrieben: die Library
+    erneuert das kurzlebige Access-Token unterwegs selbst, und diese Erneuerung
+    soll nicht bei jedem Lauf verloren gehen.
     """
     from garminconnect import Garmin
 
@@ -109,23 +136,37 @@ def garmin_login(gym: Gym):
     if cached:
         try:
             api = Garmin()
-            api.garth.loads(cached)
-            api.display_name = api.garth.profile["displayName"]
-            api.full_name = api.garth.profile["fullName"]
+            # Ein Token-String laenger als 512 Zeichen wird direkt als
+            # Sitzungsdaten interpretiert (statt als Pfad zu einem Ordner).
+            # login() setzt dabei auch display_name und Einheitensystem.
+            api.login(tokenstore=cached)
             # Ein echter Aufruf ist der einzige verlaessliche Gueltigkeitstest.
             api.get_user_summary(datetime.now().date().isoformat())
+
+            aktualisiert = token_traeger(api).dumps()
+            if aktualisiert != cached:
+                gym.upsert_setting(TOKEN_SETTING_KEY, aktualisiert)
+
             return api, "token"
-        except Exception:
-            pass  # Token abgelaufen -> normaler Login unten
+        except Exception as fehler:
+            letzter_tokenfehler = str(fehler)
+    else:
+        letzter_tokenfehler = "kein Token hinterlegt"
 
     email = os.environ.get("GARMIN_EMAIL")
     password = os.environ.get("GARMIN_PASSWORD")
     if not email or not password:
-        raise RuntimeError("GARMIN_EMAIL / GARMIN_PASSWORD fehlen")
+        raise RuntimeError(f"{TOKEN_HINWEIS} (Token: {letzter_tokenfehler})")
 
-    api = Garmin(email, password)
-    api.login()
-    gym.upsert_setting(TOKEN_SETTING_KEY, api.garth.dumps())
+    try:
+        api = Garmin(email, password)
+        api.login()
+    except Exception as fehler:
+        raise RuntimeError(
+            f"{TOKEN_HINWEIS} — Token: {letzter_tokenfehler}; Login: {fehler}"
+        ) from fehler
+
+    gym.upsert_setting(TOKEN_SETTING_KEY, token_traeger(api).dumps())
     return api, "passwort"
 
 
@@ -280,11 +321,36 @@ def verarbeite_aktivitaet(gym: Gym, api, aktivitaet: dict, mapping: dict,
     }
 
 
+def ermittle_user_id(gym: Gym) -> str:
+    """
+    Besitzer der neuen Zeilen.
+
+    Die Gym-Datenbank hat eine eigene Anmeldung, ein KerimOS-Nutzer existiert
+    dort nicht - die user_id muss also von aussen kommen. Bevorzugt aus
+    GYM_USER_ID; sonst die ID mit den meisten Sessions. Bewusst nicht "die
+    erste beste": in der DB liegen noch ein paar alte Testzeilen mit einer
+    anderen user_id, die sonst gewinnen könnten.
+    """
+    ausEnv = os.environ.get("GYM_USER_ID")
+    if ausEnv:
+        return ausEnv
+
+    zeilen = gym.select("workout_sessions", {"select": "user_id", "limit": "1000"})
+    haeufigkeit: dict = {}
+    for z in zeilen:
+        uid = z.get("user_id")
+        if uid:
+            haeufigkeit[uid] = haeufigkeit.get(uid, 0) + 1
+
+    if not haeufigkeit:
+        raise RuntimeError("GYM_USER_ID fehlt und keine bestehende Session zum Ableiten")
+
+    return max(haeufigkeit.items(), key=lambda p: p[1])[0]
+
+
 def sync() -> dict:
     gym = Gym()
-    user_id = os.environ.get("GYM_USER_ID")
-    if not user_id:
-        raise RuntimeError("GYM_USER_ID fehlt")
+    user_id = ermittle_user_id(gym)
 
     api, methode = garmin_login(gym)
     mapping = lade_mapping(gym)
