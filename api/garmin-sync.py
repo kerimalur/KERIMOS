@@ -318,13 +318,17 @@ def verarbeite_aktivitaet(gym: Gym, api, aktivitaet: dict, mapping: dict,
         gewicht_kg = round(float(gewicht) / 1000.0, 2) if gewicht else 0
 
         satzstart = parse_zeit(satz.get("startTime"))
+
+        # Pflichtfelder von exercise_logs: workout_session_id, exercise_id,
+        # set_number, weight_kg, reps - alle ohne Default. `rir` hat dagegen
+        # den Default 2 und wird bewusst NICHT mitgeschickt: die Uhr misst
+        # keinen RIR, und ein explizites None wuerde den Default aushebeln.
         logzeilen.append({
             "workout_session_id": None,  # wird nach dem Session-Insert gesetzt
             "exercise_id": exercise_id,
             "set_number": satzzaehler[exercise_id],
             "weight_kg": gewicht_kg,
-            "reps": satz.get("repetitionCount"),
-            "rir": None,
+            "reps": int(satz.get("repetitionCount") or 0),
             "completed_at": satzstart.isoformat() if satzstart else None,
         })
 
