@@ -534,6 +534,8 @@ export interface HistorySession {
   cardio: HistoryCardio[];
   /** Gewicht × Wiederholungen über alle Sätze. */
   volumen: number;
+  /** Woher die Einheit stammt - 'garmin' kommt von der Uhr. */
+  logSource: string;
 }
 
 /** Abgeschlossene Einheiten samt Sätzen - die Grundlage der Verlauf-Seite. */
@@ -542,7 +544,7 @@ export async function fetchHistory(limit = 40): Promise<HistorySession[]> {
   if (!supabase) return [];
 
   const { data: sessions } = await supabase.from("workout_sessions")
-    .select("id, training_day_id, started_at, completed_at")
+    .select("id, training_day_id, started_at, completed_at, log_source")
     .not("completed_at", "is", null)
     .order("completed_at", { ascending: false }).limit(limit);
   const liste = sessions ?? [];
@@ -604,6 +606,7 @@ export async function fetchHistory(limit = 40): Promise<HistorySession[]> {
       sets,
       cardio: cardioNachSession.get(s.id as string) ?? [],
       volumen: Math.round(sets.reduce((sum, x) => sum + x.weightKg * x.reps, 0)),
+      logSource: (s.log_source as string | null) ?? "tracked",
     };
   });
 }

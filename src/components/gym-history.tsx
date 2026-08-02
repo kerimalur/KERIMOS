@@ -14,6 +14,8 @@ interface HistoryCardio {
 interface Session {
   id: string; trainingDayName: string; startedAt: string; completedAt: string;
   sets: HistorySet[]; cardio: HistoryCardio[]; volumen: number;
+  /** 'garmin' = von der Uhr importiert, sonst hier erfasst. */
+  logSource: string;
 }
 
 /** "Do, 30.07.2026 · 18:45" */
@@ -114,8 +116,19 @@ export function GymHistory({ sessions }: { sessions: Session[] }) {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <button onClick={() => setOffen(auf ? null : s.id)}
                 className="min-w-0 flex-1 text-left">
-                <span className="block truncate text-sm font-medium text-ink">
-                  {s.trainingDayName}
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="truncate text-sm font-medium text-ink">
+                    {s.trainingDayName}
+                  </span>
+                  {s.logSource === "garmin" && (
+                    <span
+                      title="Von der Garmin-Uhr importiert"
+                      className="shrink-0 rounded-md bg-sand px-1.5 py-0.5 text-[10px]
+                                 font-medium uppercase tracking-wide text-ink-muted"
+                    >
+                      Garmin
+                    </span>
+                  )}
                 </span>
                 <span className="block text-xs text-ink-muted">
                   {zeitpunkt(s.completedAt)}
