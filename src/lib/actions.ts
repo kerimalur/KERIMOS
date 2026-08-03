@@ -71,7 +71,8 @@ export async function addBodyWeight(fd: FormData) {
     source: "kerimos",
     user_id: gymUserId,
   }), "Gewicht speichern");
-  revalidatePath("/gym"); revalidatePath("/quick"); revalidatePath("/");
+  revalidatePath("/gym"); revalidatePath("/quick");
+  revalidatePath("/heute"); revalidatePath("/");
 }
 
 /* -------------------------------------------------------- Einkaufsliste */

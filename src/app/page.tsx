@@ -7,6 +7,7 @@ import { TasksCard } from "@/components/tasks-card";
 import { AppointmentsCard } from "@/components/appointments-card";
 import { Tagessatz } from "@/components/tagessatz";
 import { Tagesstrahl } from "@/components/tagesstrahl";
+import { GewichtHeute } from "@/components/gewicht-heute";
 import { Logo } from "@/components/logo";
 import { QuickSearch } from "@/components/quick-search";
 import { Button, Card } from "@/components/ui";
@@ -127,6 +128,7 @@ export default async function Start({
       {/* Was heute eine Entscheidung braucht. Jede Karte blendet sich selbst
           aus, wenn nichts ansteht - dann steht hier schlicht nichts. */}
       <div className="mb-7 space-y-3">
+        <GewichtHeute />
         <TasksCard />
         <AppointmentsCard />
 

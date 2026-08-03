@@ -8,6 +8,7 @@ import { TasksCard } from "@/components/tasks-card";
 import { MorningCard } from "@/components/morning-card";
 import { Tagessatz } from "@/components/tagessatz";
 import { Tagesstrahl } from "@/components/tagesstrahl";
+import { GewichtHeute } from "@/components/gewicht-heute";
 import { Logo } from "@/components/logo";
 import { heuteISO } from "@/lib/time";
 import type { Activity, FocusSession } from "@/lib/types";
@@ -54,6 +55,7 @@ export default async function HeutePage() {
       {/* Nur was eine Entscheidung braucht - Trading, Kalorien und Verlauf
           leben in ihren Modi, genau wie auf der Startseite. */}
       <MorningCard />
+      <GewichtHeute />
       <TasksCard />
       <AppointmentsCard />
 
