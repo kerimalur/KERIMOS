@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Card, CardTitle } from "@/components/ui";
+import { Essenszeiten } from "@/components/essenszeiten";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,9 @@ const HIER = [
 
 export default function EssenMehrPage() {
   return (
+    <div className="space-y-5">
+    <Essenszeiten />
+
     <Card>
       <CardTitle>Verwalten</CardTitle>
       <ul className="divide-y divide-line">
@@ -34,5 +38,6 @@ export default function EssenMehrPage() {
         ))}
       </ul>
     </Card>
+    </div>
   );
 }
