@@ -10,6 +10,10 @@ import { Card, CardTitle } from "@/components/ui";
  *
  * Die Uhrzeiten sind kein Dogma - entscheidend ist der Abstand zum Training.
  * Feste Mahlzeit braucht 1,5 bis 2 Stunden Vorlauf, flüssig reichen 45 Minuten.
+ *
+ * Beim Frühtraining wird nüchtern trainiert, nur Kaffee davor. Der Shake
+ * kommt danach - vor der Schicht bleibt gar keine Zeit für Verdauung, und
+ * bei einer Einheit unter einer Stunde bringt das Essen davor ohnehin nichts.
  */
 
 interface Tagesmuster {
@@ -32,10 +36,11 @@ const MUSTER: Tagesmuster[] = [
   },
   {
     titel: "Arbeitstag · Training 07:30 vor der Schicht",
-    hinweis: "Nur 45 Minuten Vorlauf — flüssig statt fest, sonst liegt es im Magen.",
+    hinweis: "Nüchtern trainieren, nur Kaffee. Der Shake kommt danach.",
     zeiten: [
-      { uhr: "06:30", was: "Whey-Shake mit Banane und feinen Haferflocken", betont: true },
-      { uhr: "07:15", was: "Training" },
+      { uhr: "07:00", was: "Kaffee, sonst nichts" },
+      { uhr: "07:30", was: "Training nüchtern" },
+      { uhr: "08:30", was: "Post-Workout Shake to-go", betont: true },
       { uhr: "08:45", was: "Schichtbeginn" },
       { uhr: "11:00", was: "Meal-Prep-Box" },
       { uhr: "15:30", was: "Magerquark mit Blaubeeren" },
