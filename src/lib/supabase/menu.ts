@@ -639,18 +639,18 @@ export interface DayTemplateItem {
   recipe_id: string;
   recipeName: string;
   sort_order: number;
+  /**
+   * Nur an Trainingstagen. Wird die Vorlage ohne Training eingefügt,
+   * taucht diese Zeile gar nicht erst in der Auswahl auf — typisch das
+   * Porridge, das den Trainingstag ausgleicht.
+   */
+  training_only: boolean;
 }
 
 export interface DayTemplate {
   id: string;
   name: string;
   with_snacks: boolean;
-  /** Trainingstag oder trainingsfreier Tag. Steuert nur die Zielwerte. */
-  is_training_day: boolean;
-  /** Kalorienziel dieses Tag-Typs. */
-  kcal_target: number;
-  /** Proteinziel in g — bleibt an freien Tagen gleich. */
-  protein_target: number;
   items: DayTemplateItem[];
 }
 
@@ -667,27 +667,22 @@ export async function fetchDayTemplates(): Promise<DayTemplate[]> {
   if (!supabase) return [];
 
   const { data: vorlagen } = await supabase.from("day_templates")
-    .select("id, name, with_snacks, is_training_day, kcal_target, protein_target")
-    .order("name");
-  const liste = ((vorlagen ?? []) as Record<string, unknown>[]).map((v) => ({
-    id: v.id as string,
-    name: v.name as string,
-    with_snacks: Boolean(v.with_snacks),
-    // Fallbacks, damit die Vorlagenliste auch dann steht, wenn Migration 13
-    // noch nicht eingespielt ist.
-    is_training_day: v.is_training_day === undefined ? true : Boolean(v.is_training_day),
-    kcal_target: Number(v.kcal_target ?? 2100),
-    protein_target: Number(v.protein_target ?? 190),
-  }));
+    .select("id, name, with_snacks").order("name");
+  const liste = (vorlagen ?? []) as { id: string; name: string; with_snacks: boolean }[];
   if (liste.length === 0) return [];
 
   const { data: itemRows } = await supabase.from("day_template_items")
-    .select("id, template_id, meal_type, recipe_id, sort_order")
+    .select("id, template_id, meal_type, recipe_id, sort_order, training_only")
     .in("template_id", liste.map((v) => v.id)).order("sort_order");
-  const items = (itemRows ?? []) as {
-    id: string; template_id: string; meal_type: string;
-    recipe_id: string; sort_order: number;
-  }[];
+  const items = ((itemRows ?? []) as Record<string, unknown>[]).map((i) => ({
+    id: i.id as string,
+    template_id: i.template_id as string,
+    meal_type: i.meal_type as string,
+    recipe_id: i.recipe_id as string,
+    sort_order: Number(i.sort_order ?? 0),
+    // Fallback, damit die Liste auch ohne Migration 14 steht.
+    training_only: Boolean(i.training_only),
+  }));
 
   const recipeIds = [...new Set(items.map((i) => i.recipe_id))];
   const namen = new Map<string, string>();
@@ -704,6 +699,7 @@ export async function fetchDayTemplates(): Promise<DayTemplate[]> {
       id: i.id, meal_type: i.meal_type, recipe_id: i.recipe_id,
       recipeName: namen.get(i.recipe_id) ?? "Gelöschtes Rezept",
       sort_order: i.sort_order,
+      training_only: i.training_only,
     });
     nachVorlage.set(i.template_id, list);
   }

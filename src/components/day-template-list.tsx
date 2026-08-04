@@ -1,7 +1,9 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createDayTemplate, deleteDayTemplate, updateDayTemplate } from "@/lib/actions";
+import {
+  createDayTemplate, deleteDayTemplate, setTemplateItemTrainingOnly,
+} from "@/lib/actions";
 import { Button, Card, CardTitle, Empty, Input, Select, cx } from "@/components/ui";
 import { MEAL_LABEL, istSnack } from "@/lib/menu-labels";
 import type { DayTemplate } from "@/lib/supabase/menu";
@@ -15,6 +17,8 @@ interface RezeptOption {
 interface Zeile {
   meal_type: string;
   recipe_id: string;
+  /** Gibt es nur an Trainingstagen - ohne Training nicht im Dialog. */
+  training_only: boolean;
 }
 
 /** Slots einer Vorlage. Snacks kommen nur dazu, wenn man sie einschaltet. */
@@ -39,9 +43,6 @@ export function DayTemplateList({
   const [name, setName] = useState("");
   const [mitSnacks, setMitSnacks] = useState(false);
   const [zeilen, setZeilen] = useState<Zeile[]>([]);
-  // Trainingstag ist der Normalfall. An freien Tagen sinken nur die
-  // Kalorien - das Proteinziel bleibt in beiden Faellen gleich.
-  const [training, setTraining] = useState(true);
 
   const hauptRezepte = rezepte.filter((r) => !istSnack(r.meal_type));
   const snackRezepte = rezepte.filter((r) => istSnack(r.meal_type));
@@ -54,8 +55,14 @@ export function DayTemplateList({
 
   function setzen(slot: string, recipeId: string) {
     setZeilen((list) => {
+      const vorher = list.find((z) => z.meal_type === slot);
       const ohne = list.filter((z) => z.meal_type !== slot);
-      return recipeId ? [...ohne, { meal_type: slot, recipe_id: recipeId }] : ohne;
+      return recipeId
+        ? [...ohne, {
+            meal_type: slot, recipe_id: recipeId,
+            training_only: vorher?.training_only ?? false,
+          }]
+        : ohne;
     });
   }
 
@@ -68,29 +75,28 @@ export function DayTemplateList({
     const fd = new FormData();
     fd.set("name", name.trim());
     fd.set("items", JSON.stringify(zeilen));
-    fd.set("is_training_day", String(training));
-    fd.set("kcal_target", String(training ? 2100 : 1800));
-    fd.set("protein_target", "190");
     await createDayTemplate(fd);
     setBusy(false);
     setNeu(false);
     setName("");
     setZeilen([]);
     setMitSnacks(false);
-    setTraining(true);
     router.refresh();
   }
 
-  /** Tag-Typ einer bestehenden Vorlage umschalten. Rezepte bleiben. */
-  async function tagTypWechseln(id: string, neuTraining: boolean) {
+  /**
+   * Eine Zeile ans Training binden oder wieder loesen.
+   *
+   * Gebundene Zeilen erscheinen beim Einfuegen ohne Training gar nicht
+   * erst - typisch das Porridge, das den Trainingstag ausgleicht.
+   */
+  async function bindungWechseln(itemId: string, neu: boolean) {
     if (busy) return;
     setBusy(true);
     const fd = new FormData();
-    fd.set("id", id);
-    fd.set("is_training_day", String(neuTraining));
-    fd.set("kcal_target", String(neuTraining ? 2100 : 1800));
-    fd.set("protein_target", "190");
-    await updateDayTemplate(fd);
+    fd.set("id", itemId);
+    fd.set("training_only", String(neu));
+    await setTemplateItemTrainingOnly(fd);
     setBusy(false);
     router.refresh();
   }
@@ -136,28 +142,6 @@ export function DayTemplateList({
                 }} />
               Mit Snacks
             </label>
-          </div>
-
-          {/* Tag-Typ: steuert nur die Zielwerte, nicht die Rezepte. */}
-          <div>
-            <span className="mb-1.5 block text-xs text-ink-muted">Tag-Typ</span>
-            <div className="flex flex-wrap gap-2">
-              {[
-                { an: true, label: "Trainingstag", sub: "2100 kcal · 190 g P" },
-                { an: false, label: "Kein Training", sub: "1800 kcal · 190 g P" },
-              ].map((o) => (
-                <button key={String(o.an)} type="button" onClick={() => setTraining(o.an)}
-                  className={cx(
-                    "rounded-lg px-3 py-1.5 text-left text-xs transition",
-                    training === o.an
-                      ? "bg-accent text-ink-on"
-                      : "bg-sand text-ink-muted hover:text-ink-soft"
-                  )}>
-                  <span className="block font-medium">{o.label}</span>
-                  <span className="block opacity-80">{o.sub}</span>
-                </button>
-              ))}
-            </div>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
@@ -208,27 +192,40 @@ export function DayTemplateList({
       ) : (
         <ul className="divide-y divide-line">
           {templates.map((v) => (
-            <li key={v.id} className="flex flex-wrap items-center gap-3 py-2.5">
+            <li key={v.id} className="flex flex-wrap items-start gap-3 py-2.5">
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium text-ink">{v.name}</div>
-                <div className="truncate text-xs text-ink-muted">
-                  {v.items.length === 0
-                    ? "keine Mahlzeiten"
-                    : v.items
-                        .map((i) => `${MEAL_LABEL[i.meal_type] ?? i.meal_type}: ${i.recipeName}`)
-                        .join(" · ")}
-                </div>
+
+                {v.items.length === 0 ? (
+                  <div className="text-xs text-ink-muted">keine Mahlzeiten</div>
+                ) : (
+                  <ul className="mt-1 space-y-1">
+                    {v.items.map((i) => (
+                      <li key={i.id} className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs text-ink-muted">
+                          {MEAL_LABEL[i.meal_type] ?? i.meal_type}:{" "}
+                          <span className="text-ink-soft">{i.recipeName}</span>
+                        </span>
+                        {/* Nur mit Training: die Zeile faellt an trainingsfreien
+                            Tagen komplett aus der Auswahl - typisch das Porridge. */}
+                        <button onClick={() => bindungWechseln(i.id, !i.training_only)}
+                          disabled={busy}
+                          title={i.training_only
+                            ? "Wird ohne Training nicht angeboten. Klicken, um sie immer anzubieten."
+                            : "Wird immer angeboten. Klicken, um sie an Trainingstage zu binden."}
+                          className={cx(
+                            "rounded px-1.5 py-0.5 text-[10px] font-medium transition",
+                            i.training_only
+                              ? "bg-accent-tint text-accent-soft"
+                              : "bg-sand text-ink-faint hover:text-ink-soft"
+                          )}>
+                          {i.training_only ? "nur mit Training" : "immer"}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
-              {/* Tag-Typ umschaltbar: Rezepte bleiben, nur die Ziele ändern sich. */}
-              <button onClick={() => tagTypWechseln(v.id, !v.is_training_day)}
-                disabled={busy}
-                title={`${v.kcal_target} kcal · ${v.protein_target} g Protein — zum Wechseln klicken`}
-                className={cx("rounded-lg px-2 py-0.5 text-[11px] font-medium transition",
-                  v.is_training_day
-                    ? "bg-accent-tint text-accent-soft"
-                    : "bg-sand text-ink-soft hover:text-ink")}>
-                {v.is_training_day ? "Trainingstag" : "kein Training"} · {v.kcal_target} kcal
-              </button>
               <span className={cx("rounded-lg px-2 py-0.5 text-[11px] font-medium",
                 v.with_snacks ? "bg-accent-tint text-accent-soft" : "bg-sand text-ink-soft")}>
                 {v.with_snacks ? "mit Snacks" : "ohne Snacks"}

@@ -38,6 +38,7 @@ uebersetze("src/lib/meal-swap.ts", "meal-swap.mjs");
 const {
   rezeptWerte, skaliert, summeAktiv, restBudget, distanz,
   alternativen, proteinLuecke, ampelKcal, ampelProtein, ausserhalbZeitfenster,
+  sichtbareKomponenten, zielFuer, TAGESZIEL,
 } = await import(pathToFileURL(path.join(tmp, "meal-swap.mjs")).href);
 
 let bestanden = 0;
@@ -262,6 +263,51 @@ pruefe("Anwendungsfall: freier Tag, Porridge weg, Rest passt in 1800 kcal", () =
   assert.ok(rest.kcal > 0, "es bleibt Budget uebrig");
   const vorschlaege = alternativen({ rezepte, foodById, rest, slot: "mittagessen" });
   assert.ok(vorschlaege.every((a) => a.werte.kcal <= rest.kcal * 1.1));
+});
+
+// --- 11 Tag-Typ: mit und ohne Training ------------------------------
+pruefe("zielFuer liefert 2100 mit und 1800 ohne Training", () => {
+  assert.deepEqual(zielFuer(true), { kcal: 2100, protein: 190 });
+  assert.deepEqual(zielFuer(false), { kcal: 1800, protein: 190 });
+  // Protein bleibt gleich - gespart wird an Kalorien, nie am Eiweiss.
+  assert.equal(TAGESZIEL.training.protein, TAGESZIEL.ohne.protein);
+});
+
+const mitPorridge = [
+  { key: "p", meal_type: "fruehstueck", recipe_id: "r-porridge", faktor: 1, aktiv: true, training_only: true },
+  { key: "b", meal_type: "mittagessen", recipe_id: "r-poulet",   faktor: 1, aktiv: true, training_only: false },
+  { key: "c", meal_type: "snack",       recipe_id: "r-quark",    faktor: 1, aktiv: true, training_only: false },
+];
+
+pruefe("ohne Training faellt die trainingsgebundene Zeile ganz weg", () => {
+  const mit = sichtbareKomponenten(mitPorridge, true);
+  const ohne = sichtbareKomponenten(mitPorridge, false);
+  assert.equal(mit.length, 3);
+  assert.equal(ohne.length, 2);
+  assert.ok(!ohne.some((k) => k.recipe_id === "r-porridge"),
+    "Porridge darf ohne Training gar nicht erst auftauchen");
+});
+
+pruefe("Porridge zaehlt ohne Training auch nicht in die Summe", () => {
+  const mit = summeAktiv(sichtbareKomponenten(mitPorridge, true), werteFuer);
+  const ohne = summeAktiv(sichtbareKomponenten(mitPorridge, false), werteFuer);
+  assert.ok(mit.kcal > ohne.kcal);
+  assert.equal(Math.round(mit.kcal - ohne.kcal), 406);
+});
+
+pruefe("ohne Training bleibt Budget fuer etwas mit mehr Volumen", () => {
+  // Genau Kerims Fall: kein Training -> Porridge weg, Ziel sinkt auf 1800,
+  // es muss trotzdem noch Luft nach oben bleiben.
+  const ohne = sichtbareKomponenten(mitPorridge, false);
+  const rest = restBudget(zielFuer(false), summeAktiv(ohne, werteFuer));
+  assert.ok(rest.kcal > 300,
+    "es muessen mehr als 300 freie kcal uebrig bleiben, sonst lohnt der Tausch nicht");
+});
+
+pruefe("mit Training bleibt das Porridge drin und das Ziel bei 2100", () => {
+  const mit = sichtbareKomponenten(mitPorridge, true);
+  assert.ok(mit.some((k) => k.recipe_id === "r-porridge"));
+  assert.equal(zielFuer(true).kcal, 2100);
 });
 
 console.log("\n" + bestanden + " Pruefungen bestanden.");

@@ -47,6 +47,21 @@ export interface Komponente {
   faktor: number;
   /** Angehakt = wird eingefügt. */
   aktiv: boolean;
+  /** Gibt es nur an Trainingstagen — ohne Training nicht wählbar. */
+  training_only: boolean;
+}
+
+/**
+ * Die Zeilen, die für den gewählten Tag-Typ überhaupt zur Auswahl stehen.
+ *
+ * Ohne Training verschwinden die trainingsgebundenen Zeilen komplett —
+ * nicht nur abgehakt, sondern gar nicht erst angeboten. Sonst hakt man sie
+ * jedes Mal von Hand ab, und genau das war der Punkt.
+ */
+export function sichtbareKomponenten(
+  alle: Komponente[], mitTraining: boolean
+): Komponente[] {
+  return mitTraining ? alle : alle.filter((k) => !k.training_only);
 }
 
 export interface Ziel {
@@ -58,6 +73,22 @@ export interface Ziel {
 
 /** Auswahlbare Portionsgrössen. Kein Freitextfeld — bewusst grob. */
 export const FAKTOREN = [0.5, 1, 1.5] as const;
+
+/**
+ * Tagesziele nach Tag-Typ.
+ *
+ * Jede Vorlage gibt es in beiden Ausführungen — entschieden wird beim
+ * Einfügen, nicht beim Anlegen. Ohne Training fallen rund 300 kcal weg
+ * (typisch das Porridge); das Proteinziel bleibt in beiden Fällen gleich,
+ * weil gespart wird an Kalorien, nie am Eiweiss.
+ */
+export const TAGESZIEL = {
+  training: { kcal: 2100, protein: 190 },
+  ohne: { kcal: 1800, protein: 190 },
+} as const;
+
+export const zielFuer = (mitTraining: boolean): Ziel =>
+  mitTraining ? { ...TAGESZIEL.training } : { ...TAGESZIEL.ohne };
 
 /** Bis zu wie vielen Zutaten ein Rezept als "einfach" gilt. */
 export const EINFACH_MAX_ZUTATEN = 5;

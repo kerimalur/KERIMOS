@@ -8,7 +8,8 @@ import type { DayTemplate } from "@/lib/supabase/menu";
 import type { FoodOption, RezeptOption } from "@/components/meal-form";
 import {
   FAKTOREN, alternativen, ampelKcal, ampelProtein, ausserhalbZeitfenster,
-  proteinLuecke, restBudget, rezeptWerte, skaliert, summeAktiv,
+  TAGESZIEL, proteinLuecke, restBudget, rezeptWerte, sichtbareKomponenten,
+  skaliert, summeAktiv, zielFuer,
   type Komponente,
 } from "@/lib/meal-swap";
 
@@ -21,18 +22,21 @@ const ampelKlasse = (stand: "gut" | "unter" | "ueber") =>
 /**
  * Vorlage auf einen Tag laden — aber nicht blind.
  *
- * Statt die ganze Vorlage einzufügen, öffnet sich diese Auswahl: jede
- * Komponente lässt sich abwählen, in der Portionsgrösse ändern oder gegen
- * ein anderes Rezept tauschen. Oben läuft die Summe gegen die Zielwerte
- * der Vorlage mit.
+ * Jede Vorlage gibt es in zwei Ausführungen: mit und ohne Training. Der
+ * Umschalter oben entscheidet, welche das ist — und zwar erst hier, beim
+ * Einfügen, nicht schon beim Anlegen der Vorlage.
  *
- * Der eigentliche Nutzen steckt im Tausch: die Alternativen werden nicht
- * nach "ist ähnlich" gesucht, sondern nach "passt in das, was vom Tag noch
- * übrig ist". Damit funktioniert sowohl "Porridge weglassen und Kalorien
- * sparen" als auch "Porridge weglassen und dafür abends mehr essen".
+ * Ohne Training verschwinden die trainingsgebundenen Zeilen komplett aus
+ * der Liste (typisch das Porridge) und das Ziel sinkt auf 1800 kcal. Die
+ * frei gewordenen ~300 kcal sind dann Budget für etwas, das mehr Volumen
+ * hat — genau dafür ist die Tausch-Funktion da.
+ *
+ * Der Tausch sucht nicht "was ist ähnlich", sondern "was passt in das, was
+ * vom Tag noch übrig ist".
  */
 export function TemplateApplyDialog({
-  vorlage, date, foods, rezepte, bestand = {}, arbeitstag = false, onFertig,
+  vorlage, date, foods, rezepte, bestand = {},
+  arbeitstag = false, trainingVorgabe = true, onFertig,
 }: {
   vorlage: DayTemplate;
   date: string;
@@ -42,10 +46,15 @@ export function TemplateApplyDialog({
   bestand?: Record<string, number>;
   /** Arbeitstag im Besenval: letzte Mahlzeit 17:00. */
   arbeitstag?: boolean;
+  /** Vorbelegung des Umschalters, z.B. aus dem Trainings-Marker des Tages. */
+  trainingVorgabe?: boolean;
   onFertig: () => void;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+
+  /** Mit oder ohne Training — die eigentliche Entscheidung in diesem Dialog. */
+  const [mitTraining, setMitTraining] = useState(trainingVorgabe);
 
   const [komponenten, setKomponenten] = useState<Komponente[]>(() =>
     vorlage.items.map((i) => ({
@@ -54,6 +63,7 @@ export function TemplateApplyDialog({
       recipe_id: i.recipe_id,
       faktor: 1,
       aktiv: true,
+      training_only: i.training_only,
     }))
   );
 
@@ -75,14 +85,26 @@ export function TemplateApplyDialog({
 
   const werteFuer = (recipeId: string) => werteById.get(recipeId);
 
-  const ziel = { kcal: vorlage.kcal_target, protein: vorlage.protein_target };
+  /**
+   * Nur was zum gewählten Tag-Typ gehört. Ohne Training ist das Porridge
+   * hier gar nicht mehr drin — weder sichtbar noch in der Summe.
+   */
+  const sichtbar = useMemo(
+    () => sichtbareKomponenten(komponenten, mitTraining),
+    [komponenten, mitTraining]
+  );
+
+  const ziel = useMemo(() => zielFuer(mitTraining), [mitTraining]);
   const gesamt = useMemo(
-    () => summeAktiv(komponenten, werteFuer, undefined),
+    () => summeAktiv(sichtbar, werteFuer, undefined),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [komponenten, werteById]
+    [sichtbar, werteById]
   );
 
   const luecke = useMemo(() => proteinLuecke(ziel, gesamt), [ziel, gesamt]);
+
+  /** Wie viele Zeilen wegen "ohne Training" gar nicht angeboten werden. */
+  const versteckt = komponenten.length - sichtbar.length;
 
   const standKcal = ampelKcal(ziel.kcal, gesamt.kcal);
   const standProtein = ampelProtein(ziel.protein, gesamt.protein);
@@ -99,7 +121,7 @@ export function TemplateApplyDialog({
   }
 
   async function laden() {
-    const gewaehlt = komponenten.filter((k) => k.aktiv);
+    const gewaehlt = sichtbar.filter((k) => k.aktiv);
     if (gewaehlt.length === 0 || busy) return;
     setBusy(true);
     const fd = new FormData();
@@ -118,15 +140,15 @@ export function TemplateApplyDialog({
 
   /* -------------------------------------------------- Tausch-Auswahl */
 
-  const tauschZeile = komponenten.find((k) => k.key === tauschKey) ?? null;
+  const tauschZeile = sichtbar.find((k) => k.key === tauschKey) ?? null;
 
   const tauschVorschlaege = useMemo(() => {
     if (!tauschZeile) return [];
-    const behalten = summeAktiv(komponenten, werteFuer, tauschZeile.key);
+    const behalten = summeAktiv(sichtbar, werteFuer, tauschZeile.key);
     const rest = restBudget(ziel, behalten);
-    const versteckt =
+    const ausserhalb =
       ausserhalbZeitfenster(tauschZeile.meal_type, arbeitstag) && !zeitfensterEgal;
-    if (versteckt) return [];
+    if (ausserhalb) return [];
     return alternativen({
       rezepte,
       foodById,
@@ -138,7 +160,7 @@ export function TemplateApplyDialog({
       ausserRecipeId: tauschZeile.recipe_id,
     }).slice(0, 20);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tauschZeile, komponenten, werteById, rezepte, foodById, bestandMap,
+  }, [tauschZeile, sichtbar, werteById, rezepte, foodById, bestandMap,
       nurEinfach, arbeitstag, zeitfensterEgal, ziel.kcal, ziel.protein]);
 
   const zeitfensterAktiv =
@@ -152,16 +174,38 @@ export function TemplateApplyDialog({
     <Card className="space-y-4 p-4">
       {/* Kopf: Vorlage, Tag-Typ, Live-Summe */}
       <div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="font-medium text-ink">{vorlage.name}</span>
-          <span className={cx(
-            "rounded-md px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.1em]",
-            vorlage.is_training_day
-              ? "bg-accent/15 text-accent-soft"
-              : "bg-sand text-ink-muted"
-          )}>
-            {vorlage.is_training_day ? "Trainingstag" : "Kein Training"}
+        <div className="font-medium text-ink">{vorlage.name}</div>
+
+        {/* Der eigentliche Schalter: dieselbe Vorlage, zwei Ausführungen. */}
+        <div className="mt-3">
+          <span className="mb-1.5 block text-[10px] uppercase tracking-[0.1em] text-ink-muted">
+            Trainiere ich an diesem Tag?
           </span>
+          <div className="flex gap-2">
+            {[
+              { an: true, label: "Mit Training", sub: `${TAGESZIEL.training.kcal} kcal` },
+              { an: false, label: "Ohne Training", sub: `${TAGESZIEL.ohne.kcal} kcal` },
+            ].map((o) => (
+              <button key={String(o.an)} type="button"
+                onClick={() => { setMitTraining(o.an); setTauschKey(null); }}
+                className={cx(
+                  "flex-1 rounded-lg px-3 py-2 text-left text-xs transition",
+                  mitTraining === o.an
+                    ? "bg-accent text-ink-on"
+                    : "bg-sand text-ink-muted hover:text-ink-soft"
+                )}>
+                <span className="block font-medium">{o.label}</span>
+                <span className="block opacity-80">{o.sub} · 190 g Protein</span>
+              </button>
+            ))}
+          </div>
+          {!mitTraining && versteckt > 0 && (
+            <p className="mt-1.5 text-xs text-ink-muted">
+              {versteckt === 1 ? "Eine Mahlzeit ist" : `${versteckt} Mahlzeiten sind`}{" "}
+              ausgeblendet — die {versteckt === 1 ? "gibt es" : "gibt es"} nur an
+              Trainingstagen. Die freien Kalorien kannst du unten woanders einsetzen.
+            </p>
+          )}
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-4">
@@ -210,7 +254,7 @@ export function TemplateApplyDialog({
 
       {/* Komponenten */}
       <div className="space-y-2">
-        {komponenten.map((k) => {
+        {sichtbar.map((k) => {
           const rezept = rezeptById.get(k.recipe_id);
           const roh = werteFuer(k.recipe_id);
           const w = roh ? skaliert(roh, k.faktor)
@@ -337,8 +381,8 @@ export function TemplateApplyDialog({
 
       <div className="flex flex-wrap items-center gap-2">
         <Button onClick={laden}
-          disabled={busy || komponenten.every((k) => !k.aktiv)}>
-          {busy ? "…" : `${komponenten.filter((k) => k.aktiv).length} übernehmen`}
+          disabled={busy || sichtbar.every((k) => !k.aktiv)}>
+          {busy ? "…" : `${sichtbar.filter((k) => k.aktiv).length} übernehmen`}
         </Button>
         <button type="button" onClick={onFertig}
           className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-soft

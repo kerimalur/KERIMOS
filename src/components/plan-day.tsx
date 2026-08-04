@@ -155,6 +155,9 @@ export function PlanDay({ tag, foods, rezepte, vorlagen = [], prepBestand = {} }
             // Ein freier Tag hat kein 17:00-Limit; an allen anderen Tagen
             // gilt die Besenval-Schicht.
             arbeitstag={!tag.marker?.is_free}
+            // Ist der Tag schon als Trainingstag markiert, steht der
+            // Umschalter passend - umstellen geht trotzdem jederzeit.
+            trainingVorgabe={Boolean(tag.marker?.training)}
             onFertig={() => { setDialogFuer(null); setVorlageId(""); }}
           />
         ) : (
@@ -170,9 +173,7 @@ export function PlanDay({ tag, foods, rezepte, vorlagen = [], prepBestand = {} }
                   <option value="">— Vorlage wählen —</option>
                   {vorlagen.map((v) => (
                     <option key={v.id} value={v.id}>
-                      {v.name}
-                      {v.is_training_day ? "" : " · frei"}
-                      {v.with_snacks ? " (mit Snacks)" : ""}
+                      {v.name}{v.with_snacks ? " (mit Snacks)" : ""}
                     </option>
                   ))}
                 </Select>

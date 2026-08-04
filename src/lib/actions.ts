@@ -513,24 +513,15 @@ export async function createDayTemplate(fd: FormData) {
   if (!name) return;
 
   const items = JSON.parse(String(fd.get("items") ?? "[]")) as {
-    meal_type: string; recipe_id: string;
+    meal_type: string; recipe_id: string; training_only?: boolean;
   }[];
   const gueltig = items.filter((i) =>
     i.recipe_id && ERLAUBTE_SLOTS.includes(i.meal_type));
   if (gueltig.length === 0) return;
 
-  // Tag-Typ und Zielwerte. Trainingstag ist der Normalfall; an freien
-  // Tagen sinken nur die Kalorien, das Proteinziel bleibt stehen.
-  const training = String(fd.get("is_training_day") ?? "true") !== "false";
-  const kcalZiel = Number(fd.get("kcal_target") ?? 0) || (training ? 2100 : 1800);
-  const proteinZiel = Number(fd.get("protein_target") ?? 0) || 190;
-
   const { data: vorlage, error } = await menu.from("day_templates").insert({
     name,
     with_snacks: gueltig.some((i) => i.meal_type === "snack"),
-    is_training_day: training,
-    kcal_target: kcalZiel,
-    protein_target: proteinZiel,
   }).select("id").single();
   if (error) throw new Error(`Vorlage anlegen: ${error.message}`);
 
@@ -540,6 +531,9 @@ export async function createDayTemplate(fd: FormData) {
       meal_type: i.meal_type,
       recipe_id: i.recipe_id,
       sort_order: n,
+      // Zeilen, die es nur an Trainingstagen gibt - beim Einfügen ohne
+      // Training werden sie gar nicht erst angeboten.
+      training_only: Boolean(i.training_only),
     }))
   ), "Vorlage speichern");
 
@@ -556,13 +550,13 @@ export async function deleteDayTemplate(fd: FormData) {
 }
 
 /**
- * Tag-Typ und Zielwerte einer bestehenden Vorlage ändern.
+ * Eine Zeile der Vorlage ans Training binden — oder wieder lösen.
  *
- * Die Rezepte bleiben unangetastet — hier geht es nur darum, ob die
- * Vorlage als Trainingstag gedacht ist und mit welchen Zielen der
- * Vorlagen-Dialog rechnet.
+ * Trainingsgebundene Zeilen (typisch das Porridge) erscheinen beim
+ * Einfügen ohne Training gar nicht erst in der Auswahl. Die Vorlage selbst
+ * bleibt eine einzige — sie gibt es nur in zwei Ausführungen.
  */
-export async function updateDayTemplate(fd: FormData) {
+export async function setTemplateItemTrainingOnly(fd: FormData) {
   await requireUser();
   const menu = createMenuClient();
   if (!menu) return;
@@ -570,15 +564,9 @@ export async function updateDayTemplate(fd: FormData) {
   const id = str(fd, "id");
   if (!id) return;
 
-  const training = String(fd.get("is_training_day") ?? "true") !== "false";
-  const kcalZiel = Number(fd.get("kcal_target") ?? 0) || (training ? 2100 : 1800);
-  const proteinZiel = Number(fd.get("protein_target") ?? 0) || 190;
-
-  check(await menu.from("day_templates").update({
-    is_training_day: training,
-    kcal_target: kcalZiel,
-    protein_target: proteinZiel,
-  }).eq("id", id), "Vorlage ändern");
+  check(await menu.from("day_template_items")
+    .update({ training_only: String(fd.get("training_only")) === "true" })
+    .eq("id", id), "Zeile ändern");
 
   revalidateEssenAlles();
 }
