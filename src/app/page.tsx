@@ -1,6 +1,4 @@
 import Link from "next/link";
-import { headers } from "next/headers";
-import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { FocusPrompt } from "@/components/focus-prompt";
 import { TasksCard } from "@/components/tasks-card";
@@ -34,18 +32,12 @@ export const dynamic = "force-dynamic";
  *
  * Steht nichts an, ist die Seite fast leer. Das ist das Ziel, kein Mangel.
  */
-export default async function Start({
-  searchParams,
-}: {
-  searchParams: Promise<{ voll?: string }>;
-}) {
-  // Handys landen auf /heute - ausser sie wollen ausdrücklich die volle
-  // Ansicht (?voll=1). Erkennung über den User-Agent; iPads zählen bewusst
-  // als Desktop.
-  const sp = await searchParams;
-  const ua = (await headers()).get("user-agent") ?? "";
-  if (!sp.voll && /Android.*Mobile|iPhone/i.test(ua)) redirect("/heute");
-
+export default async function Start() {
+  // Früher wurden Handys hier auf /heute umgeleitet, weil die Startseite
+  // zu voll für kleine Bildschirme war. Seit sie nur noch Tagessatz,
+  // Entscheidungen und Modi zeigt, passt sie überall - und ein Handy soll
+  // dieselben Möglichkeiten haben wie der Rechner. /heute bleibt als
+  // schlanke Erfassungsansicht erreichbar.
   const supabase = await createClient();
   const vorwoche = addDays(toWeekStart(heuteISO()), -7);
 

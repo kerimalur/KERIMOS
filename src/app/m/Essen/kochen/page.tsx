@@ -1,4 +1,5 @@
 import { fetchKochliste } from "@/lib/kochliste";
+import { PrintButton } from "@/components/print-button";
 import { Card, CardTitle, Empty, Badge } from "@/components/ui";
 import { MEAL_LABEL } from "@/lib/supabase/menu";
 import { heuteISO, addDays } from "@/lib/time";
@@ -47,17 +48,25 @@ export default async function KochenPage({
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="font-display text-xl font-bold text-ink">Kochen</h1>
-        <p className="mt-1 max-w-2xl text-sm text-ink-muted">
-          Was im gewählten Zeitraum insgesamt anfällt — je Gericht die
-          Gesamtmenge und daneben, wie viel davon in eine Box gehört.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="font-display text-xl font-bold text-ink">Kochen</h1>
+          <p className="mt-1 max-w-2xl text-sm text-ink-muted">
+            Was im gewählten Zeitraum insgesamt anfällt — je Gericht die
+            Gesamtmenge und daneben, wie viel davon in eine Box gehört.
+          </p>
+          {/* Nur im Druck sichtbar: sonst weiss man auf dem Ausdruck nicht,
+              für welchen Zeitraum die Mengen gelten. */}
+          <p className="mt-1 hidden text-sm print:block">
+            Zeitraum {kurzDatum(von)} bis {kurzDatum(bis)}
+          </p>
+        </div>
+        <PrintButton />
       </div>
 
       {/* Zeitraum. Bewusst ein einfaches GET-Formular: kein Client-State,
           und der Zeitraum bleibt in der Adresse teilbar. */}
-      <Card>
+      <Card className="no-print">
         <form className="flex flex-wrap items-end gap-3">
           <div>
             <label htmlFor="von" className="mb-1.5 block text-xs text-ink-muted">
@@ -91,7 +100,7 @@ export default async function KochenPage({
         </Empty>
       ) : (
         gerichte.map((g) => (
-          <Card key={g.name}>
+          <Card key={g.name} className="print-block">
             <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
               <div className="min-w-0">
                 <CardTitle className="mb-0">{g.name}</CardTitle>

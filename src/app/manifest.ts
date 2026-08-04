@@ -13,7 +13,7 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: "KerimOS",
     description: "Zeit, Geld, Training und Trading an einem Ort.",
     // Bewusst die normale Startseite: am Computer die volle Ansicht, auf dem
-    // Handy leitet die Startseite anhand des User-Agents auf /heute weiter.
+    // Die Startseite ist auf jedem Gerät dieselbe - kein Umweg mehr.
     start_url: "/",
     scope: "/",
     display: "standalone",

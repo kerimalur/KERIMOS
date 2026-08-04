@@ -6,6 +6,8 @@ export const dynamic = "force-dynamic";
 
 /** Alles jetzt in KerimOS - die alte Menü-App wird nicht mehr gebraucht. */
 const HIER = [
+  { href: "/m/Essen/einkauf", titel: "Einkauf",
+    text: "Einkaufsliste für den geplanten Zeitraum" },
   { href: "/m/Essen/rezepte", titel: "Rezepte",
     text: "Mengen pro Portion, Favoriten, Zutaten bearbeiten" },
   { href: "/m/Essen/lebensmittel", titel: "Lebensmittel",

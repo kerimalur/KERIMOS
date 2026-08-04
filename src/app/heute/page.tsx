@@ -78,7 +78,7 @@ export default async function HeutePage() {
       />
 
       <div className="flex items-center justify-between border-t border-line pt-3">
-        <Link href="/?voll=1" className="text-xs text-ink-muted transition hover:text-ink-soft">
+        <Link href="/" className="text-xs text-ink-muted transition hover:text-ink-soft">
           Alle Modi →
         </Link>
         <Link href="/kalender" className="text-xs text-ink-muted transition hover:text-ink-soft">
