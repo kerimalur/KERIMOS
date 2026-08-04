@@ -519,9 +519,18 @@ export async function createDayTemplate(fd: FormData) {
     i.recipe_id && ERLAUBTE_SLOTS.includes(i.meal_type));
   if (gueltig.length === 0) return;
 
+  // Tag-Typ und Zielwerte. Trainingstag ist der Normalfall; an freien
+  // Tagen sinken nur die Kalorien, das Proteinziel bleibt stehen.
+  const training = String(fd.get("is_training_day") ?? "true") !== "false";
+  const kcalZiel = Number(fd.get("kcal_target") ?? 0) || (training ? 2100 : 1800);
+  const proteinZiel = Number(fd.get("protein_target") ?? 0) || 190;
+
   const { data: vorlage, error } = await menu.from("day_templates").insert({
     name,
     with_snacks: gueltig.some((i) => i.meal_type === "snack"),
+    is_training_day: training,
+    kcal_target: kcalZiel,
+    protein_target: proteinZiel,
   }).select("id").single();
   if (error) throw new Error(`Vorlage anlegen: ${error.message}`);
 
@@ -547,8 +556,42 @@ export async function deleteDayTemplate(fd: FormData) {
 }
 
 /**
- * Vorlage auf ein Datum laden: legt für jedes Rezept der Vorlage eine
+ * Tag-Typ und Zielwerte einer bestehenden Vorlage ändern.
+ *
+ * Die Rezepte bleiben unangetastet — hier geht es nur darum, ob die
+ * Vorlage als Trainingstag gedacht ist und mit welchen Zielen der
+ * Vorlagen-Dialog rechnet.
+ */
+export async function updateDayTemplate(fd: FormData) {
+  await requireUser();
+  const menu = createMenuClient();
+  if (!menu) return;
+
+  const id = str(fd, "id");
+  if (!id) return;
+
+  const training = String(fd.get("is_training_day") ?? "true") !== "false";
+  const kcalZiel = Number(fd.get("kcal_target") ?? 0) || (training ? 2100 : 1800);
+  const proteinZiel = Number(fd.get("protein_target") ?? 0) || 190;
+
+  check(await menu.from("day_templates").update({
+    is_training_day: training,
+    kcal_target: kcalZiel,
+    protein_target: proteinZiel,
+  }).eq("id", id), "Vorlage ändern");
+
+  revalidateEssenAlles();
+}
+
+/**
+ * Vorlage auf ein Datum laden: legt für jedes gewählte Rezept eine
  * Mahlzeit an diesem Tag an, samt Zutaten und Nährwerten.
+ *
+ * Zwei Wege hinein:
+ *   - `auswahl` (JSON): so schickt der Vorlagen-Dialog seine Zeilen, samt
+ *     Portionsfaktor und bereits getauschten Rezepten. Der Normalfall.
+ *   - nur `template_id`: lädt die Vorlage unverändert. Bleibt bestehen,
+ *     damit ältere Aufrufe und Verknüpfungen weiter funktionieren.
  *
  * Bereits geplante Mahlzeiten bleiben stehen — die Vorlage ergänzt, sie
  * räumt nicht auf. Wer den Tag leer haben will, löscht ihn vorher; das ist
@@ -561,11 +604,33 @@ export async function applyDayTemplate(fd: FormData) {
 
   const date = str(fd, "date");
   const templateId = str(fd, "template_id");
-  if (!date || !templateId) return;
+  if (!date) return;
 
-  const { data: items } = await menu.from("day_template_items")
-    .select("meal_type, recipe_id").eq("template_id", templateId).order("sort_order");
-  const zeilen = (items ?? []) as { meal_type: string; recipe_id: string }[];
+  type Zeile = { meal_type: string; recipe_id: string; faktor: number };
+  let zeilen: Zeile[] = [];
+
+  const rohAuswahl = String(fd.get("auswahl") ?? "").trim();
+  if (rohAuswahl) {
+    const gewaehlt = JSON.parse(rohAuswahl) as {
+      meal_type: string; recipe_id: string; faktor?: number;
+    }[];
+    zeilen = gewaehlt
+      .filter((z) => z.recipe_id && ERLAUBTE_SLOTS.includes(z.meal_type))
+      // Nur die drei angebotenen Portionsgrössen zulassen, damit über das
+      // Formular keine krummen Faktoren hereinkommen.
+      .map((z) => ({
+        meal_type: z.meal_type,
+        recipe_id: z.recipe_id,
+        faktor: [0.5, 1, 1.5].includes(Number(z.faktor)) ? Number(z.faktor) : 1,
+      }));
+  } else {
+    if (!templateId) return;
+    const { data: items } = await menu.from("day_template_items")
+      .select("meal_type, recipe_id").eq("template_id", templateId).order("sort_order");
+    zeilen = ((items ?? []) as { meal_type: string; recipe_id: string }[])
+      .map((z) => ({ ...z, faktor: 1 }));
+  }
+
   if (zeilen.length === 0) return;
 
   const recipeIds = [...new Set(zeilen.map((z) => z.recipe_id))];
@@ -627,8 +692,14 @@ export async function applyDayTemplate(fd: FormData) {
     const name = namen.get(zeile.recipe_id);
     if (!name) continue;
 
+    // Halbe oder anderthalbfache Portion steht im Namen, sonst sieht man
+    // im Tag nicht mehr, warum die Zahlen von der Vorlage abweichen.
+    const anzeige = zeile.faktor === 1
+      ? name
+      : `${name} (${String(zeile.faktor).replace(".", ",")}×)`;
+
     const { data: meal, error: mealError } = await menu.from("meals")
-      .insert({ plan_id: planId, meal_type: zeile.meal_type, name })
+      .insert({ plan_id: planId, meal_type: zeile.meal_type, name: anzeige })
       .select("id").single();
     if (mealError) throw new Error(`Mahlzeit anlegen: ${mealError.message}`);
 
@@ -637,14 +708,17 @@ export async function applyDayTemplate(fd: FormData) {
 
     check(await menu.from("meal_items").insert(
       positionen.map((p) => {
+        // Der Faktor wirkt auf die Menge; die Nährwerte werden aus der
+        // skalierten Menge gerechnet, damit Menge und Werte zusammenpassen.
+        const menge = Math.round(p.amount * zeile.faktor * 100) / 100;
         const f = p.food_id ? foods.get(p.food_id) : undefined;
-        const w = f ? rechne(f, p.amount, p.unit)
+        const w = f ? rechne(f, menge, p.unit)
           : { kcal: 0, protein: 0, carbs: 0, fat: 0, cost: 0 };
         return {
           meal_id: meal.id,
           food_id: p.food_id,
           food_name: p.food_name,
-          amount: p.amount,
+          amount: menge,
           unit: p.unit,
           kcal: w.kcal, protein: w.protein, carbs: w.carbs, fat: w.fat, cost: w.cost,
           eaten: false,

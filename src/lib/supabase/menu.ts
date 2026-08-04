@@ -645,6 +645,12 @@ export interface DayTemplate {
   id: string;
   name: string;
   with_snacks: boolean;
+  /** Trainingstag oder trainingsfreier Tag. Steuert nur die Zielwerte. */
+  is_training_day: boolean;
+  /** Kalorienziel dieses Tag-Typs. */
+  kcal_target: number;
+  /** Proteinziel in g — bleibt an freien Tagen gleich. */
+  protein_target: number;
   items: DayTemplateItem[];
 }
 
@@ -661,8 +667,18 @@ export async function fetchDayTemplates(): Promise<DayTemplate[]> {
   if (!supabase) return [];
 
   const { data: vorlagen } = await supabase.from("day_templates")
-    .select("id, name, with_snacks").order("name");
-  const liste = (vorlagen ?? []) as { id: string; name: string; with_snacks: boolean }[];
+    .select("id, name, with_snacks, is_training_day, kcal_target, protein_target")
+    .order("name");
+  const liste = ((vorlagen ?? []) as Record<string, unknown>[]).map((v) => ({
+    id: v.id as string,
+    name: v.name as string,
+    with_snacks: Boolean(v.with_snacks),
+    // Fallbacks, damit die Vorlagenliste auch dann steht, wenn Migration 13
+    // noch nicht eingespielt ist.
+    is_training_day: v.is_training_day === undefined ? true : Boolean(v.is_training_day),
+    kcal_target: Number(v.kcal_target ?? 2100),
+    protein_target: Number(v.protein_target ?? 190),
+  }));
   if (liste.length === 0) return [];
 
   const { data: itemRows } = await supabase.from("day_template_items")
@@ -693,6 +709,40 @@ export async function fetchDayTemplates(): Promise<DayTemplate[]> {
   }
 
   return liste.map((v) => ({ ...v, items: nachVorlage.get(v.id) ?? [] }));
+}
+
+/**
+ * Wie viele vorgekochte Portionen es je Rezept noch gibt.
+ *
+ * Zählt Boxen, die noch nicht abgehakt sind. Der Tausch-Dialog sortiert
+ * damit nach oben, was ohnehin im Kühlschrank steht — sonst tauscht man
+ * auf ein Rezept, das erst noch gekocht werden müsste, und steht am
+ * Arbeitstag um 11:00 ohne Essen da.
+ */
+export async function fetchPrepStock(): Promise<Record<string, number>> {
+  const supabase = createMenuClient();
+  if (!supabase) return {};
+
+  const { data: offen } = await supabase.from("batch_portions")
+    .select("batch_id").eq("consumed", false);
+  const boxen = (offen ?? []) as { batch_id: string }[];
+  if (boxen.length === 0) return {};
+
+  const batchIds = [...new Set(boxen.map((b) => b.batch_id))];
+  const { data: batches } = await supabase.from("prep_batches")
+    .select("id, recipe_id").in("id", batchIds);
+
+  const rezeptJeBatch = new Map(
+    (batches ?? []).map((b) => [b.id as string, b.recipe_id as string])
+  );
+
+  const bestand: Record<string, number> = {};
+  for (const b of boxen) {
+    const recipeId = rezeptJeBatch.get(b.batch_id);
+    if (!recipeId) continue;
+    bestand[recipeId] = (bestand[recipeId] ?? 0) + 1;
+  }
+  return bestand;
 }
 
 /* ------------------------------------------------------------ Tagesplan */
