@@ -12,7 +12,7 @@ import { cx } from "@/components/ui";
 const TABS = [
   { href: "/m/Essen", label: "Heute" },
   { href: "/m/Essen/plan", label: "Plan" },
-  { href: "/m/Essen/prep", label: "Prep" },
+  { href: "/m/Essen/kochen", label: "Kochen" },
   { href: "/m/Essen/einkauf", label: "Einkauf" },
   { href: "/m/Essen/mehr", label: "Mehr" },
 ];
@@ -27,6 +27,7 @@ export function EssenTabs() {
         || path.startsWith("/m/Essen/rezepte")
         || path.startsWith("/m/Essen/lebensmittel")
         || path.startsWith("/m/Essen/analyse")
+        || path.startsWith("/m/Essen/prep")
         || path.startsWith("/m/Essen/einstellungen");
     }
     return path.startsWith(href);
