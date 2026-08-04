@@ -14,6 +14,10 @@ import { Card, CardTitle } from "@/components/ui";
  * Beim Frühtraining wird nüchtern trainiert, nur Kaffee davor. Der Shake
  * kommt danach - vor der Schicht bleibt gar keine Zeit für Verdauung, und
  * bei einer Einheit unter einer Stunde bringt das Essen davor ohnehin nichts.
+ *
+ * Zwei Proteinpulver, klar getrennt: Casein ins Porridge und in den Quark,
+ * Whey ausschliesslich in den Post-Workout-Shake. Und den gibt es nur an
+ * Arbeitstagen nach dem Frühtraining - an freien Tagen wird vorher gegessen.
  */
 
 interface Tagesmuster {
@@ -27,8 +31,8 @@ const MUSTER: Tagesmuster[] = [
     titel: "Freier Tag · Training 08:30",
     hinweis: "Eineinhalb Stunden Vorlauf — hier funktioniert festes Essen.",
     zeiten: [
-      { uhr: "06:45", was: "Porridge mit Whey", betont: true },
-      { uhr: "08:30", was: "Training" },
+      { uhr: "06:45", was: "Porridge mit Casein", betont: true },
+      { uhr: "08:30", was: "Training — kein Shake danach" },
       { uhr: "12:00", was: "Hauptmahlzeit" },
       { uhr: "15:30", was: "Magerquark mit Blaubeeren" },
       { uhr: "18:30", was: "Hauptmahlzeit" },
@@ -40,7 +44,7 @@ const MUSTER: Tagesmuster[] = [
     zeiten: [
       { uhr: "07:00", was: "Kaffee, sonst nichts" },
       { uhr: "07:30", was: "Training nüchtern" },
-      { uhr: "08:30", was: "Post-Workout Shake to-go", betont: true },
+      { uhr: "08:30", was: "Post-Workout Shake mit Whey", betont: true },
       { uhr: "08:45", was: "Schichtbeginn" },
       { uhr: "11:00", was: "Meal-Prep-Box" },
       { uhr: "15:30", was: "Magerquark mit Blaubeeren" },
@@ -51,7 +55,7 @@ const MUSTER: Tagesmuster[] = [
     titel: "Arbeitstag · Training 14:30 in der Zimmerstunde",
     hinweis: "Das Mittagessen um 11:00 trägt bis dahin nicht — Brücke nötig.",
     zeiten: [
-      { uhr: "06:30", was: "Porridge mit Whey" },
+      { uhr: "06:30", was: "Porridge mit Casein" },
       { uhr: "11:00", was: "Meal-Prep-Box" },
       { uhr: "13:45", was: "Whey-Shake mit Banane als Brücke", betont: true },
       { uhr: "14:30", was: "Training" },
@@ -64,9 +68,9 @@ const MUSTER: Tagesmuster[] = [
     zeiten: [
       { uhr: "11:00", was: "Meal-Prep-Box — erste Mahlzeit des Tages" },
       { uhr: "15:30", was: "Magerquark mit Blaubeeren" },
-      { uhr: "18:30", was: "Porridge mit Whey — Pre-Workout", betont: true },
+      { uhr: "18:30", was: "Porridge mit Casein — Pre-Workout", betont: true },
       { uhr: "20:00", was: "Training" },
-      { uhr: "21:30", was: "Hauptmahlzeit, fettarm", betont: true },
+      { uhr: "21:30", was: "Hauptmahlzeit, fettarm — kein Shake", betont: true },
     ],
   },
 ];
@@ -77,7 +81,9 @@ export function Essenszeiten() {
       <CardTitle>Essenszeiten je Dienst</CardTitle>
       <p className="mb-4 text-xs text-ink-muted">
         Entscheidend ist der Abstand zum Training: festes Essen braucht
-        eineinhalb bis zwei Stunden, ein Shake kommt mit 45 Minuten aus.
+        eineinhalb bis zwei Stunden. Casein kommt ins Porridge und in den
+        Quark, Whey ausschliesslich in den Post-Workout-Shake — und den gibt
+        es nur an Arbeitstagen nach dem Frühtraining.
       </p>
 
       <div className="grid gap-4 sm:grid-cols-2">
