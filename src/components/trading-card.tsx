@@ -1,9 +1,8 @@
 import Link from "next/link";
 import {
-  createTradingClient, computeBacktestStats, fetchScreener, fetchTodayEvents,
-  BACKTEST_ZIEL,
-  type BacktestSessionRow, type ScreenerPair,
+  fetchScreener, fetchTodayEvents, type ScreenerPair,
 } from "@/lib/supabase/trading";
+import { fetchBacktestStand, BACKTEST_ZIEL } from "@/lib/backtest-sheet";
 import { Card, Badge } from "@/components/ui";
 
 const eventTime = (iso: string) =>
@@ -45,15 +44,11 @@ export async function TradingCard() {
   const wochenausblick = sonntag && stunde >= 12;
   const marktZu = samstag || sonntag;
 
-  const [screener, sessions, events] = await Promise.all([
+  const [screener, stand, events] = await Promise.all([
     marktZu ? Promise.resolve(null) : fetchScreener(),
-    (async () => {
-      const supabase = createTradingClient();
-      if (!supabase) return null;
-      const { data } = await supabase
-        .from("backtest_sessions").select("id, trades");
-      return (data ?? []) as Pick<BacktestSessionRow, "id" | "trades">[];
-    })(),
+    // Aus dem Google Sheet, nicht aus backtest_sessions: dort steht der
+    // automatisierte Engine-Backtest, gemeint ist der manuelle.
+    fetchBacktestStand(),
     marktZu ? Promise.resolve([]) : fetchTodayEvents(),
   ]);
 
@@ -63,9 +58,6 @@ export async function TradingCard() {
     .filter((p) => p.status === "PREPARE")
     .sort((a, b) => (a.distance ?? 9999) - (b.distance ?? 9999));
 
-  const stats = sessions
-    ? computeBacktestStats(sessions.flatMap((s) => s.trades ?? []))
-    : null;
 
   return (
     <Card className="p-5">
@@ -74,11 +66,11 @@ export async function TradingCard() {
           className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted transition hover:text-ink-soft">
           Trading
         </Link>
-        {stats && (
+        {stand && (
           <span className="tabular text-xs text-ink-muted">
-            Backtest {stats.n}/{BACKTEST_ZIEL}
-            {stats.winrate !== null && ` · ${stats.winrate.toFixed(0)} % WR`}
-            {stats.profitFactor !== null && ` · PF ${stats.profitFactor.toFixed(2)}`}
+            Backtest {stand.trades}/{BACKTEST_ZIEL}
+            {stand.winrate !== null && ` · ${stand.winrate.toFixed(0)} % WR`}
+            {stand.gesamtR !== null && ` · ${stand.gesamtR.toFixed(1)} R`}
           </span>
         )}
       </div>

@@ -2,9 +2,8 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { createGymClient, gymConfigured } from "@/lib/supabase/gym";
 import { fetchTodayMenu, menuConfigured } from "@/lib/supabase/menu";
-import {
-  createTradingClient, computeBacktestStats, fetchScreener, BACKTEST_ZIEL,
-} from "@/lib/supabase/trading";
+import { fetchScreener } from "@/lib/supabase/trading";
+import { fetchBacktestStand, BACKTEST_ZIEL } from "@/lib/backtest-sheet";
 import { heuteISO } from "@/lib/time";
 
 /**
@@ -194,30 +193,21 @@ export async function fetchModusKennzahlen(): Promise<ModusDaten> {
     (async (): Promise<ModusZeile[]> => {
       const zeilen: ModusZeile[] = [];
 
-      try {
-        const trading = createTradingClient();
-        if (!trading) return [];
-
-        const { data: sessions } = await trading
-          .from("backtest_sessions").select("id, trades");
-
-        const alleTrades = (sessions ?? []).flatMap(
-          (s) => (s.trades as unknown[] | null) ?? [],
-        );
-        const stats = computeBacktestStats(alleTrades as never);
-
+      // Der Backtest-Stand kommt aus dem Google Sheet, nicht mehr aus
+      // backtest_sessions - dort steht der automatisierte Engine-Backtest,
+      // gemeint ist aber der von Hand durchgespielte.
+      const stand = await fetchBacktestStand();
+      if (stand) {
         zeilen.push({
-          text: `Backtest ${stats.n}/${BACKTEST_ZIEL}`,
-          betont: stats.n < BACKTEST_ZIEL,
+          text: `Backtest ${stand.trades}/${BACKTEST_ZIEL}`,
+          betont: stand.trades < BACKTEST_ZIEL,
         });
-        if (stats.winrate !== null) {
+        if (stand.winrate !== null) {
           zeilen.push({
-            text: `${stats.winrate.toFixed(0)} % Winrate` +
-              (stats.profitFactor !== null ? ` · PF ${stats.profitFactor.toFixed(2)}` : ""),
+            text: `${stand.winrate.toFixed(0)} % Winrate` +
+              (stand.gesamtR !== null ? ` · ${stand.gesamtR.toFixed(1)} R` : ""),
           });
         }
-      } catch {
-        return [];
       }
 
       // Am Wochenende ist der Markt zu - Setups wären dort ohne Aussage.
