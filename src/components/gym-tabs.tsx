@@ -26,7 +26,12 @@ const UNTER_MEHR = [
   "/gym/trainingstage", "/gym/kalender", "/gym/workout",
 ];
 
-export function GymTabs() {
+/**
+ * @param offeneImporte Trainings, die in der Garmin-Vorschau auf Prüfung warten.
+ *   Ohne diesen Hinweis bleibt der Prüfschritt unsichtbar und die Einheiten
+ *   liegen wochenlang ungenutzt herum.
+ */
+export function GymTabs({ offeneImporte = 0 }: { offeneImporte?: number }) {
   const path = usePathname();
   const aktiv = (href: string) => {
     if (href === "/gym") return path === href;
@@ -36,15 +41,23 @@ export function GymTabs() {
     return path.startsWith(href);
   };
 
+  const hinweis = (href: string) =>
+    href === "/gym/garmin" && offeneImporte > 0 ? offeneImporte : null;
+
   return (
     <>
       {/* Computer: Reiterzeile oben */}
       <nav className="hidden flex-wrap items-center gap-1 rounded-xl bg-sand p-1 sm:flex">
         {TABS.map((t) => (
           <Link key={t.href} href={t.href}
-            className={cx("rounded-lg px-4 py-1.5 text-sm font-medium transition",
+            className={cx("flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm font-medium transition",
               aktiv(t.href) ? "bg-card text-ink" : "text-ink-muted hover:text-ink-soft")}>
             {t.label}
+            {hinweis(t.href) && (
+              <span className="rounded-md bg-accent px-1.5 text-[11px] font-semibold text-ink-on">
+                {hinweis(t.href)}
+              </span>
+            )}
           </Link>
         ))}
       </nav>
@@ -58,6 +71,11 @@ export function GymTabs() {
             className={cx("flex-1 py-3 text-center text-xs font-medium transition",
               aktiv(t.href) ? "text-accent-soft" : "text-ink-muted")}>
             {t.label}
+            {hinweis(t.href) && (
+              <span className="ml-1 rounded-md bg-accent px-1 text-[10px] font-semibold text-ink-on">
+                {hinweis(t.href)}
+              </span>
+            )}
           </Link>
         ))}
       </nav>

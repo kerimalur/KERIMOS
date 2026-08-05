@@ -44,7 +44,8 @@ export function GarminPanel({ exercises, mappings, unmapped, sessions, tage }: P
           <div>
             <CardTitle>Garmin-Import</CardTitle>
             <p className="mt-1 text-xs text-ink-muted">
-              Läuft automatisch jeden Abend. Hier nur, wenn du nicht warten willst.
+              Läuft automatisch jeden Abend. Neue Trainings landen oben zur Prüfung,
+              nicht direkt im Verlauf.
             </p>
           </div>
           <Button onClick={sync} disabled={laeuft}>
@@ -56,9 +57,9 @@ export function GarminPanel({ exercises, mappings, unmapped, sessions, tage }: P
         )}
       </Card>
 
-      {/* ------------------------------- Übungen, die noch fehlen */}
+      {/* ------------------------------- Altlasten aus früheren Imports */}
       <Card>
-        <CardTitle>Nicht zugeordnet</CardTitle>
+        <CardTitle>Nicht zugeordnet (Altbestand)</CardTitle>
         {unmapped.length === 0 ? (
           <p className="mt-2 text-sm text-ink-muted">
             Alles zugeordnet — jede Garmin-Übung landet aktuell in der richtigen Übung.
@@ -66,8 +67,8 @@ export function GarminPanel({ exercises, mappings, unmapped, sessions, tage }: P
         ) : (
           <>
             <p className="mt-1 text-xs text-ink-muted">
-              Diese Übungen hat die Uhr aufgezeichnet, KerimOS kennt sie aber noch nicht.
-              Nach dem Zuordnen werden sie ab dem nächsten Sync korrekt übernommen.
+              Aus Sessions, die noch ohne Prüfschritt importiert wurden. Neue Trainings
+              werden stattdessen oben in der Vorschau zugeordnet.
             </p>
             <ul className="mt-3 space-y-2">
               {unmapped.map((u) => (

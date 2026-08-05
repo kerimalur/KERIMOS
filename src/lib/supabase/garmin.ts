@@ -4,9 +4,11 @@ import { createGymClient } from "@/lib/supabase/gym";
 /**
  * Datenzugriff für den Garmin-Import.
  *
- * Der eigentliche Import läuft in `api/garmin-sync.py` (Vercel Cron). Hier
- * liegt nur, was die Oberfläche unter /gym/garmin braucht: welche Garmin-
- * Übungen noch keine Zuordnung haben und welche Sessions schon drin sind.
+ * Der Abruf von der Uhr läuft in `api/garmin-sync.py` (Vercel Cron). Der
+ * schreibt aber nicht mehr direkt in den Verlauf, sondern legt jedes neue
+ * Training als Vorschau ab (`garmin_import_sessions` / `garmin_import_saetze`).
+ * Hier liegt, was die Oberfläche unter /gym/garmin braucht: die offene
+ * Vorschau, die bestehenden Zuordnungen und die zuletzt übernommenen Sessions.
  */
 
 export interface GarminMapping {
@@ -23,6 +25,119 @@ export interface GarminSession {
   started_at: string | null;
   notes: string | null;
   saetze: number;
+}
+
+/** Ein einzelner Satz, so wie ihn die Uhr geliefert hat. */
+export interface VorschauSatz {
+  id: string;
+  position: number;
+  weight_kg: number;
+  reps: number;
+  completed_at: string | null;
+}
+
+/** Alle Sätze einer Garmin-Bezeichnung, z.B. BENCH_PRESS/INCLINE_DUMBBELL_BENCH_PRESS. */
+export interface VorschauGruppe {
+  garminKey: string;
+  /** Vorschlag aus dem Mapping. `null` = noch nicht zugeordnet. */
+  exerciseId: string | null;
+  saetze: VorschauSatz[];
+}
+
+/** Ein noch nicht übernommenes Training aus der Vorschau. */
+export interface GarminVorschau {
+  id: string;
+  garmin_activity_id: number;
+  started_at: string | null;
+  completed_at: string | null;
+  erkannter_split: string | null;
+  garmin_uebersicht: string | null;
+  gruppen: VorschauGruppe[];
+  /** Wie viele Sätze ohne Gewicht ankamen — die will Kerim nachtragen. */
+  ohneGewicht: number;
+}
+
+/**
+ * Die offenen Trainings, die auf Prüfung warten.
+ *
+ * Gruppiert wird nach der Garmin-Bezeichnung, nicht nach der Zielübung:
+ * Schräg- und Flachbankdrücken sollen zwei Blöcke bleiben, auch wenn sie
+ * (noch) auf dieselbe Übung zeigen. Genau diese Verschmelzung war das
+ * ursprüngliche Problem.
+ */
+export async function fetchGarminVorschau(): Promise<GarminVorschau[]> {
+  const supabase = createGymClient();
+  if (!supabase) return [];
+
+  const { data: sessions } = await supabase
+    .from("garmin_import_sessions")
+    .select("id, garmin_activity_id, started_at, completed_at, erkannter_split, garmin_uebersicht")
+    .eq("status", "offen")
+    .order("started_at", { ascending: false });
+
+  if (!sessions?.length) return [];
+
+  const { data: saetze } = await supabase
+    .from("garmin_import_saetze")
+    .select("id, import_session_id, position, garmin_key, exercise_id, weight_kg, reps, completed_at")
+    .in("import_session_id", sessions.map((s) => s.id as string))
+    .order("position");
+
+  return sessions.map((s) => {
+    const eigene = (saetze ?? []).filter(
+      (z) => (z.import_session_id as string) === (s.id as string),
+    );
+
+    // Reihenfolge der Gruppen = Reihenfolge des ersten Satzes. Eine Map
+    // bewahrt die Einfügereihenfolge, deshalb reicht das ohne Extra-Sortierung.
+    const gruppen = new Map<string, VorschauGruppe>();
+    for (const z of eigene) {
+      const key = z.garmin_key as string;
+      if (!gruppen.has(key)) {
+        gruppen.set(key, {
+          garminKey: key,
+          exerciseId: (z.exercise_id as string | null) ?? null,
+          saetze: [],
+        });
+      }
+      gruppen.get(key)!.saetze.push({
+        id: z.id as string,
+        position: z.position as number,
+        weight_kg: Number(z.weight_kg ?? 0),
+        reps: Number(z.reps ?? 0),
+        completed_at: (z.completed_at as string | null) ?? null,
+      });
+    }
+
+    return {
+      id: s.id as string,
+      garmin_activity_id: s.garmin_activity_id as number,
+      started_at: (s.started_at as string | null) ?? null,
+      completed_at: (s.completed_at as string | null) ?? null,
+      erkannter_split: (s.erkannter_split as string | null) ?? null,
+      garmin_uebersicht: (s.garmin_uebersicht as string | null) ?? null,
+      gruppen: [...gruppen.values()],
+      ohneGewicht: eigene.filter((z) => Number(z.weight_kg ?? 0) === 0).length,
+    };
+  });
+}
+
+/**
+ * Wie viele Trainings auf Prüfung warten.
+ *
+ * Nur die Zahl, damit die Tab-Leiste sie zeigen kann, ohne die ganze Vorschau
+ * zu laden - sonst zahlt jede Gym-Seite für etwas, das nur eine braucht.
+ */
+export async function countGarminVorschau(): Promise<number> {
+  const supabase = createGymClient();
+  if (!supabase) return 0;
+
+  const { count } = await supabase
+    .from("garmin_import_sessions")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "offen");
+
+  return count ?? 0;
 }
 
 /** Alle bestehenden Zuordnungen, inklusive Klarnamen der Übung. */

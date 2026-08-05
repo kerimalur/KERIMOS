@@ -10,16 +10,23 @@ Ablauf:
      `private_tokens`, sonst frischer Login mit E-Mail/Passwort.
   2. Krafttrainings der letzten 7 Tage holen.
   3. Pro Aktivitaet die einzelnen Saetze abrufen.
-  4. Aktivitaeten, die schon importiert sind (garmin_activity_id), ueberspringen.
-  5. Session in `workout_sessions` + Saetze in `exercise_logs` schreiben.
+  4. Aktivitaeten, die schon uebernommen oder schon vorgemerkt sind
+     (garmin_activity_id), ueberspringen.
+  5. Session als VORSCHAU in `garmin_import_sessions` + `garmin_import_saetze`
+     ablegen.
 
 Bewusste Entscheidungen:
+  - Der Sync schreibt NICHT mehr direkt nach workout_sessions/exercise_logs.
+    Die Uhr kennt das Gewicht oft nicht (0 kg) und ordnet Uebungen manchmal
+    falsch zu. Deshalb landet jedes neue Training zuerst in der Vorschau; die
+    Uebernahme passiert von Hand unter /gym/garmin, wo Gewichte und
+    Uebungszuordnung korrigiert werden koennen.
   - Zugriff auf Supabase per PostgREST (requests) statt der supabase-Lib:
     weniger Abhaengigkeiten, und der Service-Role-Key umgeht RLS ohnehin.
   - Fehler liefern HTTP 200 mit Fehlertext im Body, damit Vercel den Cron
     nicht als hart fehlgeschlagen markiert und in Dauer-Retry geht.
-  - Es werden NUR die Tabellen workout_sessions und exercise_logs beschrieben.
-    set_entries / workout_session_exercises sind in dieser DB unbenutzt.
+  - Saetze werden ohne set_number abgelegt; die Nummerierung entsteht erst
+    beim Uebernehmen, weil sich die Uebungszuordnung vorher noch aendern kann.
 
 Benoetigte Environment-Variablen:
   GARMIN_EMAIL, GARMIN_PASSWORD
@@ -39,11 +46,6 @@ import requests
 TOKEN_SETTING_KEY = "garmin_session"
 LOOKBACK_DAYS = 7
 GARMIN_ACTIVITY_TYPES = ("strength", "fitness_equipment", "indoor_cardio")
-
-# Die Uhr misst keinen RIR. Importierte Saetze bekommen diesen Wert, statt
-# den DB-Default 2 zu erben - so bleiben sie vom manuellen Tracking
-# unterscheidbar.
-IMPORT_RIR = 1
 
 # Fuer die automatische Push/Pull-Erkennung: welche Muskelgruppe zaehlt
 # wohin. Namen wie in der Tabelle muscle_groups.
@@ -275,6 +277,22 @@ def lade_mapping(gym: Gym) -> dict:
     }
 
 
+# Namensbestandteile, die eine eigenstaendige Uebung kennzeichnen. Beispiel:
+# BENCH_PRESS/INCLINE_DUMBBELL_BENCH_PRESS ist Schraegbankdruecken und darf
+# nicht ueber den Kategorie-Fallback BENCH_PRESS|* als Flachbankdruecken
+# durchgehen - genau so sind Schraeg- und Flachbank frueher zu einer einzigen
+# Uebung verschmolzen. Solche Namen brauchen einen eigenen Eintrag im Mapping;
+# ohne den gelten sie als nicht zugeordnet und tauchen in der Vorschau auf.
+VARIANTEN_MARKER = (
+    "INCLINE", "DECLINE", "CLOSE_GRIP", "WIDE_GRIP", "REVERSE",
+    "SINGLE_ARM", "ONE_ARM", "SEATED", "STANDING", "OVERHEAD",
+)
+
+
+def ist_variante(name: str) -> bool:
+    return any(marker in name for marker in VARIANTEN_MARKER)
+
+
 def uebung_aufloesen(mapping: dict, kategorie: str, name: str):
     if not kategorie:
         return None
@@ -282,18 +300,36 @@ def uebung_aufloesen(mapping: dict, kategorie: str, name: str):
         treffer = mapping.get(f"{kategorie}|{name}")
         if treffer:
             return treffer
+        # Variantennamen bewusst NICHT auf den Kategorie-Fallback abrutschen
+        # lassen - lieber als unbekannt melden als still falsch zuordnen.
+        if ist_variante(name):
+            return None
     return mapping.get(f"{kategorie}|*")
 
 
 def verarbeite_aktivitaet(gym: Gym, api, aktivitaet: dict, mapping: dict,
-                          user_id: str, fallback_day_id: str,
-                          muskeln: dict, tage: dict) -> dict:
-    """Importiert eine einzelne Garmin-Aktivitaet. Gibt einen Statusbericht zurueck."""
+                          user_id: str, muskeln: dict) -> dict:
+    """
+    Merkt eine einzelne Garmin-Aktivitaet zur Pruefung vor.
+
+    Geschrieben wird ausschliesslich in die Vorschau-Tabellen. In den
+    eigentlichen Trainingsverlauf kommt die Einheit erst, wenn Kerim sie unter
+    /gym/garmin uebernimmt.
+    """
     activity_id = aktivitaet.get("activityId")
 
     # --- Idempotenz -------------------------------------------------------
+    # Zwei Stellen pruefen: schon uebernommen (workout_sessions) oder schon
+    # vorgemerkt (garmin_import_sessions, egal in welchem Status - auch
+    # verworfene sollen nicht wieder auftauchen).
     if gym.select(
         "workout_sessions",
+        {"garmin_activity_id": f"eq.{activity_id}", "select": "id", "limit": 1},
+    ):
+        return {"activity_id": activity_id, "status": "uebersprungen"}
+
+    if gym.select(
+        "garmin_import_sessions",
         {"garmin_activity_id": f"eq.{activity_id}", "select": "id", "limit": 1},
     ):
         return {"activity_id": activity_id, "status": "uebersprungen"}
@@ -330,102 +366,90 @@ def verarbeite_aktivitaet(gym: Gym, api, aktivitaet: dict, mapping: dict,
     dauer = float(aktivitaet.get("duration") or 0)
     ende = start + timedelta(seconds=dauer) if start else None
 
-    # --- Saetze in Logzeilen uebersetzen ---------------------------------
-    logzeilen, ungemappt, satzzaehler = [], {}, {}
+    # --- Saetze in Vorschauzeilen uebersetzen -----------------------------
+    # Auch nicht zugeordnete Saetze kommen mit (exercise_id = None). Sie
+    # werden in der Vorschau angezeigt und dort von Hand zugeordnet, statt
+    # wie frueher nur als Notiz zu ueberleben.
+    satzzeilen, ungemappt = [], {}
     # Alle Garmin-Bezeichnungen mitschreiben, nicht nur die unbekannten:
     # falsch erkannte Uebungen werden sonst still einer plausiblen, aber
     # falschen Uebung zugeordnet und fallen nie auf.
     gesehen: dict = {}
 
-    for satz in aktive:
+    for position, satz in enumerate(aktive, start=1):
         info = (satz.get("exercises") or [{}])[0]
         kategorie = (info.get("category") or "").upper()
         name = (info.get("name") or "").upper()
 
-        roh = f"{kategorie}/{name}" if name else kategorie
-        gesehen[roh] = gesehen.get(roh, 0) + 1
+        schluessel = f"{kategorie}/{name}" if name else kategorie
+        gesehen[schluessel] = gesehen.get(schluessel, 0) + 1
 
         exercise_id = uebung_aufloesen(mapping, kategorie, name)
         if not exercise_id:
-            schluessel = f"{kategorie}/{name}" if name else kategorie
             ungemappt[schluessel] = ungemappt.get(schluessel, 0) + 1
-            continue
-
-        satzzaehler[exercise_id] = satzzaehler.get(exercise_id, 0) + 1
 
         # Garmin liefert Gramm. Koerpergewichtsuebungen (Klimmzuege,
-        # Liegestuetze) kommen ohne Gewicht - die Spalte ist NOT NULL und in
-        # dieser Datenbank steht dafuer seit jeher 0.
+        # Liegestuetze) kommen ohne Gewicht - und bei Maschinen kennt die Uhr
+        # das Gewicht schlicht nicht. Beides landet als 0 und wird in der
+        # Vorschau von Hand nachgetragen.
         gewicht = satz.get("weight")
         gewicht_kg = round(float(gewicht) / 1000.0, 2) if gewicht else 0
 
         satzstart = parse_zeit(satz.get("startTime"))
 
-        # Pflichtfelder von exercise_logs: workout_session_id, exercise_id,
-        # set_number, weight_kg, reps - alle ohne Default. `rir` hat den
-        # DB-Default 2; importierte Saetze bekommen stattdessen IMPORT_RIR,
-        # damit sie sich vom manuellen Tracking unterscheiden.
-        logzeilen.append({
-            "workout_session_id": None,  # wird nach dem Session-Insert gesetzt
+        satzzeilen.append({
+            "import_session_id": None,  # wird nach dem Session-Insert gesetzt
+            "position": position,
+            "garmin_key": schluessel,
             "exercise_id": exercise_id,
-            "set_number": satzzaehler[exercise_id],
             "weight_kg": gewicht_kg,
             "reps": int(satz.get("repetitionCount") or 0),
-            "rir": IMPORT_RIR,
             "completed_at": satzstart.isoformat() if satzstart else None,
         })
 
-    if not logzeilen and not ungemappt:
+    if not satzzeilen:
         return {"activity_id": activity_id, "status": "keine_saetze"}
 
     # --- Push oder Pull? --------------------------------------------------
-    split = erkenne_split([z["exercise_id"] for z in logzeilen], muskeln)
-    training_day_id = tage.get(split) if split else None
-    if not training_day_id:
-        training_day_id = fallback_day_id
+    # Nur die bereits zugeordneten Saetze zaehlen mit; die Zuordnung kann sich
+    # in der Vorschau noch aendern, deshalb ist das nur ein Vorschlag.
+    split = erkenne_split(
+        [z["exercise_id"] for z in satzzeilen if z["exercise_id"]], muskeln,
+    )
 
-    # --- Notiz: nichts still verwerfen -----------------------------------
-    notizteile = [f"Garmin-Import (Aktivität {activity_id})"]
-    if split:
-        notizteile.append(f"Erkannt als {split.capitalize()}")
-    for schluessel, anzahl in sorted(ungemappt.items()):
-        notizteile.append(f"Unmapped: {schluessel} ({anzahl} Sätze)")
-    notizteile.append("Garmin: " + ", ".join(
-        f"{k}×{v}" for k, v in sorted(gesehen.items())
-    ))
+    uebersicht = ", ".join(f"{k}×{v}" for k, v in sorted(gesehen.items()))
 
-    # --- Session anlegen --------------------------------------------------
-    session = gym.insert("workout_sessions", {
+    # --- Vorschau-Session anlegen -----------------------------------------
+    session = gym.insert("garmin_import_sessions", {
         "user_id": user_id,
-        "training_day_id": training_day_id,
+        "garmin_activity_id": activity_id,
         "started_at": start.isoformat() if start else None,
         "completed_at": ende.isoformat() if ende else None,
-        "notes": " | ".join(notizteile),
-        "log_source": "garmin",
-        "garmin_activity_id": activity_id,
+        "erkannter_split": split,
+        "garmin_uebersicht": uebersicht,
+        "status": "offen",
     }, return_rows=True)
 
     session_id = session[0]["id"]
 
-    if logzeilen:
-        for zeile in logzeilen:
-            zeile["workout_session_id"] = session_id
-        try:
-            gym.insert("exercise_logs", logzeilen)
-        except Exception:
-            # Ohne Saetze ist die Session wertlos - und sie wuerde wegen der
-            # eindeutigen garmin_activity_id jeden weiteren Versuch blockieren.
-            # PostgREST kennt keine Transaktion ueber zwei Aufrufe, also hier
-            # von Hand zuruecknehmen.
-            gym.delete("workout_sessions", {"id": f"eq.{session_id}"})
-            raise
+    for zeile in satzzeilen:
+        zeile["import_session_id"] = session_id
+    try:
+        gym.insert("garmin_import_saetze", satzzeilen)
+    except Exception:
+        # Ohne Saetze ist die Vorschau wertlos - und sie wuerde wegen der
+        # eindeutigen garmin_activity_id jeden weiteren Versuch blockieren.
+        # PostgREST kennt keine Transaktion ueber zwei Aufrufe, also hier
+        # von Hand zuruecknehmen.
+        gym.delete("garmin_import_sessions", {"id": f"eq.{session_id}"})
+        raise
 
     return {
         "activity_id": activity_id,
-        "status": "importiert",
-        "session_id": session_id,
+        "status": "vorgemerkt",
+        "import_session_id": session_id,
         "split": split or "unklar",
-        "saetze": len(logzeilen),
+        "saetze": len(satzzeilen),
         "ungemappt": ungemappt,
         "garmin_bezeichnungen": gesehen,
     }
@@ -445,41 +469,6 @@ def lade_muskelzuordnung(gym: Gym) -> dict:
     }
 
 
-def lade_trainingstage(gym: Gym, user_id: str) -> dict:
-    """
-    Die tatsaechlich benutzten Trainingstage nach Namen.
-
-    In der Datenbank liegen doppelte Eintraege ("Push"/"Pull" je zweimal).
-    Massgeblich ist der, an dem Sessions haengen - deshalb wird nach
-    Session-Anzahl entschieden statt einfach den ersten zu nehmen.
-    """
-    tage = gym.select("training_days", {
-        "user_id": f"eq.{user_id}",
-        "select": "id,name",
-        "limit": "100",
-    })
-
-    sessions = gym.select("workout_sessions", {
-        "user_id": f"eq.{user_id}",
-        "select": "training_day_id",
-        "limit": "2000",
-    })
-    haeufigkeit: dict = {}
-    for s in sessions:
-        tid = s.get("training_day_id")
-        if tid:
-            haeufigkeit[tid] = haeufigkeit.get(tid, 0) + 1
-
-    beste: dict = {}
-    for tag in tage:
-        name = str(tag.get("name") or "").strip().lower()
-        anzahl = haeufigkeit.get(tag["id"], 0)
-        if name not in beste or anzahl > beste[name][1]:
-            beste[name] = (tag["id"], anzahl)
-
-    return {name: id_und_anzahl[0] for name, id_und_anzahl in beste.items()}
-
-
 def erkenne_split(exercise_ids: list, muskeln: dict) -> str | None:
     """
     Push oder Pull anhand der trainierten Muskelgruppen.
@@ -496,32 +485,6 @@ def erkenne_split(exercise_ids: list, muskeln: dict) -> str | None:
     if push > pull:
         return "push"
     return None
-
-
-def ermittle_training_day(gym: Gym, user_id: str) -> str:
-    """
-    Trainingstag fuer importierte Einheiten.
-
-    `workout_sessions.training_day_id` ist NOT NULL, eine von der Uhr
-    importierte Einheit gehoert aber zu keinem geplanten Split. Statt die
-    Spalte aufzuweichen bekommt der Import einen eigenen Trainingstag
-    namens "Garmin".
-    """
-    treffer = gym.select("training_days", {
-        "user_id": f"eq.{user_id}",
-        "name": "eq.Garmin",
-        "select": "id",
-        "limit": 1,
-    })
-    if treffer:
-        return treffer[0]["id"]
-
-    angelegt = gym.insert("training_days", {
-        "user_id": user_id,
-        "name": "Garmin",
-        "description": "Von der Uhr importierte Einheiten - kein geplanter Split",
-    }, return_rows=True)
-    return angelegt[0]["id"]
 
 
 def ermittle_user_id(gym: Gym) -> str:
@@ -645,11 +608,9 @@ def sync() -> dict:
     gym = Gym()
     user_id = ermittle_user_id(gym)
 
-    fallback_day_id = ermittle_training_day(gym, user_id)
     api, methode = garmin_login(gym)
     mapping = lade_mapping(gym)
     muskeln = lade_muskelzuordnung(gym)
-    tage = lade_trainingstage(gym, user_id)
 
     alle = fetch_alle_aktivitaeten(api)
     aktivitaeten = [a for a in alle if ist_krafttraining(a)]
@@ -658,8 +619,7 @@ def sync() -> dict:
     for aktivitaet in aktivitaeten:
         try:
             berichte.append(verarbeite_aktivitaet(
-                gym, api, aktivitaet, mapping, user_id,
-                fallback_day_id, muskeln, tage))
+                gym, api, aktivitaet, mapping, user_id, muskeln))
         except Exception as fehler:
             berichte.append({
                 "activity_id": aktivitaet.get("activityId"),
@@ -681,7 +641,7 @@ def sync() -> dict:
         "aktivitaeten_gesamt": len(alle),
         **tagesdaten,
         "gefunden": len(aktivitaeten),
-        "importiert": sum(1 for b in berichte if b["status"] == "importiert"),
+        "vorgemerkt": sum(1 for b in berichte if b["status"] == "vorgemerkt"),
         "uebersprungen": sum(1 for b in berichte if b["status"] == "uebersprungen"),
         "details": berichte,
     }
