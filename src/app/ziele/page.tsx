@@ -5,7 +5,7 @@ import {
 import { Button, Card, CardTitle, Input, Label, Select, Badge, Empty, cx } from "@/components/ui";
 import { goalStanding, formatProgress, TONE_LABEL } from "@/lib/goals";
 import { dateLabel, todayISO } from "@/lib/format";
-import { createTradingClient } from "@/lib/supabase/trading";
+import { fetchTotalNativeBacktestCount } from "@/lib/supabase/backtest";
 import {
   BUCKET_LABEL, GOAL_KIND_LABEL,
   type Activity, type Category, type GoalMilestone, type GoalProgress,
@@ -23,17 +23,11 @@ export default async function ZielePage() {
       supabase.from("activities").select("*").eq("archived", false).order("name"),
     ]);
 
-  // Zählt die dokumentierten Backtest-Trades aus der Trading-Datenbank.
+  // Zählt die gewerteten Trades aus dem nativen Backtest-Journal
+  // (/trading/backtest), nicht aus backtest_sessions - das ist der
+  // automatisierte Engine-Backtest, hier geht es um den manuellen.
   // Null bedeutet: kein Zugang eingerichtet, dann gilt der manuelle Wert.
-  const backtestTrades = await (async () => {
-    const trading = createTradingClient();
-    if (!trading) return null;
-    const { data } = await trading.from("backtest_sessions").select("trades");
-    const alle = (data ?? []).flatMap(
-      (s) => (s.trades ?? []) as { result?: string }[]
-    );
-    return alle.filter((t) => t.result === "win" || t.result === "loss" || t.result === "be").length;
-  })();
+  const backtestTrades = await fetchTotalNativeBacktestCount();
 
   const goals = (goalRows ?? []) as GoalProgress[];
   const milestones = (msRows ?? []) as GoalMilestone[];

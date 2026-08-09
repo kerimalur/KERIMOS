@@ -1,13 +1,12 @@
 import "server-only";
-import { createTradingClient } from "@/lib/supabase/trading";
 
 /**
- * Backtest-Stand aus Kerims Google Sheet.
+ * Backtest-Stand aus Kerims altem Google Sheet.
  *
- * Früher kam die Zahl aus `backtest_sessions` im GVA-Screener - das ist aber
- * der automatisierte Engine-Backtest, nicht der manuelle, den die Roadmap
- * meint. Massgeblich ist das Dashboard-Sheet, in dem jeder von Hand
- * durchgespielte Trade steht.
+ * Abgelöst durch das native Backtest-Journal (lib/supabase/backtest.ts) als
+ * Quelle der Wahrheit - diese Datei bleibt nur als Fallback/Referenz stehen,
+ * falls das Sheet nochmal gebraucht wird. Nichts im Code ruft aktuell noch
+ * fetchBacktestStand() auf.
  *
  * Das Sheet ist als "Jeder mit dem Link" freigegeben, deshalb reicht die
  * öffentliche gviz-Adresse - kein Google-Login, kein API-Schlüssel.
@@ -68,45 +67,6 @@ function zerlege(zeile: string): string[] {
   }
   felder.push(aktuell);
   return felder;
-}
-
-/**
- * Wochenzahl des manuellen Backtests aus dem laufenden Gesamtstand.
- *
- * Das Sheet liefert nur einen kumulativen Gesamtstand ("Trades gewertet"),
- * kein Datum pro Trade - die Roadmap will aber wissen, wie viele Trades
- * DIESE Woche dazugekommen sind. Deshalb merkt sich `backtest_manual_snapshots`
- * den Gesamtstand vom ersten Seitenaufruf einer Woche als Baseline; die
- * Wochenzahl ist seither Gesamtstand minus Baseline.
- *
- * Übergangs-Effekt: läuft diese Funktion zum ersten Mal in einer Woche und
- * es wurden davor in derselben Woche schon Trades geloggt, zählen die nicht
- * rückwirkend mit - die Baseline entsteht ja erst mit diesem Aufruf. Ab der
- * nächsten Woche ist die Zahl dann durchgehend korrekt.
- */
-export async function fetchWeeklyManualBacktestCount(weekStart: string): Promise<number | null> {
-  const trading = createTradingClient();
-  if (!trading) return null;
-
-  const stand = await fetchBacktestStand();
-  if (stand === null) return null;
-
-  const { data: vorhanden } = await trading
-    .from("backtest_manual_snapshots")
-    .select("baseline_trades")
-    .eq("week_start", weekStart)
-    .maybeSingle();
-
-  if (vorhanden) {
-    return Math.max(0, stand.trades - Number(vorhanden.baseline_trades));
-  }
-
-  // Erster Aufruf diese Woche: aktuellen Stand als Baseline festschreiben.
-  await trading
-    .from("backtest_manual_snapshots")
-    .insert({ week_start: weekStart, baseline_trades: stand.trades });
-
-  return 0;
 }
 
 export async function fetchBacktestStand(): Promise<BacktestStand | null> {

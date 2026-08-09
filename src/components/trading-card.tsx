@@ -1,8 +1,9 @@
 import Link from "next/link";
 import {
-  fetchScreener, fetchTodayEvents, type ScreenerPair,
+  fetchScreener, fetchTodayEvents, BACKTEST_ZIEL, type ScreenerPair,
 } from "@/lib/supabase/trading";
-import { fetchBacktestStand, BACKTEST_ZIEL } from "@/lib/backtest-sheet";
+import { fetchNativeBacktestTrades } from "@/lib/supabase/backtest";
+import { computeNativeBacktestStats } from "@/lib/backtest-types";
 import { Card, Badge } from "@/components/ui";
 
 const eventTime = (iso: string) =>
@@ -44,13 +45,14 @@ export async function TradingCard() {
   const wochenausblick = sonntag && stunde >= 12;
   const marktZu = samstag || sonntag;
 
-  const [screener, stand, events] = await Promise.all([
+  const [screener, trades, events] = await Promise.all([
     marktZu ? Promise.resolve(null) : fetchScreener(),
-    // Aus dem Google Sheet, nicht aus backtest_sessions: dort steht der
+    // Aus dem nativen Journal, nicht aus backtest_sessions: dort steht der
     // automatisierte Engine-Backtest, gemeint ist der manuelle.
-    fetchBacktestStand(),
+    fetchNativeBacktestTrades(),
     marktZu ? Promise.resolve([]) : fetchTodayEvents(),
   ]);
+  const stand = trades.length > 0 ? computeNativeBacktestStats(trades) : null;
 
   const pairs = (screener?.data ?? []) as ScreenerPair[];
   const hits = pairs.filter((p) => p.status === "HIT");
@@ -68,9 +70,9 @@ export async function TradingCard() {
         </Link>
         {stand && (
           <span className="tabular text-xs text-ink-muted">
-            Backtest {stand.trades}/{BACKTEST_ZIEL}
+            Backtest {stand.gewertet}/{BACKTEST_ZIEL}
             {stand.winrate !== null && ` · ${stand.winrate.toFixed(0)} % WR`}
-            {stand.gesamtR !== null && ` · ${stand.gesamtR.toFixed(1)} R`}
+            {` · ${stand.gesamtR.toFixed(1)} R`}
           </span>
         )}
       </div>

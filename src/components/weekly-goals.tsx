@@ -40,10 +40,7 @@ export function WeeklyGoalsCard({ data }: { data: WeeklyGoals }) {
       <div className="space-y-3.5">
         {data.trades && (
           <GoalRow label="Backtest-Trades" current={data.trades.current}
-            target={data.trades.target} color="#8B94B8"
-            hint={data.trades.current === 0
-              ? "Erster Aufruf diese Woche setzt den Startwert - neue Trades ab jetzt zählen sofort mit."
-              : undefined} />
+            target={data.trades.target} color="#8B94B8" />
         )}
         {data.gym && (
           <>

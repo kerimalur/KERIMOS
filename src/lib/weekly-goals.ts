@@ -4,7 +4,7 @@ import {
   gymConfigured, fetchWeeklyGoal, countWeeklyTrainingBreakdown, fetchWeeklySteps,
 } from "@/lib/supabase/gym";
 import { tradingConfigured, WEEKLY_BACKTEST_ZIEL } from "@/lib/supabase/trading";
-import { fetchWeeklyManualBacktestCount } from "@/lib/backtest-sheet";
+import { fetchWeeklyNativeBacktestCount } from "@/lib/supabase/backtest";
 
 /**
  * Wochenpuls für die Startseite: die drei Zahlen, an denen sich die Woche
@@ -25,7 +25,7 @@ export async function fetchWeeklyGoals(): Promise<WeeklyGoals> {
   const wochenstart = toWeekStart(heute);
 
   const [trades, gymZiel, gymBreakdown, steps] = await Promise.all([
-    tradingConfigured() ? fetchWeeklyManualBacktestCount(wochenstart) : null,
+    tradingConfigured() ? fetchWeeklyNativeBacktestCount(wochenstart, heute) : null,
     gymConfigured() ? fetchWeeklyGoal() : null,
     gymConfigured() ? countWeeklyTrainingBreakdown(wochenstart) : null,
     gymConfigured() ? fetchWeeklySteps(wochenstart, heute) : null,

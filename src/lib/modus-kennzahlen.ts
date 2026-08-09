@@ -2,8 +2,9 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { createGymClient, gymConfigured } from "@/lib/supabase/gym";
 import { fetchTodayMenu, menuConfigured } from "@/lib/supabase/menu";
-import { fetchScreener } from "@/lib/supabase/trading";
-import { fetchBacktestStand, BACKTEST_ZIEL } from "@/lib/backtest-sheet";
+import { fetchScreener, BACKTEST_ZIEL } from "@/lib/supabase/trading";
+import { fetchNativeBacktestTrades } from "@/lib/supabase/backtest";
+import { computeNativeBacktestStats } from "@/lib/backtest-types";
 import { heuteISO } from "@/lib/time";
 
 /**
@@ -193,19 +194,19 @@ export async function fetchModusKennzahlen(): Promise<ModusDaten> {
     (async (): Promise<ModusZeile[]> => {
       const zeilen: ModusZeile[] = [];
 
-      // Der Backtest-Stand kommt aus dem Google Sheet, nicht mehr aus
-      // backtest_sessions - dort steht der automatisierte Engine-Backtest,
-      // gemeint ist aber der von Hand durchgespielte.
-      const stand = await fetchBacktestStand();
-      if (stand) {
+      // Der Backtest-Stand kommt aus dem nativen Journal (/trading/backtest),
+      // nicht aus backtest_sessions - dort steht der automatisierte
+      // Engine-Backtest, gemeint ist aber der von Hand durchgespielte.
+      const trades = await fetchNativeBacktestTrades();
+      if (trades.length > 0) {
+        const stand = computeNativeBacktestStats(trades);
         zeilen.push({
-          text: `Backtest ${stand.trades}/${BACKTEST_ZIEL}`,
-          betont: stand.trades < BACKTEST_ZIEL,
+          text: `Backtest ${stand.gewertet}/${BACKTEST_ZIEL}`,
+          betont: stand.gewertet < BACKTEST_ZIEL,
         });
         if (stand.winrate !== null) {
           zeilen.push({
-            text: `${stand.winrate.toFixed(0)} % Winrate` +
-              (stand.gesamtR !== null ? ` · ${stand.gesamtR.toFixed(1)} R` : ""),
+            text: `${stand.winrate.toFixed(0)} % Winrate · ${stand.gesamtR.toFixed(1)} R`,
           });
         }
       }

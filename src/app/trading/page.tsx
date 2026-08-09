@@ -231,8 +231,11 @@ export default async function TradingPage() {
       <div>
         <h1 className="font-display text-xl font-bold text-ink">Trading</h1>
         <p className="mt-1 max-w-2xl text-sm text-ink-muted">
-          GVA-Board live vom Screener, Backtest-Fortschritt aus der Trading-Datenbank.
-          Roadmap-Schritt 2: {BACKTEST_ZIEL} dokumentierte Trades, bevor FTMO ein Thema ist.
+          GVA-Board live vom Screener. Roadmap-Schritt 2: {BACKTEST_ZIEL} dokumentierte
+          Trades, bevor FTMO ein Thema ist — erfasst im{" "}
+          <Link href="/trading/backtest" className="text-accent-soft hover:underline">
+            Backtest-Journal ↗
+          </Link>.
         </p>
       </div>
 
@@ -340,9 +343,18 @@ export default async function TradingPage() {
       ) : (
         <>
           <Card>
+            <div className="mb-3 flex items-baseline justify-between gap-2">
+              <CardTitle className="mb-0">Engine-Backtest (automatisiert)</CardTitle>
+              <span className="text-xs text-ink-muted">
+                separates Experiment — der Roadmap-Zähler läuft im{" "}
+                <Link href="/trading/backtest" className="text-accent-soft hover:underline">
+                  Backtest-Journal
+                </Link>
+              </span>
+            </div>
             <div className="grid gap-4 sm:grid-cols-4">
-              <Stat label="Backtest-Trades" value={`${total.n} / ${BACKTEST_ZIEL}`}
-                sub={`${Math.round((total.n / BACKTEST_ZIEL) * 100)} % des Fundaments`} />
+              <Stat label="Sessions-Trades" value={total.n}
+                sub="nicht der Roadmap-Zähler" />
               <Stat label="Winrate"
                 value={total.winrate === null ? "—" : `${total.winrate.toFixed(0)} %`}
                 sub={`${total.wins} W · ${total.losses} L`} />
@@ -357,7 +369,7 @@ export default async function TradingPage() {
           </Card>
 
           <Card>
-            <CardTitle>Backtest-Sessions</CardTitle>
+            <CardTitle>Engine-Backtest-Sessions</CardTitle>
             {sessions.length === 0 ? (
               <Empty>Noch keine Sessions im Journal.</Empty>
             ) : (
