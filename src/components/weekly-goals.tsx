@@ -39,9 +39,11 @@ export function WeeklyGoalsCard({ data }: { data: WeeklyGoals }) {
       <CardTitle>Diese Woche</CardTitle>
       <div className="space-y-3.5">
         {data.trades && (
-          <GoalRow label="Backtest-Trades (Engine)" current={data.trades.current}
+          <GoalRow label="Backtest-Trades" current={data.trades.current}
             target={data.trades.target} color="#8B94B8"
-            hint="Automatisierte Engine-Backtests - dein manuelles Pensum steht im Google Sheet, das hier (noch) keine Wochenzahl liefert." />
+            hint={data.trades.current === 0
+              ? "Erster Aufruf diese Woche setzt den Startwert - neue Trades ab jetzt zählen sofort mit."
+              : undefined} />
         )}
         {data.gym && (
           <>
@@ -52,8 +54,8 @@ export function WeeklyGoalsCard({ data }: { data: WeeklyGoals }) {
           </>
         )}
         {data.steps && (
-          <GoalRow label="Schritte heute" current={data.steps.current}
-            target={data.steps.ziel ?? 10000} color="#5FC2A6" />
+          <GoalRow label="Schritte diese Woche" current={data.steps.current}
+            target={data.steps.ziel} color="#5FC2A6" />
         )}
       </div>
     </Card>

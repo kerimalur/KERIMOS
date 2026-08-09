@@ -1,16 +1,15 @@
 import "server-only";
-import { weekStart as toWeekStart, addDays, heuteISO } from "@/lib/time";
+import { weekStart as toWeekStart, heuteISO } from "@/lib/time";
 import {
-  gymConfigured, fetchWeeklyGoal, countWeeklyTrainingBreakdown, fetchTodaySteps,
+  gymConfigured, fetchWeeklyGoal, countWeeklyTrainingBreakdown, fetchWeeklySteps,
 } from "@/lib/supabase/gym";
-import {
-  tradingConfigured, fetchWeeklyBacktestCount, WEEKLY_BACKTEST_ZIEL,
-} from "@/lib/supabase/trading";
+import { tradingConfigured, WEEKLY_BACKTEST_ZIEL } from "@/lib/supabase/trading";
+import { fetchWeeklyManualBacktestCount } from "@/lib/backtest-sheet";
 
 /**
  * Wochenpuls für die Startseite: die drei Zahlen, an denen sich die Woche
- * gerade misst - Backtest-Trades, Gym (Kraft + Ausdauer getrennt, weil das
- * zwei unterschiedliche Wochenziele sind) und die heutigen Schritte.
+ * gerade misst - manuelle Backtest-Trades, Gym (Kraft + Ausdauer getrennt,
+ * weil das zwei unterschiedliche Wochenziele sind) und Schritte.
  *
  * Jede Quelle ist unabhängig: fehlt eine Datenbank oder ein Wert, wird nur
  * dieser Teil weggelassen statt die ganze Karte zu verstecken.
@@ -18,19 +17,18 @@ import {
 export interface WeeklyGoals {
   trades: { current: number; target: number } | null;
   gym: { kraft: number; kraftZiel: number; ausdauer: number; ausdauerZiel: number } | null;
-  steps: { current: number; ziel: number | null } | null;
+  steps: { current: number; ziel: number } | null;
 }
 
 export async function fetchWeeklyGoals(): Promise<WeeklyGoals> {
   const heute = heuteISO();
   const wochenstart = toWeekStart(heute);
-  const wochenendeExkl = addDays(wochenstart, 7);
 
   const [trades, gymZiel, gymBreakdown, steps] = await Promise.all([
-    tradingConfigured() ? fetchWeeklyBacktestCount(wochenstart, wochenendeExkl) : null,
+    tradingConfigured() ? fetchWeeklyManualBacktestCount(wochenstart) : null,
     gymConfigured() ? fetchWeeklyGoal() : null,
     gymConfigured() ? countWeeklyTrainingBreakdown(wochenstart) : null,
-    gymConfigured() ? fetchTodaySteps(heute) : null,
+    gymConfigured() ? fetchWeeklySteps(wochenstart, heute) : null,
   ]);
 
   return {
@@ -39,9 +37,6 @@ export async function fetchWeeklyGoals(): Promise<WeeklyGoals> {
       kraft: gymBreakdown.kraft, kraftZiel: gymZiel ?? 4,
       ausdauer: gymBreakdown.ausdauer, ausdauerZiel: 1,
     },
-    // Schritte erst zeigen, wenn die Uhr für heute schon synchronisiert hat -
-    // "0 von X" um 6 Uhr morgens wäre technisch korrekt, aber demotivierend
-    // und ohne Aussage.
-    steps: steps?.schritte ? { current: steps.schritte, ziel: steps.ziel } : null,
+    steps: steps === null ? null : { current: steps.total, ziel: steps.ziel },
   };
 }

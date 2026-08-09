@@ -415,23 +415,42 @@ export async function triggerGarminSync(): Promise<string> {
       `${ergebnis.gefunden} Krafttrainings gefunden, ${ergebnis.vorgemerkt} zur Prüfung ` +
       `vorgemerkt, ${ergebnis.uebersprungen} schon vorhanden.`;
 
-    // Bei null Treffern hilft nur die Liste dessen, was tatsächlich da war.
+    // Ausdauer separat - lief bisher gar nicht in dieser Meldung mit, obwohl
+    // der Sync es längst mitschickt. Ohne das sieht man nie, ob ein Lauf
+    // gefunden, aber z.B. mangels passender Cardio-Übung nicht importiert wurde.
+    const ausdauerGefunden = ergebnis.ausdauer_gefunden ?? 0;
+    const ausdauerText = ausdauerGefunden === 0
+      ? " Keine Ausdauereinheit gefunden."
+      : ` ${ausdauerGefunden} Ausdauer gefunden, ${ergebnis.ausdauer_importiert ?? 0} ` +
+        `importiert, ${ergebnis.ausdauer_uebersprungen ?? 0} schon vorhanden.`;
+
+    // Ausdauer gefunden, aber nichts importiert und nichts übersprungen:
+    // das ist der Fall, den Kerim gerade hat - Details statt nur einer Null.
+    const ausdauerDetails =
+      ausdauerGefunden > 0
+      && (ergebnis.ausdauer_importiert ?? 0) === 0
+      && (ergebnis.ausdauer_uebersprungen ?? 0) === 0
+        ? ` Details: ${JSON.stringify(ergebnis.ausdauer_details)}`
+        : "";
+
+    // Bei null Treffern (weder Kraft noch Ausdauer) hilft nur die Liste
+    // dessen, was Garmin tatsächlich geliefert hat.
     const typen: string[] = ergebnis.vorhandene_typen ?? [];
-    if (ergebnis.gefunden === 0) {
+    if (ergebnis.gefunden === 0 && ausdauerGefunden === 0) {
       if (typen.length === 0) {
-        return `${kern} Garmin hat für die letzten ${ergebnis.zeitraum_tage} Tage ` +
-          `überhaupt keine Aktivität geliefert.`;
+        return `${kern}${ausdauerText} Garmin hat für die letzten ` +
+          `${ergebnis.zeitraum_tage} Tage überhaupt keine Aktivität geliefert.`;
       }
-      return `${kern} Vorhanden waren nur: ${typen.join(", ")}.`;
+      return `${kern}${ausdauerText} Vorhanden waren nur: ${typen.join(", ")}.`;
     }
 
-    // Trainings da, aber keines vorgemerkt: die Rohmeldung durchreichen,
+    // Krafttrainings da, aber keines vorgemerkt: die Rohmeldung durchreichen,
     // sonst sieht man nur eine Null und weiss nicht warum.
-    if (ergebnis.vorgemerkt === 0 && ergebnis.uebersprungen === 0) {
-      return `${kern} Details: ${JSON.stringify(ergebnis.details)}`;
+    if (ergebnis.gefunden > 0 && ergebnis.vorgemerkt === 0 && ergebnis.uebersprungen === 0) {
+      return `${kern}${ausdauerText} Details: ${JSON.stringify(ergebnis.details)}`;
     }
 
-    return kern;
+    return `${kern}${ausdauerText}${ausdauerDetails}`;
   } catch (fehler) {
     return `Sync nicht erreichbar: ${fehler instanceof Error ? fehler.message : fehler}`;
   }
