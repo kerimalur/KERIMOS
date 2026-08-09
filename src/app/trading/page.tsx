@@ -7,7 +7,7 @@ import {
   type GvaSignal, type ScreenerPair, type RankingCurrency, type WatchlistPair,
 } from "@/lib/supabase/trading";
 import { addWatchlistPair, removeWatchlistPair } from "@/lib/trading-actions";
-import { Card, CardTitle, Stat, Badge, Empty, Input, Button } from "@/components/ui";
+import { Card, CardTitle, Stat, Badge, Empty, Input, Select, Label, Button } from "@/components/ui";
 import { dateLabel } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -136,39 +136,73 @@ function watchlistStatus(pair: string, pairs: ScreenerPair[]) {
   return p;
 }
 
+/** JPY-Paare rechnen mit 0.01 Pip, alles andere mit 0.0001. */
+function pipsZu(pair: string, a: number, b: number): number {
+  return Math.abs(a - b) / (pair.toUpperCase().includes("JPY") ? 0.01 : 0.0001);
+}
+
 function WatchlistCard({
   watchlist, pairs,
 }: { watchlist: WatchlistPair[]; pairs: ScreenerPair[] }) {
   return (
     <Card>
-      <CardTitle>Watchlist</CardTitle>
+      <div className="mb-3 flex items-baseline justify-between gap-2">
+        <CardTitle className="mb-0">Meine GVA-Linien</CardTitle>
+        <Link href="/trading/alarme" className="text-xs text-accent-soft hover:underline">
+          Alarme &amp; Handy-App ↗
+        </Link>
+      </div>
       <p className="mb-3 text-xs text-ink-muted">
-        Deine eigene Auswahl - unabhängig vom GVA-Board, mit dessen Live-Status,
-        sofern der Screener das Paar kennt.
+        Selbst gezeichnete Linien mit eigenem Alarm - unabhängig vom
+        automatischen GVA-Board darunter.
       </p>
 
       {watchlist.length === 0 ? (
-        <Empty>Noch nichts vorgemerkt.</Empty>
+        <Empty>Noch keine Linie gesetzt.</Empty>
       ) : (
-        <ul className="mb-3 space-y-1.5">
+        <ul className="mb-4 space-y-1.5">
           {watchlist.map((w) => {
-            const status = watchlistStatus(w.pair, pairs);
+            const live = watchlistStatus(w.pair, pairs);
+            const preis = live?.price ?? null;
+            const abstand = preis !== null && w.line_level !== null
+              ? pipsZu(w.pair, preis, w.line_level) : null;
+
             return (
               <li key={w.id}
                 className="flex flex-wrap items-center gap-2 rounded-lg bg-sand/60 px-3 py-2 text-sm">
                 <span className="font-medium text-ink">{w.pair}</span>
-                {status ? (
-                  <>
-                    {status.status === "HIT" && <Badge tone="bad">HIT</Badge>}
-                    {status.status === "PREPARE" && (
-                      <Badge tone="warn">{status.distance} Pips</Badge>
-                    )}
-                    {status.status === "NEUTRAL" && <Badge>neutral</Badge>}
-                  </>
-                ) : (
-                  <Badge tone="neutral">Screener kennt das Paar nicht</Badge>
+                {w.side && (
+                  <Badge tone={w.side === "long" ? "good" : "bad"}>
+                    {w.side.toUpperCase()}
+                  </Badge>
+                )}
+                {w.line_level !== null && (
+                  <span className="tabular text-xs text-ink-muted">@ {w.line_level}</span>
+                )}
+
+                {abstand !== null ? (
+                  <span className={"tabular text-xs " +
+                    (abstand < 1 ? "text-bad-bright"
+                      : w.alarm_pips !== null && abstand <= w.alarm_pips ? "text-accent"
+                        : "text-ink-soft")}>
+                    {abstand < 1 ? "erreicht" : `${Math.round(abstand)} Pips`}
+                  </span>
+                ) : !live ? (
+                  <Badge tone="neutral">kein Live-Preis</Badge>
+                ) : null}
+
+                {w.alarm_pips !== null && (
+                  <Badge tone="neutral">Warnung {w.alarm_pips} Pips</Badge>
+                )}
+                {w.alarm_on_hit && <Badge tone="neutral">bei Treffer</Badge>}
+                {w.alarm_time && <Badge tone="neutral">{w.alarm_time.slice(0, 5)}</Badge>}
+                {w.show_until && (
+                  <span className="text-[11px] text-ink-faint">
+                    Startseite bis {dateLabel(w.show_until)}
+                  </span>
                 )}
                 {w.note && <span className="text-xs text-ink-muted">{w.note}</span>}
+
                 <form action={removeWatchlistPair} className="ml-auto">
                   <input type="hidden" name="id" value={w.id} />
                   <button className="text-xs text-ink-faint transition hover:text-bad">
@@ -181,12 +215,47 @@ function WatchlistCard({
         </ul>
       )}
 
-      <form action={addWatchlistPair} className="flex flex-wrap items-end gap-2">
-        <Input name="pair" placeholder="z. B. EURUSD" required
-          className="w-32 uppercase" aria-label="Pair" />
-        <Input name="note" placeholder="Notiz (optional)"
-          className="min-w-40 flex-1" aria-label="Notiz" />
-        <Button type="submit" variant="ghost">Hinzufügen</Button>
+      <form action={addWatchlistPair} className="flex flex-wrap items-end gap-2.5">
+        <div>
+          <Label htmlFor="wl-pair">Pair</Label>
+          <Input id="wl-pair" name="pair" placeholder="EURUSD" required
+            className="w-28 uppercase" />
+        </div>
+        <div>
+          <Label htmlFor="wl-side">Seite</Label>
+          <Select id="wl-side" name="side" defaultValue="" className="w-28">
+            <option value="">—</option>
+            <option value="long">Long</option>
+            <option value="short">Short</option>
+          </Select>
+        </div>
+        <div>
+          <Label htmlFor="wl-level">Linie</Label>
+          <Input id="wl-level" name="line_level" type="number" step="0.00001"
+            placeholder="1.0850" className="w-28" />
+        </div>
+        <div>
+          <Label htmlFor="wl-pips">Warnung ab</Label>
+          <Input id="wl-pips" name="alarm_pips" type="number" min="0"
+            defaultValue={30} className="w-24" />
+        </div>
+        <div>
+          <Label htmlFor="wl-zeit">Uhrzeit</Label>
+          <Input id="wl-zeit" name="alarm_time" type="time" className="w-28" />
+        </div>
+        <div>
+          <Label htmlFor="wl-bis">Startseite bis</Label>
+          <Input id="wl-bis" name="show_until" type="date" className="w-36" />
+        </div>
+        <label className="flex cursor-pointer items-center gap-1.5 pb-2 text-xs text-ink-soft">
+          <input type="checkbox" name="alarm_on_hit" defaultChecked className="accent-accent" />
+          bei Treffer
+        </label>
+        <div className="min-w-36 flex-1">
+          <Label htmlFor="wl-note">Notiz</Label>
+          <Input id="wl-note" name="note" placeholder="optional" />
+        </div>
+        <Button type="submit" variant="ghost">Linie speichern</Button>
       </form>
     </Card>
   );

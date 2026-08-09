@@ -22,4 +22,8 @@ export const MODE_DIRECT: Record<string, string> = {
   Zeit: "/kalender?ansicht=tag",
   Gym: "/gym",
   Essen: "/m/Essen",
+  // Traden führt direkt aufs GVA-Board. TradingView und der Screener sind
+  // von dort aus verlinkt - der Umweg über die Kachelseite war ein Klick
+  // ohne Gegenwert.
+  Traden: "/trading",
 };

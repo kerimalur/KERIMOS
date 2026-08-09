@@ -20,10 +20,18 @@ const plexMono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: "KerimOS",
   description: "Zeit, Geld und Ziele an einem Ort.",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "KerimOS" },
+  icons: {
+    icon: [{ url: "/icon-192.png", sizes: "192x192", type: "image/png" }],
+    apple: [{ url: "/icon-192.png" }],
+  },
 };
 
 export const viewport: Viewport = {
   themeColor: "#17130F",
+  // Ohne das sitzt die installierte App unter der Android-Statusleiste.
+  viewportFit: "cover",
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

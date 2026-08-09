@@ -113,32 +113,61 @@ export async function fetchWeeklyBacktestCount(
   }).length;
 }
 
-/** Ein Pair auf der manuellen Watchlist - "das beobachte ich gerade selbst". */
+/**
+ * Eine selbst gezeichnete GVA-Linie auf der Watchlist.
+ *
+ * Anders als die "beobachtung"-Lane im GVA-Screener-Frontend (die an
+ * signals/outlooks hängt) ist das hier von Hand gepflegt: Kerim trägt ein
+ * Level ein, das er selbst im Chart gefunden hat, und legt fest, wann er
+ * dazu eine Benachrichtigung will.
+ */
 export interface WatchlistPair {
   id: string;
   pair: string;
   note: string | null;
   created_at: string;
+  /** Preis der eigenen Linie. Null = nur Pair beobachten, ohne Level. */
+  line_level: number | null;
+  side: "long" | "short" | null;
+  /** Vorwarnung ab diesem Pip-Abstand. Null = keine Nähe-Meldung. */
+  alarm_pips: number | null;
+  alarm_on_hit: boolean;
+  /** Freie Uhrzeit "HH:MM:SS" (Zürich). Null = keine Zeit-Erinnerung. */
+  alarm_time: string | null;
+  /** Letzter Tag auf der Startseite. Null = unbegrenzt. */
+  show_until: string | null;
+  archived: boolean;
 }
 
-/**
- * Kerims eigene Watchlist, unabhängig vom automatischen GVA-Board.
- *
- * Anders als die "beobachtung"-Lane im GVA-Screener-Frontend (die an
- * signals/outlooks hängt) ist das hier eine simple, von Hand gepflegte
- * Liste: Pairs, die gerade interessant sind, ohne dass es dafür schon einen
- * Hit oder ein erfasstes Setup braucht.
- */
+const WATCHLIST_SPALTEN =
+  "id, pair, note, created_at, line_level, side, alarm_pips, alarm_on_hit, alarm_time, show_until, archived";
+
 export async function fetchWatchlist(): Promise<WatchlistPair[]> {
   const supabase = createTradingClient();
   if (!supabase) return [];
 
   const { data } = await supabase
     .from("trading_watchlist")
-    .select("id, pair, note, created_at")
+    .select(WATCHLIST_SPALTEN)
+    .eq("archived", false)
     .order("created_at", { ascending: false });
 
-  return (data ?? []) as WatchlistPair[];
+  return ((data ?? []) as unknown as WatchlistPair[]).map((w) => ({
+    ...w,
+    line_level: w.line_level === null ? null : Number(w.line_level),
+  }));
+}
+
+/**
+ * Linien für die Startseite: nur die, deren Anzeigedauer noch läuft.
+ *
+ * `show_until` ist bewusst ein eigenes Feld und kein Ablauf der Zeile -
+ * eine Linie verschwindet von der Startseite, bleibt aber unter /trading
+ * bestehen, solange Kerim sie nicht löscht.
+ */
+export async function fetchWatchlistFuerStart(heute: string): Promise<WatchlistPair[]> {
+  const alle = await fetchWatchlist();
+  return alle.filter((w) => !w.show_until || w.show_until >= heute);
 }
 
 /** Eine Zeile aus signals: vom Screener aufgezeichneter GVA-Hit. */
