@@ -53,12 +53,23 @@ interface Linie {
 }
 
 export async function GET(request: NextRequest) {
-  const geheimnis = process.env.CRON_SECRET;
+  // Getrimmt verglichen: beim Einfügen in die Vercel-Oberfläche rutscht
+  // regelmässig ein Zeilenumbruch oder Leerzeichen mit, und ein exakter
+  // Vergleich schlägt dann fehl, obwohl der Wert für das Auge stimmt.
+  const geheimnis = process.env.CRON_SECRET?.trim();
   if (geheimnis) {
-    const kopf = request.headers.get("authorization");
-    const query = request.nextUrl.searchParams.get("secret");
+    const kopf = request.headers.get("authorization")?.trim() ?? "";
+    const query = request.nextUrl.searchParams.get("secret")?.trim() ?? "";
     if (kopf !== `Bearer ${geheimnis}` && query !== geheimnis) {
-      return NextResponse.json({ ok: false, fehler: "nicht autorisiert" }, { status: 401 });
+      // Nur Längen, nie Werte: das reicht, um Tippfehler und mitkopierte
+      // Zeichen zu erkennen, ohne das Geheimnis preiszugeben.
+      return NextResponse.json({
+        ok: false,
+        fehler: "nicht autorisiert",
+        hinweis: query
+          ? `?secret hat ${query.length} Zeichen, erwartet werden ${geheimnis.length}.`
+          : "In der URL fehlt ?secret=… (oder der Authorization-Header).",
+      }, { status: 401 });
     }
   }
 
