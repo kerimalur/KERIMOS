@@ -20,6 +20,14 @@ export const maxDuration = 30;
  * Gegen Dauerfeuer schützt `alarm_log`: pro Linie, Art und Tag genau eine
  * Meldung. Ein Unique-Index macht das auch dann dicht, wenn zwei Läufe
  * sich überschneiden - der zweite Insert scheitert schlicht.
+ *
+ * AUFRUF: bewusst NICHT über Vercel-Cron. Der Hobby-Plan erlaubt nur einen
+ * Lauf pro Tag ("Hobby accounts are limited to daily cron jobs") und lehnt
+ * jeden Deploy mit häufigerem Zeitplan komplett ab. Getaktet wird deshalb
+ * von aussen, z.B. cron-job.org alle 5 Minuten:
+ *     https://kerimos.vercel.app/api/gva-alarm?secret=<CRON_SECRET>
+ * Der Endpoint schützt sich selbst über CRON_SECRET und ist in der
+ * Middleware von der Login-Weiterleitung ausgenommen.
  */
 
 /** Pip-Grösse: JPY-Paare rechnen mit 0.01, alles andere mit 0.0001. */
