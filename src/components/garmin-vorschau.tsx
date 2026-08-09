@@ -1,8 +1,10 @@
 "use client";
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { Card, CardTitle, Select, Input, Button, Badge, Empty } from "@/components/ui";
-import { uebernehmeGarminImport, verwerfeGarminImport } from "@/lib/garmin-actions";
-import type { GarminVorschau, VorschauGruppe } from "@/lib/supabase/garmin";
+import {
+  uebernehmeGarminImport, verwerfeGarminImport, reaktiviereGarminImport,
+} from "@/lib/garmin-actions";
+import type { GarminVorschau, GarminVerworfen, VorschauGruppe } from "@/lib/supabase/garmin";
 
 /**
  * Prüfschritt vor dem Übernehmen eines Garmin-Trainings.
@@ -187,5 +189,69 @@ export function GarminVorschauPanel({ vorschau, exercises }: Props) {
         </Card>
       ))}
     </div>
+  );
+}
+
+/**
+ * Zuletzt verworfene Trainings mit "erneut versuchen".
+ *
+ * Warum es das braucht: "verwerfen" blockiert die garmin_activity_id dauerhaft
+ * gegen künftige Syncs (Absicht: kein Alert-Sturm auf längst Verworfenes) -
+ * das trifft aber auch den Fall, dass Kerim die Einheit auf der Uhr/App noch
+ * korrigiert hat und sie einfach nochmal haben will. Der Knopf gibt genau
+ * diesen einen Eintrag frei und stösst sofort einen neuen Sync an.
+ */
+export function GarminVerworfenPanel({ items }: { items: GarminVerworfen[] }) {
+  const [meldung, setMeldung] = useState<Record<string, string>>({});
+  const [laufendeId, setLaufendeId] = useState<string | null>(null);
+  const [, starte] = useTransition();
+
+  if (items.length === 0) return null;
+
+  function erneutVersuchen(id: string) {
+    const fd = new FormData();
+    fd.set("importId", id);
+    setLaufendeId(id);
+    starte(async () => {
+      const text = await reaktiviereGarminImport(fd);
+      setMeldung((m) => ({ ...m, [id]: text }));
+      setLaufendeId(null);
+    });
+  }
+
+  return (
+    <Card>
+      <CardTitle>Zuletzt verworfen</CardTitle>
+      <p className="mb-3 text-xs text-ink-muted">
+        Kommen beim normalen Sync nicht zurück. "Erneut versuchen" gibt die
+        Aktivität frei und synchronisiert sofort neu - nützlich, wenn du das
+        Training auf der Uhr oder in der App danach noch korrigiert hast.
+      </p>
+      <ul className="divide-y divide-line">
+        {items.map((v) => (
+          <li key={v.id} className="py-2.5 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-ink">{zeitLabel(v.started_at)}</span>
+              {v.garmin_uebersicht && (
+                <span className="min-w-0 truncate text-xs text-ink-muted">
+                  {v.garmin_uebersicht}
+                </span>
+              )}
+              <Button
+                variant="ghost"
+                className="ml-auto px-2.5 py-1 text-xs"
+                onClick={() => erneutVersuchen(v.id)}
+                disabled={laufendeId === v.id}
+              >
+                {laufendeId === v.id ? "…" : "erneut versuchen"}
+              </Button>
+            </div>
+            {meldung[v.id] && (
+              <p className="mt-1 text-xs text-ink-soft">{meldung[v.id]}</p>
+            )}
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }

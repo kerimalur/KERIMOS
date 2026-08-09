@@ -1,11 +1,13 @@
 import Link from "next/link";
 import {
   createTradingClient, tradingConfigured, computeBacktestStats, fetchScreener,
-  fetchWeekEvents, fetchRanking, checkFundamental, pairTf, tfLabel, BACKTEST_ZIEL,
+  fetchWeekEvents, fetchRanking, fetchWatchlist, checkFundamental, pairTf, tfLabel,
+  BACKTEST_ZIEL,
   type BacktestSessionRow, type BacktestTrade, type EconEvent,
-  type GvaSignal, type ScreenerPair, type RankingCurrency,
+  type GvaSignal, type ScreenerPair, type RankingCurrency, type WatchlistPair,
 } from "@/lib/supabase/trading";
-import { Card, CardTitle, Stat, Badge, Empty } from "@/components/ui";
+import { addWatchlistPair, removeWatchlistPair } from "@/lib/trading-actions";
+import { Card, CardTitle, Stat, Badge, Empty, Input, Button } from "@/components/ui";
 import { dateLabel } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -127,11 +129,75 @@ function cxNews(erledigt: boolean, tagVorbei: boolean): string {
   return "text-xs text-ink-soft";
 }
 
+/** Live-Status eines Pairs, so wie ihn das GVA-Board schon berechnet hat. */
+function watchlistStatus(pair: string, pairs: ScreenerPair[]) {
+  const p = pairs.find((x) => x.pair.toUpperCase() === pair);
+  if (!p) return null;
+  return p;
+}
+
+function WatchlistCard({
+  watchlist, pairs,
+}: { watchlist: WatchlistPair[]; pairs: ScreenerPair[] }) {
+  return (
+    <Card>
+      <CardTitle>Watchlist</CardTitle>
+      <p className="mb-3 text-xs text-ink-muted">
+        Deine eigene Auswahl - unabhängig vom GVA-Board, mit dessen Live-Status,
+        sofern der Screener das Paar kennt.
+      </p>
+
+      {watchlist.length === 0 ? (
+        <Empty>Noch nichts vorgemerkt.</Empty>
+      ) : (
+        <ul className="mb-3 space-y-1.5">
+          {watchlist.map((w) => {
+            const status = watchlistStatus(w.pair, pairs);
+            return (
+              <li key={w.id}
+                className="flex flex-wrap items-center gap-2 rounded-lg bg-sand/60 px-3 py-2 text-sm">
+                <span className="font-medium text-ink">{w.pair}</span>
+                {status ? (
+                  <>
+                    {status.status === "HIT" && <Badge tone="bad">HIT</Badge>}
+                    {status.status === "PREPARE" && (
+                      <Badge tone="warn">{status.distance} Pips</Badge>
+                    )}
+                    {status.status === "NEUTRAL" && <Badge>neutral</Badge>}
+                  </>
+                ) : (
+                  <Badge tone="neutral">Screener kennt das Paar nicht</Badge>
+                )}
+                {w.note && <span className="text-xs text-ink-muted">{w.note}</span>}
+                <form action={removeWatchlistPair} className="ml-auto">
+                  <input type="hidden" name="id" value={w.id} />
+                  <button className="text-xs text-ink-faint transition hover:text-bad">
+                    entfernen
+                  </button>
+                </form>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <form action={addWatchlistPair} className="flex flex-wrap items-end gap-2">
+        <Input name="pair" placeholder="z. B. EURUSD" required
+          className="w-32 uppercase" aria-label="Pair" />
+        <Input name="note" placeholder="Notiz (optional)"
+          className="min-w-40 flex-1" aria-label="Notiz" />
+        <Button type="submit" variant="ghost">Hinzufügen</Button>
+      </form>
+    </Card>
+  );
+}
+
 export default async function TradingPage() {
-  const [screener, weekEvents, ranking, journal] = await Promise.all([
+  const [screener, weekEvents, ranking, watchlist, journal] = await Promise.all([
     fetchScreener(),
     fetchWeekEvents(),
     fetchRanking(),
+    fetchWatchlist(),
     (async () => {
       const supabase = createTradingClient();
       if (!supabase) return null;
@@ -169,6 +235,8 @@ export default async function TradingPage() {
           Roadmap-Schritt 2: {BACKTEST_ZIEL} dokumentierte Trades, bevor FTMO ein Thema ist.
         </p>
       </div>
+
+      <WatchlistCard watchlist={watchlist} pairs={pairs} />
 
       {/* GVA-Board */}
       <Card>

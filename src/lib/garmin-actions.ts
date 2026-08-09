@@ -324,6 +324,48 @@ export async function verwerfeGarminImport(fd: FormData) {
 }
 
 /**
+ * Gibt ein verworfenes Training wieder frei und synchronisiert sofort neu.
+ *
+ * "Verwerfen" markiert nur den Status - die garmin_activity_id bleibt in
+ * garmin_import_sessions stehen und blockiert damit jeden künftigen Sync
+ * (siehe Docstring dort: "auch verworfene sollen nicht wieder auftauchen").
+ * Das ist im Normalfall richtig (kein Alert-Sturm auf längst Verworfenes),
+ * aber falsch, wenn Kerim das Training auf der Uhr/App danach noch
+ * korrigiert hat und es einfach nochmal haben will. Hier wird der Eintrag
+ * komplett gelöscht (Sätze zuerst, dann die Session), damit der nächste
+ * Sync die Aktivität wie neu behandelt - und der Sync läuft direkt mit an,
+ * damit man nicht bis zum nächtlichen Cron warten muss.
+ */
+export async function reaktiviereGarminImport(fd: FormData): Promise<string> {
+  const importId = text(fd, "importId");
+  if (!importId) return "Keine ID übergeben.";
+
+  const supabase = createGymClient();
+  if (!supabase) throw new Error("Gym-Datenbank nicht verbunden");
+
+  const { data: kopf } = await supabase
+    .from("garmin_import_sessions")
+    .select("id, status")
+    .eq("id", importId)
+    .maybeSingle();
+  if (!kopf) return "Eintrag nicht mehr vorhanden - vermutlich schon freigegeben.";
+  if (kopf.status !== "verworfen") {
+    return "Nur verworfene Trainings lassen sich so erneut versuchen.";
+  }
+
+  await supabase.from("garmin_import_saetze").delete().eq("import_session_id", importId);
+  const { error } = await supabase
+    .from("garmin_import_sessions")
+    .delete()
+    .eq("id", importId);
+  if (error) throw new Error(`Freigeben: ${error.message}`);
+
+  revalidatePath("/gym/garmin");
+
+  return `Freigegeben. ${await triggerGarminSync()}`;
+}
+
+/**
  * Stösst den Sync von Hand an.
  *
  * Der Endpoint ist eine Python-Function und lebt ausserhalb von Next.js,

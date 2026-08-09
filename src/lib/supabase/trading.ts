@@ -113,6 +113,34 @@ export async function fetchWeeklyBacktestCount(
   }).length;
 }
 
+/** Ein Pair auf der manuellen Watchlist - "das beobachte ich gerade selbst". */
+export interface WatchlistPair {
+  id: string;
+  pair: string;
+  note: string | null;
+  created_at: string;
+}
+
+/**
+ * Kerims eigene Watchlist, unabhängig vom automatischen GVA-Board.
+ *
+ * Anders als die "beobachtung"-Lane im GVA-Screener-Frontend (die an
+ * signals/outlooks hängt) ist das hier eine simple, von Hand gepflegte
+ * Liste: Pairs, die gerade interessant sind, ohne dass es dafür schon einen
+ * Hit oder ein erfasstes Setup braucht.
+ */
+export async function fetchWatchlist(): Promise<WatchlistPair[]> {
+  const supabase = createTradingClient();
+  if (!supabase) return [];
+
+  const { data } = await supabase
+    .from("trading_watchlist")
+    .select("id, pair, note, created_at")
+    .order("created_at", { ascending: false });
+
+  return (data ?? []) as WatchlistPair[];
+}
+
 /** Eine Zeile aus signals: vom Screener aufgezeichneter GVA-Hit. */
 export interface GvaSignal {
   id: string;

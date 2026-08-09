@@ -216,6 +216,40 @@ export async function fetchUnmappedGarmin(): Promise<{ key: string; saetze: numb
     .sort((a, b) => b.saetze - a.saetze || a.key.localeCompare(b.key));
 }
 
+export interface GarminVerworfen {
+  id: string;
+  garmin_activity_id: number | null;
+  started_at: string | null;
+  garmin_uebersicht: string | null;
+}
+
+/**
+ * Zuletzt verworfene Trainings.
+ *
+ * Ein verworfenes Training kommt beim normalen Sync NICHT zurück - die
+ * garmin_activity_id bleibt in garmin_import_sessions blockiert, auch wenn
+ * Kerim die Einheit auf der Uhr/App danach noch korrigiert. Diese Liste ist
+ * die Grundlage für den "erneut versuchen"-Knopf unter /gym/garmin.
+ */
+export async function fetchVerworfeneGarmin(limit = 10): Promise<GarminVerworfen[]> {
+  const supabase = createGymClient();
+  if (!supabase) return [];
+
+  const { data } = await supabase
+    .from("garmin_import_sessions")
+    .select("id, garmin_activity_id, started_at, garmin_uebersicht")
+    .eq("status", "verworfen")
+    .order("started_at", { ascending: false })
+    .limit(limit);
+
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    garmin_activity_id: (r.garmin_activity_id as number | null) ?? null,
+    started_at: (r.started_at as string | null) ?? null,
+    garmin_uebersicht: (r.garmin_uebersicht as string | null) ?? null,
+  }));
+}
+
 export interface GarminTag {
   datum: string;
   schritte: number | null;

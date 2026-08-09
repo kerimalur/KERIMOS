@@ -774,23 +774,42 @@ export async function countWeeklyTrainingBreakdown(
   };
 }
 
-export interface TodaySteps {
-  schritte: number | null;
-  ziel: number | null;
+export interface WeeklySteps {
+  /** Summe der Schritte von Wochenbeginn bis einschliesslich `bis`. */
+  total: number;
+  /** Wochenziel = Tagesziel × 7 - konsistent mit Kraft/Ausdauer, die auch
+   *  Wochensummen gegen ein Wochenziel zeigen, nicht Tageswerte gegen ein
+   *  Tagesziel. */
+  ziel: number;
 }
 
-/** Schritte und Tagesziel für ein bestimmtes Datum (Garmin, sofern schon synchronisiert). */
-export async function fetchTodaySteps(datum: string): Promise<TodaySteps | null> {
+const STANDARD_SCHRITTE_ZIEL = 10000;
+
+/**
+ * Schritte der laufenden Woche gegen das Wochenziel (Tagesziel × 7).
+ *
+ * Tage, die die Uhr noch nicht synchronisiert hat, tragen 0 bei - das ist
+ * gewollt: die Woche ist noch nicht vorbei, "70'000 Ziel" bleibt so lange
+ * unerreicht, bis wirklich genug Tage etwas beigetragen haben.
+ */
+export async function fetchWeeklySteps(von: string, bis: string): Promise<WeeklySteps | null> {
   const supabase = createGymClient();
   if (!supabase) return null;
 
   const { data } = await supabase.from("garmin_daily")
-    .select("schritte, schritte_ziel").eq("datum", datum).maybeSingle();
-  if (!data) return null;
+    .select("schritte, schritte_ziel")
+    .gte("datum", von).lte("datum", bis)
+    .order("datum", { ascending: false });
+
+  const zeilen = data ?? [];
+  if (zeilen.length === 0) return null;
+
+  const total = zeilen.reduce((s, z) => s + Number(z.schritte ?? 0), 0);
+  const tagesZiel = zeilen.find((z) => Number(z.schritte_ziel ?? 0) > 0)?.schritte_ziel;
 
   return {
-    schritte: data.schritte === null ? null : Number(data.schritte),
-    ziel: data.schritte_ziel === null ? null : Number(data.schritte_ziel),
+    total,
+    ziel: (Number(tagesZiel) || STANDARD_SCHRITTE_ZIEL) * 7,
   };
 }
 
