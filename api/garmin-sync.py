@@ -507,6 +507,35 @@ def verarbeite_aktivitaet(gym: Gym, api, aktivitaet: dict, mapping: dict,
 
 # ------------------------------------------------------- Verarbeitung Ausdauer
 
+CARDIO_TAG_NAME = "Garmin Ausdauer"
+
+
+def ermittle_cardio_trainingstag(gym: Gym, user_id: str) -> str:
+    """
+    Trainingstag fuer automatisch importierte Ausdauereinheiten.
+
+    workout_sessions.training_day_id ist NOT NULL - ein Wert wie None fliegt
+    beim Insert mit Fehler 23502 raus (so gefunden: erster echter Lauf lief
+    genau darauf). Eigener Tag statt des strength-seitigen "Garmin"-Tags
+    (siehe garmin-actions.ts::ermittleTrainingDay), damit Kraft- und
+    Ausdauer-Importe im Verlauf auseinanderzuhalten sind.
+    """
+    vorhanden = gym.select(
+        "training_days",
+        {"user_id": f"eq.{user_id}", "name": f"eq.{CARDIO_TAG_NAME}",
+         "select": "id", "limit": 1},
+    )
+    if vorhanden:
+        return vorhanden[0]["id"]
+
+    angelegt = gym.insert("training_days", {
+        "user_id": user_id,
+        "name": CARDIO_TAG_NAME,
+        "description": "Von der Uhr automatisch importierte Ausdauereinheiten.",
+    }, return_rows=True)
+    return angelegt[0]["id"]
+
+
 def lade_cardio_uebungen(gym: Gym) -> list:
     """Alle Uebungen mit is_cardio = true, Grundlage fuer die Namenszuordnung."""
     return gym.select(
@@ -536,7 +565,9 @@ def cardio_uebung_aufloesen(typ: str, cardio_uebungen: list) -> dict | None:
     return None
 
 
-def verarbeite_cardio(gym: Gym, aktivitaet: dict, cardio_uebungen: list, user_id: str) -> dict:
+def verarbeite_cardio(
+    gym: Gym, aktivitaet: dict, cardio_uebungen: list, user_id: str, training_day_id: str,
+) -> dict:
     """
     Uebernimmt eine Ausdauereinheit DIREKT (keine Vorschau, siehe Modulkopf).
 
@@ -565,7 +596,7 @@ def verarbeite_cardio(gym: Gym, aktivitaet: dict, cardio_uebungen: list, user_id
 
     session = gym.insert("workout_sessions", {
         "user_id": user_id,
-        "training_day_id": None,
+        "training_day_id": training_day_id,
         "garmin_activity_id": activity_id,
         "started_at": start.isoformat() if start else None,
         "completed_at": (ende or start).isoformat() if (ende or start) else None,
@@ -772,16 +803,18 @@ def sync() -> dict:
             })
 
     cardio_berichte = []
-    for aktivitaet in cardio_aktivitaeten:
-        try:
-            cardio_berichte.append(
-                verarbeite_cardio(gym, aktivitaet, cardio_uebungen, user_id))
-        except Exception as fehler:
-            cardio_berichte.append({
-                "activity_id": aktivitaet.get("activityId"),
-                "status": "fehler",
-                "fehler": str(fehler),
-            })
+    if cardio_aktivitaeten:
+        cardio_tag = ermittle_cardio_trainingstag(gym, user_id)
+        for aktivitaet in cardio_aktivitaeten:
+            try:
+                cardio_berichte.append(
+                    verarbeite_cardio(gym, aktivitaet, cardio_uebungen, user_id, cardio_tag))
+            except Exception as fehler:
+                cardio_berichte.append({
+                    "activity_id": aktivitaet.get("activityId"),
+                    "status": "fehler",
+                    "fehler": str(fehler),
+                })
 
     # Tagesdaten laufen unabhaengig von den Trainings - ein Problem beim
     # einen darf das andere nicht mitreissen.
