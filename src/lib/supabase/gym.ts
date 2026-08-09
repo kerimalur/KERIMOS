@@ -741,6 +741,59 @@ export async function countSessionsSince(von: string): Promise<number> {
   return count ?? 0;
 }
 
+/**
+ * Abgeschlossene Einheiten seit einem Datum, aufgeteilt in Kraft und Ausdauer.
+ *
+ * Eine Session zählt als Ausdauer, wenn sie mindestens einen cardio_logs-
+ * Eintrag hat - genau so schreibt der Garmin-Sync automatisch importierte
+ * Läufe, Velofahrten etc. hinein (siehe api/garmin-sync.py). Alles andere
+ * zählt als Kraft, auch eine Session ganz ohne Logs (z. B. gestartet, aber
+ * noch nichts erfasst) - das entspricht dem bisherigen Verhalten von
+ * `countSessionsSince`.
+ */
+export async function countWeeklyTrainingBreakdown(
+  von: string
+): Promise<{ kraft: number; ausdauer: number }> {
+  const supabase = createGymClient();
+  if (!supabase) return { kraft: 0, ausdauer: 0 };
+
+  const { data: sessions } = await supabase.from("workout_sessions")
+    .select("id")
+    .not("completed_at", "is", null)
+    .gte("completed_at", von + "T00:00:00");
+  const ids = (sessions ?? []).map((s) => s.id as string);
+  if (ids.length === 0) return { kraft: 0, ausdauer: 0 };
+
+  const { data: cardio } = await supabase.from("cardio_logs")
+    .select("workout_session_id").in("workout_session_id", ids);
+  const ausdauerIds = new Set((cardio ?? []).map((c) => c.workout_session_id as string));
+
+  return {
+    kraft: ids.length - ausdauerIds.size,
+    ausdauer: ausdauerIds.size,
+  };
+}
+
+export interface TodaySteps {
+  schritte: number | null;
+  ziel: number | null;
+}
+
+/** Schritte und Tagesziel für ein bestimmtes Datum (Garmin, sofern schon synchronisiert). */
+export async function fetchTodaySteps(datum: string): Promise<TodaySteps | null> {
+  const supabase = createGymClient();
+  if (!supabase) return null;
+
+  const { data } = await supabase.from("garmin_daily")
+    .select("schritte, schritte_ziel").eq("datum", datum).maybeSingle();
+  if (!data) return null;
+
+  return {
+    schritte: data.schritte === null ? null : Number(data.schritte),
+    ziel: data.schritte_ziel === null ? null : Number(data.schritte_ziel),
+  };
+}
+
 /** Eine Zeile aus v_exercise_progress: der schwerste Satz einer Einheit. */
 export interface GymTopSet {
   user_id: string | null;

@@ -25,6 +25,8 @@ export interface GarminSession {
   started_at: string | null;
   notes: string | null;
   saetze: number;
+  /** Gesetzt, wenn diese Session eine automatisch importierte Ausdauereinheit ist. */
+  cardio: { durationMinutes: number; distanceKm: number | null } | null;
 }
 
 /** Ein einzelner Satz, so wie ihn die Uhr geliefert hat. */
@@ -291,16 +293,27 @@ export async function fetchGarminSessions(limit = 10): Promise<GarminSession[]> 
 
   const { data } = await supabase
     .from("workout_sessions")
-    .select("id, garmin_activity_id, started_at, notes, exercise_logs(id)")
+    .select("id, garmin_activity_id, started_at, notes, exercise_logs(id), cardio_logs(duration_minutes, distance_km)")
     .eq("log_source", "garmin")
     .order("started_at", { ascending: false })
     .limit(limit);
 
-  return (data ?? []).map((r) => ({
-    id: r.id as string,
-    garmin_activity_id: (r.garmin_activity_id as number | null) ?? null,
-    started_at: (r.started_at as string | null) ?? null,
-    notes: (r.notes as string | null) ?? null,
-    saetze: ((r as { exercise_logs?: unknown[] }).exercise_logs ?? []).length,
-  }));
+  return (data ?? []).map((r) => {
+    const cardioLogs = (r as { cardio_logs?: { duration_minutes: number; distance_km: number | null }[] })
+      .cardio_logs ?? [];
+    const cardio = cardioLogs.length === 0 ? null : {
+      durationMinutes: cardioLogs.reduce((s, c) => s + Number(c.duration_minutes ?? 0), 0),
+      distanceKm: cardioLogs.some((c) => c.distance_km !== null)
+        ? cardioLogs.reduce((s, c) => s + Number(c.distance_km ?? 0), 0)
+        : null,
+    };
+    return {
+      id: r.id as string,
+      garmin_activity_id: (r.garmin_activity_id as number | null) ?? null,
+      started_at: (r.started_at as string | null) ?? null,
+      notes: (r.notes as string | null) ?? null,
+      saetze: ((r as { exercise_logs?: unknown[] }).exercise_logs ?? []).length,
+      cardio,
+    };
+  });
 }

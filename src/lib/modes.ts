@@ -5,7 +5,7 @@
  * neue Gruppe bekommt — hier steht nur die bevorzugte Reihenfolge.
  */
 export const MODE_ORDER = [
-  "Traden", "Programmieren", "Gym", "Essen", "Geld", "Zeit", "Lernen",
+  "Traden", "Gym", "Essen", "Geld", "Zeit", "Lernen",
 ];
 
 /**

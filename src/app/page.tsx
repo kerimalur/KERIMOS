@@ -9,8 +9,10 @@ import { GewichtHeute } from "@/components/gewicht-heute";
 import { Logo } from "@/components/logo";
 import { QuickSearch } from "@/components/quick-search";
 import { Button, Card } from "@/components/ui";
+import { WeeklyGoalsCard } from "@/components/weekly-goals";
 import { seedLinks } from "@/lib/actions";
 import { fetchModusKennzahlen } from "@/lib/modus-kennzahlen";
+import { fetchWeeklyGoals } from "@/lib/weekly-goals";
 import { MODE_ORDER, MODE_DIRECT } from "@/lib/modes";
 import { addDays, weekStart as toWeekStart, heuteISO, heuteWochentag } from "@/lib/time";
 import type { Activity, FocusSession, NavLink } from "@/lib/types";
@@ -43,7 +45,7 @@ export default async function Start() {
 
   const [
     { data: linkRows }, { data: focusRows }, { data: actRows },
-    { data: lastReview }, { data: letzteBuchung }, kennzahlen,
+    { data: lastReview }, { data: letzteBuchung }, kennzahlen, wochenziele,
   ] = await Promise.all([
     supabase.from("links").select("*").eq("archived", false)
       .order("group_name").order("sort_order"),
@@ -54,6 +56,7 @@ export default async function Start() {
     supabase.from("transactions").select("occurred_on")
       .order("occurred_on", { ascending: false }).limit(1),
     fetchModusKennzahlen(),
+    fetchWeeklyGoals(),
   ]);
 
   const links = (linkRows ?? []) as NavLink[];
@@ -64,8 +67,8 @@ export default async function Start() {
         <Card>
           <h1 className="font-display text-lg font-bold text-ink">Navigator einrichten</h1>
           <p className="mt-2 text-sm text-ink-muted">
-            KerimOS legt dir Kacheln für deine Modi an — Traden, Programmieren,
-            Gym, Essen, Geld, Zeit. Alles danach änderbar.
+            KerimOS legt dir Kacheln für deine Modi an — Traden, Gym, Essen,
+            Geld, Zeit. Alles danach änderbar.
           </p>
           <form action={seedLinks} className="mt-5">
             <Button type="submit" className="w-full">Kacheln anlegen</Button>
@@ -112,6 +115,10 @@ export default async function Start() {
       </div>
 
       <Tagesstrahl />
+
+      <div className="mb-6">
+        <WeeklyGoalsCard data={wochenziele} />
+      </div>
 
       <div className="mb-6">
         <QuickSearch links={links} />

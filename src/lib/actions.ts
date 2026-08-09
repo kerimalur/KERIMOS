@@ -2578,37 +2578,6 @@ export async function seedLinks() {
       target: "https://www.tradingview.com/chart/",
       group_name: "Traden", icon: "◔", color: "#8FA6B8", sort_order: 3 },
 
-    // Programmieren
-    { title: "Claude", subtitle: "claude.ai", kind: "web",
-      target: "https://claude.ai",
-      group_name: "Programmieren", icon: "✳", color: "#C68D6B", sort_order: 1 },
-    { title: "Vercel", subtitle: "Deployments", kind: "web",
-      target: "https://vercel.com/kerim-alurs-projects",
-      group_name: "Programmieren", icon: "△", color: "#A8A093", sort_order: 2 },
-    { title: "Supabase", subtitle: "Datenbanken", kind: "web",
-      target: "https://supabase.com/dashboard/org/qxzrvonguaeewuxwspwg",
-      group_name: "Programmieren", icon: "◭", color: "#6E9B76", sort_order: 3 },
-    { title: "GitHub", subtitle: "Repositories", kind: "web",
-      target: "https://github.com/kerimalur",
-      group_name: "Programmieren", icon: "◐", color: "#8A8478", sort_order: 4 },
-    { title: "Projekte", subtitle: "Hauptordner", kind: "folder",
-      target: "C:\\Projekte\\Claude Cowork",
-      group_name: "Programmieren", icon: "▭", color: "#A8A093", sort_order: 5 },
-    // Quellcode-Ordner gehören ausschliesslich hierher - in den Sach-Modi
-    // (Traden, Essen, Gym) will man arbeiten, nicht programmieren.
-    { title: "KerimOS Code", subtitle: "diese App", kind: "folder",
-      target: "C:\\Projekte\\Claude Cowork\\Kompass",
-      group_name: "Programmieren", icon: "▭", color: "#A8A093", sort_order: 6 },
-    { title: "GVA Screener Code", subtitle: "Quellcode", kind: "folder",
-      target: "C:\\Projekte\\Claude Cowork\\GVA-Screener",
-      group_name: "Programmieren", icon: "▭", color: "#A8A093", sort_order: 7 },
-    { title: "Menüplan Code", subtitle: "Quellcode", kind: "folder",
-      target: "C:\\Projekte\\Claude Cowork\\Men-plan\\Men-plan",
-      group_name: "Programmieren", icon: "▭", color: "#A8A093", sort_order: 8 },
-    { title: "Gym-Tracker Code", subtitle: "Quellcode", kind: "folder",
-      target: "C:\\Projekte\\Claude Cowork\\Gymapp-vereinfacht",
-      group_name: "Programmieren", icon: "▭", color: "#A8A093", sort_order: 9 },
-
     // Gym - läuft vollständig in KerimOS, inklusive des laufenden Trainings
     { title: "Gym", subtitle: "Training, Plan, Fortschritt", kind: "section",
       target: "/gym", group_name: "Gym", icon: "▲", color: "#C68D6B", sort_order: 1 },

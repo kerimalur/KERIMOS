@@ -189,8 +189,20 @@ export function GarminPanel({ exercises, mappings, unmapped, sessions, tage }: P
             {sessions.map((s) => (
               <li key={s.id} className="flex items-center gap-3 py-2 text-sm">
                 <span className="text-ink">{zeitLabel(s.started_at)}</span>
-                <Badge>{s.saetze} Sätze</Badge>
-                {s.notes?.includes("Unmapped") && (
+                {s.cardio ? (
+                  <Badge tone="accent">
+                    Ausdauer · {s.cardio.durationMinutes.toFixed(0)} min
+                    {s.cardio.distanceKm !== null && ` · ${s.cardio.distanceKm.toFixed(1)} km`}
+                  </Badge>
+                ) : (
+                  <Badge>{s.saetze} Sätze</Badge>
+                )}
+                {s.notes?.includes("Unmapped Cardio") && (
+                  <span className="text-xs text-ink-muted">
+                    Ausdauer-Typ nicht zugeordnet — bitte Übung mit is_cardio anlegen
+                  </span>
+                )}
+                {s.notes?.includes("Unmapped:") && (
                   <span className="text-xs text-ink-muted">enthält nicht zugeordnete Übungen</span>
                 )}
               </li>

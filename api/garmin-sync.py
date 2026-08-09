@@ -1,11 +1,11 @@
 """
 Garmin -> KerimOS Sync.
 
-Holt Krafttrainings von Garmin Connect und schreibt sie in die Gym-Datenbank
-(Supabase-Projekt "Gymapp Cursor"). Laeuft als Vercel Python Serverless
-Function, taeglich per Cron.
+Holt Krafttrainings UND Ausdauereinheiten von Garmin Connect und schreibt sie
+in die Gym-Datenbank (Supabase-Projekt "Gymapp Cursor"). Laeuft als Vercel
+Python Serverless Function, taeglich per Cron.
 
-Ablauf:
+Ablauf Krafttraining:
   1. Anmeldung bei Garmin - bevorzugt mit gecachtem Token aus der Tabelle
      `private_tokens`, sonst frischer Login mit E-Mail/Passwort.
   2. Krafttrainings der letzten 7 Tage holen.
@@ -15,12 +15,25 @@ Ablauf:
   5. Session als VORSCHAU in `garmin_import_sessions` + `garmin_import_saetze`
      ablegen.
 
+Ablauf Ausdauer (Laufen, Rad, Schwimmen, Wandern, Rudern, ...):
+  Anders als Krafttraining braucht Ausdauer keine Uebungszuordnung mit
+  Gewicht - Dauer und Distanz liefert die Uhr zuverlaessig. Deshalb landet
+  eine erkannte Ausdauereinheit DIREKT in `workout_sessions` (log_source
+  'garmin', ohne training_day) + `cardio_logs`, ohne den Umweg ueber die
+  Vorschau. Sie zaehlt damit sofort fuers Wochenziel und taucht in Verlauf
+  und Fortschritt auf. Nur die Zuordnung zu einer konkreten Cardio-Uebung
+  (per Namens-Stichwort, siehe CARDIO_TYP_KEYWORDS) kann fehlschlagen - dann
+  bleibt die Session ohne cardio_logs-Zeile, zaehlt aber trotzdem als
+  absolvierte Einheit, und die Notiz "Unmapped Cardio: <typ>" macht das unter
+  /gym/garmin sichtbar.
+
 Bewusste Entscheidungen:
-  - Der Sync schreibt NICHT mehr direkt nach workout_sessions/exercise_logs.
-    Die Uhr kennt das Gewicht oft nicht (0 kg) und ordnet Uebungen manchmal
-    falsch zu. Deshalb landet jedes neue Training zuerst in der Vorschau; die
-    Uebernahme passiert von Hand unter /gym/garmin, wo Gewichte und
-    Uebungszuordnung korrigiert werden koennen.
+  - Der Sync schreibt bei Krafttraining NICHT mehr direkt nach
+    workout_sessions/exercise_logs. Die Uhr kennt das Gewicht oft nicht (0 kg)
+    und ordnet Uebungen manchmal falsch zu. Deshalb landet jedes neue Training
+    zuerst in der Vorschau; die Uebernahme passiert von Hand unter
+    /gym/garmin, wo Gewichte und Uebungszuordnung korrigiert werden koennen.
+    Bei Ausdauer gibt es dieses Risiko nicht, deshalb direkt.
   - Zugriff auf Supabase per PostgREST (requests) statt der supabase-Lib:
     weniger Abhaengigkeiten, und der Service-Role-Key umgeht RLS ohnehin.
   - Fehler liefern HTTP 200 mit Fehlertext im Body, damit Vercel den Cron
@@ -46,6 +59,35 @@ import requests
 TOKEN_SETTING_KEY = "garmin_session"
 LOOKBACK_DAYS = 7
 GARMIN_ACTIVITY_TYPES = ("strength", "fitness_equipment", "indoor_cardio")
+
+# Ausdauer-Typen, wie Garmin sie in activityType.typeKey benennt (Teilstring-
+# Suche, deckt Varianten wie "trail_running" oder "indoor_cycling" mit ab).
+# "indoor_cardio" gehoert bewusst NICHT hierher - das ist in
+# GARMIN_ACTIVITY_TYPES bereits als Krafttraining/Zirkel verdrahtet, und eine
+# Aktivitaet soll nicht in beide Auswertungen gleichzeitig fallen.
+GARMIN_CARDIO_TYPES = (
+    "running", "walking", "hiking", "cycling", "biking", "swimming",
+    "rowing", "elliptical", "stair_stepping", "cross_country_skiing",
+)
+
+# Je erkanntem Garmin-Typ die Stichworte, nach denen in den Namen der
+# Cardio-Uebungen (exercises.is_cardio = true) gesucht wird - unabhaengig
+# davon, ob Kerim sie deutsch oder englisch benannt hat.
+CARDIO_TYP_KEYWORDS = {
+    "running": ["lauf", "running", "run"],
+    "walking": ["gehen", "walking", "spazier"],
+    "hiking": ["wandern", "hiking", "wanderung"],
+    "cycling": ["rad", "velo", "bike", "cycling"],
+    "biking": ["rad", "velo", "bike", "cycling"],
+    "swimming": ["schwimm", "swim"],
+    "rowing": ["ruder", "rowing"],
+    "elliptical": ["ellip", "crosstrainer"],
+    "stair_stepping": ["treppe", "stair", "stepper"],
+    "cross_country_skiing": ["ski", "langlauf"],
+}
+# Generische Cardio-Uebung als letzter Fallback, falls kein Stichwort passt -
+# etwa "Cardio" oder "Ausdauer", falls Kerim so eine Sammelübung angelegt hat.
+CARDIO_FALLBACK_NAMEN = ("cardio", "ausdauer", "ausdauertraining", "sonstiges")
 
 # Fuer die automatische Push/Pull-Erkennung: welche Muskelgruppe zaehlt
 # wohin. Namen wie in der Tabelle muscle_groups.
@@ -242,6 +284,14 @@ def fetch_alle_aktivitaeten(api) -> list:
 def ist_krafttraining(aktivitaet: dict) -> bool:
     name = typ_name(aktivitaet)
     return any(teil in name for teil in GARMIN_ACTIVITY_TYPES)
+
+
+def ist_ausdauer(aktivitaet: dict) -> bool:
+    """Laufen, Rad, Schwimmen & Co. Nie zugleich Krafttraining (siehe oben)."""
+    name = typ_name(aktivitaet)
+    if any(teil in name for teil in GARMIN_ACTIVITY_TYPES):
+        return False
+    return any(teil in name for teil in GARMIN_CARDIO_TYPES)
 
 
 # ------------------------------------------------------------ Verarbeitung
@@ -455,6 +505,98 @@ def verarbeite_aktivitaet(gym: Gym, api, aktivitaet: dict, mapping: dict,
     }
 
 
+# ------------------------------------------------------- Verarbeitung Ausdauer
+
+def lade_cardio_uebungen(gym: Gym) -> list:
+    """Alle Uebungen mit is_cardio = true, Grundlage fuer die Namenszuordnung."""
+    return gym.select(
+        "exercises", {"is_cardio": "eq.true", "select": "id,name", "limit": "200"},
+    )
+
+
+def cardio_uebung_aufloesen(typ: str, cardio_uebungen: list) -> dict | None:
+    """
+    Sucht zum Garmin-Typ (z.B. 'running') eine passende Cardio-Uebung anhand
+    von Namens-Stichworten - unabhaengig davon, ob Kerim sie deutsch oder
+    englisch benannt hat. Ohne Treffer: generische Uebung wie "Cardio", sonst
+    None (die Session bleibt dann ohne Uebungszuordnung, zaehlt aber trotzdem).
+    """
+    for kategorie, stichworte in CARDIO_TYP_KEYWORDS.items():
+        if kategorie not in typ:
+            continue
+        for u in cardio_uebungen:
+            name = str(u.get("name") or "").lower()
+            if any(w in name for w in stichworte):
+                return u
+
+    for u in cardio_uebungen:
+        name = str(u.get("name") or "").lower()
+        if name in CARDIO_FALLBACK_NAMEN:
+            return u
+    return None
+
+
+def verarbeite_cardio(gym: Gym, aktivitaet: dict, cardio_uebungen: list, user_id: str) -> dict:
+    """
+    Uebernimmt eine Ausdauereinheit DIREKT (keine Vorschau, siehe Modulkopf).
+
+    Die workout_sessions-Zeile entsteht in jedem Fall - sie ist es, die fuers
+    Wochenziel zaehlt. Die cardio_logs-Zeile (Dauer/Distanz an einer
+    konkreten Uebung) entsteht nur, wenn sich der Garmin-Typ einer Cardio-
+    Uebung zuordnen liess.
+    """
+    activity_id = aktivitaet.get("activityId")
+
+    if gym.select(
+        "workout_sessions",
+        {"garmin_activity_id": f"eq.{activity_id}", "select": "id", "limit": 1},
+    ):
+        return {"activity_id": activity_id, "status": "uebersprungen"}
+
+    typ = typ_name(aktivitaet)
+    start = parse_zeit(aktivitaet.get("startTimeLocal"))
+    dauer_sek = float(aktivitaet.get("duration") or 0)
+    ende = start + timedelta(seconds=dauer_sek) if start else None
+    distanz_m = aktivitaet.get("distance")
+    distanz_km = round(float(distanz_m) / 1000.0, 2) if distanz_m else None
+    dauer_min = round(dauer_sek / 60.0, 1) if dauer_sek > 0 else 0.0
+
+    uebung = cardio_uebung_aufloesen(typ, cardio_uebungen)
+
+    session = gym.insert("workout_sessions", {
+        "user_id": user_id,
+        "training_day_id": None,
+        "garmin_activity_id": activity_id,
+        "started_at": start.isoformat() if start else None,
+        "completed_at": (ende or start).isoformat() if (ende or start) else None,
+        "log_source": "garmin",
+        "notes": None if uebung else f"Unmapped Cardio: {typ}",
+    }, return_rows=True)
+    session_id = session[0]["id"]
+
+    if uebung:
+        try:
+            gym.insert("cardio_logs", {
+                "workout_session_id": session_id,
+                "exercise_id": uebung["id"],
+                "duration_minutes": dauer_min,
+                "distance_km": distanz_km,
+            })
+        except Exception:
+            # Die Session zaehlt trotzdem als absolvierte Einheit - nur das
+            # Detail (Dauer/Distanz an der Uebung) fehlt dann.
+            pass
+
+    return {
+        "activity_id": activity_id,
+        "status": "importiert",
+        "typ": typ,
+        "uebung": uebung["name"] if uebung else None,
+        "dauer_min": dauer_min,
+        "distanz_km": distanz_km,
+    }
+
+
 def lade_muskelzuordnung(gym: Gym) -> dict:
     """exercise_id -> Name der primaeren Muskelgruppe (klein geschrieben)."""
     gruppen = {
@@ -611,9 +753,11 @@ def sync() -> dict:
     api, methode = garmin_login(gym)
     mapping = lade_mapping(gym)
     muskeln = lade_muskelzuordnung(gym)
+    cardio_uebungen = lade_cardio_uebungen(gym)
 
     alle = fetch_alle_aktivitaeten(api)
     aktivitaeten = [a for a in alle if ist_krafttraining(a)]
+    cardio_aktivitaeten = [a for a in alle if ist_ausdauer(a)]
 
     berichte = []
     for aktivitaet in aktivitaeten:
@@ -622,6 +766,18 @@ def sync() -> dict:
                 gym, api, aktivitaet, mapping, user_id, muskeln))
         except Exception as fehler:
             berichte.append({
+                "activity_id": aktivitaet.get("activityId"),
+                "status": "fehler",
+                "fehler": str(fehler),
+            })
+
+    cardio_berichte = []
+    for aktivitaet in cardio_aktivitaeten:
+        try:
+            cardio_berichte.append(
+                verarbeite_cardio(gym, aktivitaet, cardio_uebungen, user_id))
+        except Exception as fehler:
+            cardio_berichte.append({
                 "activity_id": aktivitaet.get("activityId"),
                 "status": "fehler",
                 "fehler": str(fehler),
@@ -644,11 +800,16 @@ def sync() -> dict:
         "vorgemerkt": sum(1 for b in berichte if b["status"] == "vorgemerkt"),
         "uebersprungen": sum(1 for b in berichte if b["status"] == "uebersprungen"),
         "details": berichte,
+        "ausdauer_gefunden": len(cardio_aktivitaeten),
+        "ausdauer_importiert": sum(1 for b in cardio_berichte if b["status"] == "importiert"),
+        "ausdauer_uebersprungen": sum(
+            1 for b in cardio_berichte if b["status"] == "uebersprungen"),
+        "ausdauer_details": cardio_berichte,
     }
 
     # Wenn nichts passendes dabei war, zeigen was Garmin ueberhaupt geliefert
     # hat - sonst raet man, ob der Filter oder die Uhr das Problem ist.
-    if not aktivitaeten:
+    if not aktivitaeten and not cardio_aktivitaeten:
         ergebnis["vorhandene_typen"] = sorted({
             f"{typ_name(a) or 'unbekannt'} ({str(a.get('startTimeLocal'))[:10]})"
             for a in alle

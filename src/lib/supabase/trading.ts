@@ -27,6 +27,9 @@ export function tradingConfigured(): boolean {
 /** Roadmap-Schritt 2: 200 dokumentierte Backtest-Trades. */
 export const BACKTEST_ZIEL = 200;
 
+/** Pensum laut Roadmap: 3 Tage à 8 Trades pro Woche (siehe CLAUDE.md). */
+export const WEEKLY_BACKTEST_ZIEL = 24;
+
 /** Ein Trade innerhalb von backtest_sessions.trades (jsonb-Array). */
 export interface BacktestTrade {
   date: string;
@@ -86,6 +89,28 @@ export function computeBacktestStats(trades: BacktestTrade[]): BacktestStats {
     profitFactor: grossLoss > 0 ? grossWin / grossLoss : null,
     expectancy: n > 0 ? sumR / n : null,
   };
+}
+
+/**
+ * Zählt dokumentierte Backtest-Trades einer Kalenderwoche (weekStart
+ * inklusiv, weekEndExclusive exklusiv, beide "YYYY-MM-DD"). Gleiche
+ * Zähllogik wie computeBacktestStats: nur win/loss/be gelten als
+ * abgeschlossen, offene oder abgebrochene Trades zählen nicht mit.
+ */
+export async function fetchWeeklyBacktestCount(
+  weekStart: string, weekEndExclusive: string,
+): Promise<number> {
+  const supabase = createTradingClient();
+  if (!supabase) return 0;
+
+  const { data } = await supabase.from("backtest_sessions").select("trades");
+  const alle = (data ?? []).flatMap((s) => (s.trades ?? []) as BacktestTrade[]);
+
+  return alle.filter((t) => {
+    if (t.result !== "win" && t.result !== "loss" && t.result !== "be") return false;
+    const tag = (t.date || "").slice(0, 10);
+    return tag >= weekStart && tag < weekEndExclusive;
+  }).length;
 }
 
 /** Eine Zeile aus signals: vom Screener aufgezeichneter GVA-Hit. */

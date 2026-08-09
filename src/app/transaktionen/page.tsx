@@ -1,13 +1,15 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import {
   createTransaction, deleteTransaction, categorizeTransaction,
   linkTransactionToActivity, toggleTransfer,
 } from "@/lib/actions";
-import { Button, Card, CardTitle, Input, Label, Select, Empty, Badge, Stat, cx } from "@/components/ui";
+import { Bar, Button, Card, CardTitle, Input, Label, Select, Empty, Badge, Stat, cx } from "@/components/ui";
 import { TxnFilter } from "@/components/txn-filter";
 import { Pager } from "@/components/pager";
 import { chf, chf2, dateLabel, todayISO } from "@/lib/format";
+import { addDays, heuteISO } from "@/lib/time";
 import type { Account, Activity, Category, Transaction } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +22,23 @@ function monthRange(month: string) {
   d.setMonth(d.getMonth() + 1);
   const end = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
   return { start, end };
+}
+
+/**
+ * Zeitraum aus den Suchparametern. `von`/`bis` (freier Bereich, z. B.
+ * "Jahr bis heute") haben Vorrang vor `monat` (ein einzelner Kalendermonat) -
+ * beide gleichzeitig zu setzen ergäbe einen widersprüchlichen Filter, und im
+ * Zweifel ist der explizitere, neuere Bereichsfilter gemeint.
+ */
+function resolveRange(sp: Record<string, string | undefined>) {
+  if (sp.von || sp.bis) {
+    return {
+      start: sp.von ?? "2000-01-01",
+      end: sp.bis ? addDays(sp.bis, 1) : "9999-12-31",
+    };
+  }
+  if (sp.monat) return monthRange(sp.monat);
+  return null;
 }
 
 export default async function TransaktionenPage({
@@ -45,18 +64,19 @@ export default async function TransaktionenPage({
   const months = (cashflow ?? []).map((r) => String(r.month).slice(0, 7));
 
   // ---- Filter anwenden ----
-  const applyFilters = <T,>(q: T): T => {
+  const applyFilters = <T,>(q: T, opts?: { skipKategorie?: boolean }): T => {
     let query = q as any;
     if (sp.konto === "ohne") query = query.is("account_id", null);
     else if (sp.konto) query = query.eq("account_id", sp.konto);
 
-    if (sp.kategorie === "ohne") query = query.is("category_id", null);
-    else if (sp.kategorie) query = query.eq("category_id", sp.kategorie);
-
-    if (sp.monat) {
-      const { start, end } = monthRange(sp.monat);
-      query = query.gte("occurred_on", start).lt("occurred_on", end);
+    if (!opts?.skipKategorie) {
+      if (sp.kategorie === "ohne") query = query.is("category_id", null);
+      else if (sp.kategorie) query = query.eq("category_id", sp.kategorie);
     }
+
+    const range = resolveRange(sp);
+    if (range) query = query.gte("occurred_on", range.start).lt("occurred_on", range.end);
+
     if (sp.art === "ausgaben") query = query.lt("amount", 0).eq("is_transfer", false);
     else if (sp.art === "einnahmen") query = query.gt("amount", 0).eq("is_transfer", false);
     else if (sp.art === "umbuchung") query = query.eq("is_transfer", true);
@@ -76,7 +96,16 @@ export default async function TransaktionenPage({
   // Summen über den gesamten Filter, nicht nur über die Seite
   const sumQuery = applyFilters(supabase.from("transactions").select("amount, is_transfer"));
 
-  const [{ data: txns, count }, { data: sums }] = await Promise.all([listQuery, sumQuery]);
+  // Kategorie-Aufschlüsselung: alle Filter ausser der Kategorie selbst, sonst
+  // bliebe von der Aufschlüsselung nur die eine ausgewählte Kategorie übrig.
+  const categoryQuery = applyFilters(
+    supabase.from("transactions").select("amount, category_id, is_transfer"),
+    { skipKategorie: true },
+  );
+
+  const [{ data: txns, count }, { data: sums }, { data: catRows }] = await Promise.all([
+    listQuery, sumQuery, categoryQuery,
+  ]);
 
   const list = (txns ?? []) as Transaction[];
   const total = count ?? 0;
@@ -91,6 +120,35 @@ export default async function TransaktionenPage({
   const transfers = rows.filter((r) => r.is_transfer)
     .reduce((s, r) => s + Math.abs(Number(r.amount)), 0);
 
+  // ---- Nach Kategorie ----
+  // Umbuchungen zählen nicht als Konsum oder Einkommen - hier raus, sonst
+  // würde "zwischen eigenen Konten verschoben" wie eine Kategorie aussehen.
+  const catAmounts = new Map<string | null, number>();
+  for (const r of (catRows ?? []) as { amount: number; category_id: string | null; is_transfer: boolean }[]) {
+    if (r.is_transfer) continue;
+    const key = r.category_id;
+    catAmounts.set(key, (catAmounts.get(key) ?? 0) + Number(r.amount));
+  }
+  const categoryBreakdown = [...catAmounts.entries()]
+    .map(([id, amount]) => ({
+      id,
+      name: id ? catById.get(id)?.name ?? "Gelöschte Kategorie" : "Ohne Kategorie",
+      color: (id && catById.get(id)?.color) || "#A8A093",
+      amount,
+    }))
+    .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+  const maxAbs = Math.max(1, ...categoryBreakdown.map((c) => Math.abs(c.amount)));
+
+  // Link auf dieselbe Filterkombination, nur mit anderer Kategorie - so führt
+  // ein Klick in der Aufschlüsselung direkt zur passenden Buchungsliste.
+  const hrefWithKategorie = (id: string | null) => {
+    const next = new URLSearchParams(
+      Object.entries(sp).filter(([k]) => k !== "seite" && k !== "kategorie") as [string, string][]
+    );
+    next.set("kategorie", id ?? "ohne");
+    return `/transaktionen?${next.toString()}`;
+  };
+
   return (
     <div className="space-y-5">
       <div>
@@ -102,7 +160,8 @@ export default async function TransaktionenPage({
 
       <Card>
         <Suspense fallback={<div className="h-9" />}>
-          <TxnFilter accounts={accounts} categories={categories} months={months} />
+          <TxnFilter accounts={accounts} categories={categories} months={months}
+            heute={heuteISO()} />
         </Suspense>
 
         <div className="mt-5 grid gap-4 border-t border-line pt-4 sm:grid-cols-3">
@@ -118,7 +177,8 @@ export default async function TransaktionenPage({
           <CardTitle>Verlauf</CardTitle>
           {list.length === 0 ? (
             <Empty>
-              {total === 0 && !sp.q && !sp.konto && !sp.monat && !sp.kategorie && !sp.art
+              {total === 0 && !sp.q && !sp.konto && !sp.monat && !sp.von && !sp.bis
+                && !sp.kategorie && !sp.art
                 ? "Noch keine Buchungen. Importiere deinen Bankauszug oder erfasse eine von Hand."
                 : "Keine Buchung passt zu diesem Filter."}
             </Empty>
@@ -208,6 +268,32 @@ export default async function TransaktionenPage({
           )}
         </Card>
 
+        <div className="space-y-4">
+          {categoryBreakdown.length > 0 && (
+            <Card className="h-fit">
+              <CardTitle>Nach Kategorie</CardTitle>
+              <ul className="space-y-2.5">
+                {categoryBreakdown.slice(0, 12).map((c) => (
+                  <li key={c.id ?? "ohne"}>
+                    <Link href={hrefWithKategorie(c.id)} className="block group">
+                      <div className="flex items-center justify-between gap-2 text-sm">
+                        <span className="truncate text-ink-soft group-hover:text-ink">
+                          {c.name}
+                        </span>
+                        <span className={cx("tabular shrink-0 font-medium",
+                          c.amount >= 0 ? "text-good" : "text-ink")}>
+                          {c.amount >= 0 ? "+" : ""}{chf(c.amount)}
+                        </span>
+                      </div>
+                      <Bar pct={(Math.abs(c.amount) / maxAbs) * 100} color={c.color}
+                        className="mt-1" />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+
         <Card className="h-fit">
           <CardTitle>Buchung erfassen</CardTitle>
           <form action={createTransaction} className="space-y-3">
@@ -253,6 +339,7 @@ export default async function TransaktionenPage({
             <Button type="submit" className="w-full">Erfassen</Button>
           </form>
         </Card>
+        </div>
       </div>
     </div>
   );
