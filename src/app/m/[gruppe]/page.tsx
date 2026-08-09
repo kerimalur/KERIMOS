@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { MODE_DIRECT } from "@/lib/modes";
 import { Launcher } from "@/components/launcher";
 import { FocusPrompt } from "@/components/focus-prompt";
 import { FocusStarter } from "@/components/focus-starter";
@@ -214,6 +216,18 @@ export default async function ModusPage({
 }) {
   const { gruppe: raw } = await params;
   const gruppe = decodeURIComponent(raw);
+
+  // Modi mit direktem Ziel leiten hier weiter statt die Kachelseite zu
+  // zeigen. Den Link auf der Startseite umzubiegen reicht nicht: über
+  // Lesezeichen, Zurück-Taste, die installierte App oder einen alten
+  // vorgeladenen Link landet man sonst weiter auf der Zwischenseite.
+  // MODE_DIRECT ist damit an genau einer Stelle gepflegt und gilt überall.
+  // Der Vergleich mit dem eigenen Pfad verhindert eine Endlosschleife:
+  // "Essen" zeigt in MODE_DIRECT auf /m/Essen. Heute fängt die statische
+  // Route app/m/Essen/page.tsx das ab, aber darauf soll sich das hier
+  // nicht verlassen müssen.
+  const direkt = MODE_DIRECT[gruppe];
+  if (direkt && direkt !== `/m/${gruppe}` && direkt !== `/m/${raw}`) redirect(direkt);
 
   const supabase = await createClient();
   const [{ data: linkRows }, { data: focusRows }, { data: actRows }] = await Promise.all([

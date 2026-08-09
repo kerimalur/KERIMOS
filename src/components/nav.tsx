@@ -44,8 +44,13 @@ const ZEIT = {
 
 const TRADING = {
   home: { href: "/trading", label: "Übersicht" },
-  primary: [],
+  primary: [
+    { href: "/trading/backtest", label: "Backtest" },
+    { href: "/trading/backtest/auswertung", label: "Auswertung" },
+    { href: "/trading/alarme", label: "Alarme" },
+  ],
   secondary: [
+    { href: "/trading/backtest/kategorien", label: "Kategorien" },
     { href: "https://gva-screener-kerim-alurs-projects.vercel.app", label: "Zum Screener ↗" },
   ],
 };
@@ -76,7 +81,19 @@ export function Nav({ email }: { email?: string }) {
   // Der Zen-Modus zeigt bewusst nichts ausser dem Zähler
   if (path === "/fokus") return null;
   const section = sectionOf(path);
-  const isActive = (href: string) => path === href || path.startsWith(href + "/");
+  const config = section === "geld" ? GELD : section === "zeit" ? ZEIT : TRADING;
+
+  /**
+   * Aktiv ist der längste passende Eintrag, nicht jeder passende.
+   * Sonst leuchten auf /trading/backtest/auswertung gleich drei Punkte
+   * ("Übersicht", "Backtest", "Auswertung"), weil alle Präfixe passen.
+   */
+  const treffer = [config.home, ...config.primary, ...config.secondary]
+    .map((l) => l.href)
+    .filter((h) => !h.startsWith("http"))
+    .filter((h) => path === h || path.startsWith(h + "/"))
+    .sort((a, b) => b.length - a.length)[0];
+  const isActive = (href: string) => href === treffer;
 
   if (!section) {
     return (
@@ -92,8 +109,6 @@ export function Nav({ email }: { email?: string }) {
       </header>
     );
   }
-
-  const config = section === "geld" ? GELD : section === "zeit" ? ZEIT : TRADING;
 
   return (
     <header className="sticky top-0 z-20 border-b border-line/70 bg-card/80 backdrop-blur-xl">
