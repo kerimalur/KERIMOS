@@ -1,7 +1,9 @@
 import "server-only";
 import { createTradingClient } from "@/lib/supabase/trading";
+import { addDays } from "@/lib/time";
 import type {
-  BacktestCategory, BacktestCategoryKey, BacktestTag, NativeBacktestTrade, TradeTag,
+  BacktestCategory, BacktestCategoryKey, BacktestSession, BacktestTag,
+  NativeBacktestTrade, TradeTag,
 } from "@/lib/backtest-types";
 
 /**
@@ -58,12 +60,13 @@ interface TradeRow {
   notiz: string | null;
   tradingview_link: string | null;
   screenshot_url: string | null;
+  session_id: string | null;
   backtest_trade_tags: {
     backtest_tags: { id: string; label: string; backtest_categories: { key: string } | null } | null;
   }[] | null;
 }
 
-/** Alle Trades inkl. verknüpfter Tags, neuestes Datum zuerst. */
+/** Alle Trades inkl. verknüpfter Tags und Session, neuestes Datum zuerst. */
 export async function fetchNativeBacktestTrades(): Promise<NativeBacktestTrade[]> {
   const supabase = createTradingClient();
   if (!supabase) return [];
@@ -72,7 +75,7 @@ export async function fetchNativeBacktestTrades(): Promise<NativeBacktestTrade[]
     .from("backtest_trades")
     .select(
       "id, occurred_on, pair, direction, result, r_multiple, rr_geplant, notiz, " +
-      "tradingview_link, screenshot_url, " +
+      "tradingview_link, screenshot_url, session_id, " +
       "backtest_trade_tags(backtest_tags(id, label, backtest_categories(key)))"
     )
     .order("occurred_on", { ascending: false });
@@ -88,6 +91,7 @@ export async function fetchNativeBacktestTrades(): Promise<NativeBacktestTrade[]
     notiz: t.notiz,
     tradingview_link: t.tradingview_link,
     screenshot_url: t.screenshot_url,
+    session_id: t.session_id,
     tags: (t.backtest_trade_tags ?? [])
       .map((tt) => tt.backtest_tags)
       .filter((tag): tag is NonNullable<typeof tag> => tag !== null)
@@ -99,9 +103,27 @@ export async function fetchNativeBacktestTrades(): Promise<NativeBacktestTrade[]
   }));
 }
 
+/** Sessions, neueste zuerst. */
+export async function fetchBacktestSessions(): Promise<BacktestSession[]> {
+  const supabase = createTradingClient();
+  if (!supabase) return [];
+
+  const { data } = await supabase
+    .from("backtest_journal_sessions")
+    .select("id, pair, status, created_at, closed_at")
+    .order("created_at", { ascending: false });
+
+  return (data ?? []) as BacktestSession[];
+}
+
 /**
- * Wochenzahl für das Zielwidget: gewertete Trades (kein Skip) zwischen
- * von/bis, beide inklusiv - gleiche Konvention wie fetchWeeklySteps.
+ * Wochenzahl für das Zielwidget: gewertete Trades (kein Skip), erfasst
+ * (created_at) zwischen von/bis, beide inklusiv.
+ *
+ * Bewusst created_at statt occurred_on: occurred_on ist das historische
+ * Datum des GVA/BOS-Setups (oft Jahre zurück) - die Roadmap-Quote von
+ * 24 Trades/Woche misst aber, wie viel Backtest-ARBEIT diese Woche
+ * passiert ist, nicht wann die Setups historisch stattfanden.
  */
 export async function fetchWeeklyNativeBacktestCount(
   von: string, bis: string,
@@ -113,8 +135,8 @@ export async function fetchWeeklyNativeBacktestCount(
     .from("backtest_trades")
     .select("id", { count: "exact", head: true })
     .neq("result", "skip")
-    .gte("occurred_on", von)
-    .lte("occurred_on", bis);
+    .gte("created_at", `${von}T00:00:00Z`)
+    .lt("created_at", `${addDays(bis, 1)}T00:00:00Z`);
 
   return count ?? 0;
 }

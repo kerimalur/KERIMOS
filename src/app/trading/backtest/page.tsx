@@ -1,6 +1,6 @@
 import Link from "next/link";
 import {
-  fetchBacktestCategories, fetchNativeBacktestTrades,
+  fetchBacktestCategories, fetchNativeBacktestTrades, fetchBacktestSessions,
 } from "@/lib/supabase/backtest";
 import { tradingConfigured } from "@/lib/supabase/trading";
 import {
@@ -10,6 +10,7 @@ import {
 import {
   addBacktestTrade, deleteBacktestTrade, addBacktestTag,
   renameBacktestTag, archiveBacktestTag, reaktiviereBacktestTag,
+  startBacktestSession, closeBacktestSession, reaktiviereBacktestSession,
 } from "@/lib/backtest-actions";
 import { BacktestResultField } from "@/components/backtest-result-field";
 import { BacktestBreakdown } from "@/components/backtest-breakdown";
@@ -29,9 +30,10 @@ export default async function BacktestPage() {
     );
   }
 
-  const [categories, trades] = await Promise.all([
+  const [categories, trades, sessions] = await Promise.all([
     fetchBacktestCategories(false),
     fetchNativeBacktestTrades(),
+    fetchBacktestSessions(),
   ]);
   const categoriesAlle = await fetchBacktestCategories(true); // inkl. archivierte, für die Verwaltung
 
@@ -44,6 +46,16 @@ export default async function BacktestPage() {
   const confluence = categories.find((c) => c.key === "confluence") ?? null;
   const anmerkung = categories.find((c) => c.key === "anmerkung") ?? null;
   const skipGrund = categories.find((c) => c.key === "skip_grund") ?? null;
+
+  const aktiveSessions = sessions.filter((s) => s.status === "aktiv");
+  const abgeschlosseneSessions = sessions.filter((s) => s.status === "abgeschlossen");
+  const tradesProSession = new Map<string, typeof trades>();
+  for (const t of trades) {
+    if (!t.session_id) continue;
+    const liste = tradesProSession.get(t.session_id) ?? [];
+    liste.push(t);
+    tradesProSession.set(t.session_id, liste);
+  }
 
   return (
     <div className="space-y-5">
@@ -83,7 +95,68 @@ export default async function BacktestPage() {
       </Card>
 
       <Card>
+        <CardTitle>Sessions</CardTitle>
+        <p className="mb-4 text-xs text-ink-muted">
+          Eine Session bindet ein Pair fest, damit du es nicht bei jedem
+          Trade neu eintippen musst. Abschliessen = auswerten und pausieren,
+          jederzeit wieder aktivierbar, um weiterzumachen.
+        </p>
+
+        {sessions.length === 0 ? (
+          <Empty>Noch keine Session gestartet.</Empty>
+        ) : (
+          <ul className="mb-4 space-y-1.5">
+            {[...aktiveSessions, ...abgeschlosseneSessions].map((s) => {
+              const sTrades = tradesProSession.get(s.id) ?? [];
+              const sStats = computeNativeBacktestStats(sTrades);
+              return (
+                <li key={s.id}
+                  className="flex flex-wrap items-center gap-2 rounded-lg bg-sand/60 px-3 py-2 text-sm">
+                  <span className="font-medium text-ink">{s.pair}</span>
+                  <Badge tone={s.status === "aktiv" ? "good" : "neutral"}>
+                    {s.status === "aktiv" ? "aktiv" : "abgeschlossen"}
+                  </Badge>
+                  <span className="tabular text-xs text-ink-soft">
+                    {sStats.gewertet} gewertet
+                    {sStats.skips > 0 && ` · ${sStats.skips} Skip`}
+                    {sStats.winrate !== null && ` · ${sStats.winrate.toFixed(0)} % WR`}
+                    {` · ${sStats.gesamtR > 0 ? "+" : ""}${sStats.gesamtR.toFixed(2)} R`}
+                  </span>
+                  <span className="ml-auto">
+                    {s.status === "aktiv" ? (
+                      <form action={closeBacktestSession}>
+                        <input type="hidden" name="id" value={s.id} />
+                        <button className="text-xs text-ink-faint transition hover:text-accent-soft">
+                          abschliessen
+                        </button>
+                      </form>
+                    ) : (
+                      <form action={reaktiviereBacktestSession}>
+                        <input type="hidden" name="id" value={s.id} />
+                        <button className="text-xs text-accent-soft hover:underline">
+                          weiterführen
+                        </button>
+                      </form>
+                    )}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        <form action={startBacktestSession} className="flex flex-wrap items-end gap-2">
+          <Input name="pair" placeholder="Neues Pair, z. B. EURUSD" required
+            className="w-48 uppercase" aria-label="Pair" />
+          <Button type="submit" variant="ghost">Session starten</Button>
+        </form>
+      </Card>
+
+      <Card>
         <CardTitle>Neuer Trade</CardTitle>
+        {aktiveSessions.length === 0 ? (
+          <Empty>Erst eine Session starten, dann lassen sich hier Trades erfassen.</Empty>
+        ) : (
         <form action={addBacktestTrade} className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-3">
             <div>
@@ -91,8 +164,13 @@ export default async function BacktestPage() {
               <Input id="occurred_on" type="date" name="occurred_on" defaultValue={heuteISO()} required />
             </div>
             <div>
-              <Label htmlFor="pair">Pair</Label>
-              <Input id="pair" name="pair" placeholder="GBPAUD" required className="uppercase" />
+              <Label htmlFor="session_id">Session</Label>
+              <Select id="session_id" name="session_id" required defaultValue="">
+                <option value="" disabled>— wählen —</option>
+                {aktiveSessions.map((s) => (
+                  <option key={s.id} value={s.id}>{s.pair}</option>
+                ))}
+              </Select>
             </div>
             <div>
               <Label htmlFor="direction">Richtung</Label>
@@ -180,6 +258,7 @@ export default async function BacktestPage() {
 
           <Button type="submit">Trade speichern</Button>
         </form>
+        )}
       </Card>
 
       <Card>

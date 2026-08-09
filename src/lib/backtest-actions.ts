@@ -16,22 +16,91 @@ const num = (fd: FormData, k: string): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
+/** "eurusd", "EUR/USD", " eurusd " -> "EURUSD". */
+function normalisierePair(roh: string): string {
+  return roh.toUpperCase().replace(/[^A-Z]/g, "");
+}
+
+/**
+ * Neue Session starten: Pair einmal festlegen, damit man es beim Erfassen
+ * einzelner Trades nicht jedes Mal eintippen muss. Neue Sessions starten
+ * immer "aktiv" und stehen sofort im Trade-Formular zur Auswahl.
+ */
+export async function startBacktestSession(fd: FormData) {
+  const pair = normalisierePair(text(fd, "pair"));
+  if (pair.length < 6) throw new Error("Pair fehlt oder ist zu kurz (z. B. GBPAUD)");
+
+  const supabase = createTradingClient();
+  if (!supabase) throw new Error("Trading-Datenbank nicht verbunden");
+
+  const { error } = await supabase
+    .from("backtest_journal_sessions")
+    .insert({ pair, status: "aktiv" });
+  if (error) throw new Error(`Session starten: ${error.message}`);
+
+  revalidatePath("/trading/backtest");
+}
+
+/** Session abschliessen = auswerten. Trades und ihre Zahlen bleiben erhalten. */
+export async function closeBacktestSession(fd: FormData) {
+  const id = text(fd, "id");
+  if (!id) return;
+
+  const supabase = createTradingClient();
+  if (!supabase) throw new Error("Trading-Datenbank nicht verbunden");
+
+  const { error } = await supabase
+    .from("backtest_journal_sessions")
+    .update({ status: "abgeschlossen", closed_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw new Error(`Session abschliessen: ${error.message}`);
+
+  revalidatePath("/trading/backtest");
+}
+
+/** Eine abgeschlossene Session weiterführen: wieder aktiv, wieder wählbar. */
+export async function reaktiviereBacktestSession(fd: FormData) {
+  const id = text(fd, "id");
+  if (!id) return;
+
+  const supabase = createTradingClient();
+  if (!supabase) throw new Error("Trading-Datenbank nicht verbunden");
+
+  const { error } = await supabase
+    .from("backtest_journal_sessions")
+    .update({ status: "aktiv", closed_at: null })
+    .eq("id", id);
+  if (error) throw new Error(`Session reaktivieren: ${error.message}`);
+
+  revalidatePath("/trading/backtest");
+}
+
 export async function addBacktestTrade(fd: FormData) {
   const occurred_on = text(fd, "occurred_on");
-  const pair = text(fd, "pair").toUpperCase().replace(/[^A-Z]/g, "");
+  const session_id = text(fd, "session_id");
   const direction = text(fd, "direction");
   const result = text(fd, "result");
-  if (!occurred_on || !pair || !direction || !result) {
-    throw new Error("Datum, Pair, Richtung und Ergebnis sind Pflicht");
+  if (!occurred_on || !session_id || !direction || !result) {
+    throw new Error("Datum, Session, Richtung und Ergebnis sind Pflicht");
   }
 
   const supabase = createTradingClient();
   if (!supabase) throw new Error("Trading-Datenbank nicht verbunden");
 
+  // Pair kommt aus der Session, nicht mehr aus dem Formular - genau das
+  // war der Punkt einer Session: einmal festlegen, nicht jedes Mal eintippen.
+  const { data: session, error: sessionError } = await supabase
+    .from("backtest_journal_sessions")
+    .select("pair")
+    .eq("id", session_id)
+    .single();
+  if (sessionError || !session) throw new Error("Session nicht gefunden");
+
   const { data: trade, error } = await supabase
     .from("backtest_trades")
     .insert({
-      occurred_on, pair, direction, result,
+      occurred_on, session_id, direction, result,
+      pair: session.pair,
       r_multiple: num(fd, "r_multiple"),
       rr_geplant: num(fd, "rr_geplant"),
       notiz: text(fd, "notiz") || null,

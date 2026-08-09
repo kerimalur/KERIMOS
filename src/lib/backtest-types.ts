@@ -49,7 +49,24 @@ export interface NativeBacktestTrade {
   notiz: string | null;
   tradingview_link: string | null;
   screenshot_url: string | null;
+  session_id: string | null;
   tags: TradeTag[];
+}
+
+export type SessionStatus = "aktiv" | "abgeschlossen";
+
+/**
+ * Eine Backtest-Session: an ein Pair gebunden, damit man es beim Erfassen
+ * nicht bei jedem Trade neu eintippen muss. "Aktiv" heisst: wählbar im
+ * Trade-Formular. "Abgeschlossen" = ausgewertet, lässt sich jederzeit
+ * reaktivieren, um sie weiterzuführen.
+ */
+export interface BacktestSession {
+  id: string;
+  pair: string;
+  status: SessionStatus;
+  created_at: string;
+  closed_at: string | null;
 }
 
 export interface NativeBacktestStats {
