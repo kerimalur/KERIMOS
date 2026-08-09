@@ -120,6 +120,8 @@ export interface BreakdownRow {
   n: number;
   winrate: number | null;
   gesamtR: number;
+  /** Ø R pro Trade in dieser Gruppe - die eigentliche Edge-Kennzahl. */
+  expectancy: number | null;
 }
 
 const WOCHENTAG_ORDER = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
@@ -176,6 +178,7 @@ export function computeBreakdown(
     label, n: b.n,
     winrate: b.gewertet > 0 ? (b.wins / b.gewertet) * 100 : null,
     gesamtR: Math.round(b.sumR * 100) / 100,
+    expectancy: b.gewertet > 0 ? b.sumR / b.gewertet : null,
   }));
 
   if (dimension === "wochentag") {
@@ -184,4 +187,251 @@ export function computeBreakdown(
     rows.sort((a, b) => b.n - a.n);
   }
   return rows;
+}
+
+/* --------------------------------------------------------------- Erkenntnisse */
+
+export type InsightArt = "erkenntnis" | "pruefen" | "edge" | "warnung";
+
+export interface Insight {
+  art: InsightArt;
+  titel: string;
+  text: string;
+  /** Anzahl Trades, auf der die Aussage beruht - Ehrlichkeit über die Basis. */
+  basis: number;
+}
+
+export const INSIGHT_LABEL: Record<InsightArt, string> = {
+  erkenntnis: "Erkenntnis",
+  edge: "Mögliche Edge",
+  pruefen: "Genauer prüfen",
+  warnung: "Achtung",
+};
+
+/**
+ * Ab wann eine Gruppe überhaupt eine Aussage trägt. Bewusst konservativ:
+ * bei 5 Trades ist eine "80 % Winrate" reines Rauschen. Zwischen MIN_HINWEIS
+ * und MIN_AUSSAGE gilt ein Muster als "genauer prüfen", darüber als
+ * belastbarer - und selbst dann steht die Stichprobengrösse immer dabei.
+ */
+const MIN_HINWEIS = 5;
+const MIN_AUSSAGE = 15;
+
+/** Längste Serie gleicher Vorzeichen (Gewinn bzw. Verlust) in Datumsreihenfolge. */
+function laengsteSerie(trades: NativeBacktestTrade[], gewinn: boolean): number {
+  const chrono = [...trades]
+    .filter((t) => t.result !== "skip")
+    .sort((a, b) => a.occurred_on.localeCompare(b.occurred_on));
+
+  let max = 0, aktuell = 0;
+  for (const t of chrono) {
+    const r = t.r_multiple ?? 0;
+    const passt = gewinn ? r > 0 : r < 0;
+    aktuell = passt ? aktuell + 1 : 0;
+    if (aktuell > max) max = aktuell;
+  }
+  return max;
+}
+
+/** Grösster Rückgang der kumulierten R-Kurve (Peak-to-Trough), in R. */
+function maxDrawdownR(trades: NativeBacktestTrade[]): number {
+  const chrono = [...trades]
+    .filter((t) => t.result !== "skip")
+    .sort((a, b) => a.occurred_on.localeCompare(b.occurred_on));
+
+  let kum = 0, peak = 0, maxDd = 0;
+  for (const t of chrono) {
+    kum += t.r_multiple ?? 0;
+    if (kum > peak) peak = kum;
+    const dd = peak - kum;
+    if (dd > maxDd) maxDd = dd;
+  }
+  return Math.round(maxDd * 100) / 100;
+}
+
+/**
+ * Leitet aus den Zahlen lesbare Hinweise ab - was auffällt, was eine Edge
+ * sein KÖNNTE und was noch zu dünn belegt ist.
+ *
+ * Grundhaltung: nichts wird als bewiesen verkauft. Jede Aussage nennt ihre
+ * Stichprobengrösse, und Muster unterhalb von MIN_AUSSAGE Trades landen
+ * bewusst in "genauer prüfen" statt in "Edge". Das ist der ganze Zweck des
+ * 200-Trades-Ziels der Roadmap: vorher sind das Indizien, keine Belege.
+ */
+export function computeInsights(
+  trades: NativeBacktestTrade[],
+  stats: NativeBacktestStats,
+): Insight[] {
+  const insights: Insight[] = [];
+  if (stats.total === 0) return insights;
+
+  // ---------------------------------------------------------------- Gesamtbild
+  if (stats.gewertet < MIN_AUSSAGE) {
+    insights.push({
+      art: "pruefen",
+      titel: "Stichprobe noch klein",
+      text: `Erst ${stats.gewertet} gewertete Trades. Alles hier unten sind Indizien, ` +
+        `keine Belege - Muster können sich mit den nächsten 20 Trades komplett drehen.`,
+      basis: stats.gewertet,
+    });
+  }
+
+  if (stats.profitFactor !== null && stats.gewertet >= MIN_HINWEIS) {
+    if (stats.profitFactor >= 1.5) {
+      insights.push({
+        art: stats.gewertet >= MIN_AUSSAGE ? "edge" : "pruefen",
+        titel: `Profit Factor ${stats.profitFactor.toFixed(2)}`,
+        text: `Pro 1 R Verlust stehen ${stats.profitFactor.toFixed(2)} R Gewinn. ` +
+          (stats.gewertet >= MIN_AUSSAGE
+            ? "Das ist die Grössenordnung, die ein Setup tragfähig macht."
+            : "Sieht gut aus, ist aber noch auf zu wenig Trades gebaut."),
+        basis: stats.gewertet,
+      });
+    } else if (stats.profitFactor < 1) {
+      insights.push({
+        art: "warnung",
+        titel: `Profit Factor unter 1 (${stats.profitFactor.toFixed(2)})`,
+        text: "Die Verluste übersteigen die Gewinne. Bevor mehr Volumen dazukommt, " +
+          "lohnt der Blick auf die Verlust-Trades: gleiche Fehlerquelle oder Streuung?",
+        basis: stats.gewertet,
+      });
+    }
+  }
+
+  if (stats.expectancy !== null && stats.gewertet >= MIN_HINWEIS) {
+    insights.push({
+      art: "erkenntnis",
+      titel: `${stats.expectancy > 0 ? "+" : ""}${stats.expectancy.toFixed(2)} R pro Trade`,
+      text: stats.expectancy > 0
+        ? `Bei ${stats.gewertet} Trades ergibt das ${stats.gesamtR > 0 ? "+" : ""}` +
+          `${stats.gesamtR.toFixed(2)} R gesamt. Hochgerechnet auf 100 Trades: ` +
+          `${(stats.expectancy * 100).toFixed(0)} R - unter der Annahme, dass es so bleibt.`
+        : "Der Erwartungswert ist negativ. So wie es aktuell aussieht, kostet jeder " +
+          "zusätzliche Trade im Schnitt Geld.",
+      basis: stats.gewertet,
+    });
+  }
+
+  // -------------------------------------------------------------- Skip-Disziplin
+  if (stats.total >= MIN_HINWEIS) {
+    const skipQuote = (stats.skips / stats.total) * 100;
+    if (skipQuote >= 40) {
+      insights.push({
+        art: "erkenntnis",
+        titel: `${skipQuote.toFixed(0)} % Skip-Quote`,
+        text: `${stats.skips} von ${stats.total} Setups wurden aussortiert. Hohe Quote ` +
+          "heisst diszipliniert - lohnt sich zu prüfen, ob unter den Skips systematisch " +
+          "Gewinner sind, die die Filter zu streng aussortieren.",
+        basis: stats.total,
+      });
+    } else if (skipQuote > 0 && skipQuote < 10) {
+      insights.push({
+        art: "pruefen",
+        titel: `Nur ${skipQuote.toFixed(0)} % Skips`,
+        text: "Fast jedes Setup wird genommen. Entweder ist die Vorauswahl im Chart " +
+          "schon sehr sauber - oder die Kriterien filtern im Backtest zu wenig.",
+        basis: stats.total,
+      });
+    }
+  }
+
+  // ----------------------------------------------------------- Serien/Drawdown
+  if (stats.gewertet >= MIN_HINWEIS) {
+    const verlustserie = laengsteSerie(trades, false);
+    const dd = maxDrawdownR(trades);
+    if (verlustserie >= 3) {
+      insights.push({
+        art: "warnung",
+        titel: `${verlustserie} Verluste in Folge`,
+        text: `Grösster Rückgang der R-Kurve: ${dd.toFixed(2)} R. Genau das muss die ` +
+          "Positionsgrösse aushalten - bei FTMO ist die Drawdown-Grenze das, woran " +
+          "die meisten scheitern, nicht die Winrate.",
+        basis: stats.gewertet,
+      });
+    }
+  }
+
+  // ------------------------------------------------- Dimensionen: Edges suchen
+  const dimensionen: BreakdownDimension[] =
+    ["gva_typ", "confluence", "anmerkung", "direction", "wochentag", "pair"];
+
+  for (const dim of dimensionen) {
+    const rows = computeBreakdown(trades, dim)
+      .filter((r) => r.n >= MIN_HINWEIS && r.expectancy !== null && r.label !== "(keine Angabe)");
+    if (rows.length < 2) continue;
+
+    const sortiert = [...rows].sort((a, b) => (b.expectancy ?? 0) - (a.expectancy ?? 0));
+    const best = sortiert[0];
+    const schlecht = sortiert[sortiert.length - 1];
+    const spanne = (best.expectancy ?? 0) - (schlecht.expectancy ?? 0);
+
+    // Nur berichten, wenn der Unterschied gross genug ist, um interessant zu
+    // sein - 0.5 R Unterschied pro Trade ist eine Grössenordnung, die sich
+    // im Ergebnis bemerkbar macht.
+    if (spanne < 0.5) continue;
+
+    if ((best.expectancy ?? 0) > 0) {
+      insights.push({
+        art: best.n >= MIN_AUSSAGE ? "edge" : "pruefen",
+        titel: `${BREAKDOWN_LABEL[dim]}: „${best.label}" sticht heraus`,
+        text: `${(best.expectancy ?? 0).toFixed(2)} R pro Trade über ${best.n} Trades` +
+          (best.winrate !== null ? ` (${best.winrate.toFixed(0)} % Winrate)` : "") +
+          `, gegenüber ${(schlecht.expectancy ?? 0).toFixed(2)} R bei „${schlecht.label}". ` +
+          (best.n >= MIN_AUSSAGE
+            ? "Das ist die Art Unterschied, aus der sich ein Filter bauen lässt."
+            : `Nur ${best.n} Trades - erst weiter beobachten, bevor du danach filterst.`),
+        basis: best.n,
+      });
+    }
+
+    if ((schlecht.expectancy ?? 0) < -0.2 && schlecht.n >= MIN_HINWEIS) {
+      insights.push({
+        art: "pruefen",
+        titel: `${BREAKDOWN_LABEL[dim]}: „${schlecht.label}" kostet`,
+        text: `${(schlecht.expectancy ?? 0).toFixed(2)} R pro Trade über ${schlecht.n} Trades. ` +
+          "Lohnt zu prüfen, ob diese Konstellation ein Ausschlusskriterium sein sollte.",
+        basis: schlecht.n,
+      });
+    }
+  }
+
+  // ---------------------------------------------- Was als Nächstes zu tun ist
+  const untersucht = new Set(
+    computeBreakdown(trades, "confluence").filter((r) => r.n >= MIN_HINWEIS).map((r) => r.label),
+  );
+  const duenn = computeBreakdown(trades, "confluence")
+    .filter((r) => r.n > 0 && r.n < MIN_HINWEIS && r.label !== "(keine Angabe)");
+  if (duenn.length > 0 && untersucht.size > 0) {
+    insights.push({
+      art: "pruefen",
+      titel: "Zu dünn belegte Confluences",
+      text: `${duenn.map((r) => `„${r.label}" (${r.n})`).join(", ")} ` +
+        `${duenn.length === 1 ? "hat" : "haben"} noch zu wenig Trades für eine Aussage. ` +
+        "Gezielt Setups mit diesen Merkmalen suchen, dann wird die Auswertung vollständig.",
+      basis: duenn.reduce((s, r) => s + r.n, 0),
+    });
+  }
+
+  // Edge-Aussagen zuerst, dann Warnungen, dann der Rest.
+  const rang: Record<InsightArt, number> = { edge: 0, warnung: 1, erkenntnis: 2, pruefen: 3 };
+  return insights.sort((a, b) => rang[a.art] - rang[b.art]);
+}
+
+/** Kumulierte R-Kurve in Datumsreihenfolge - Datenbasis für den Verlaufs-Chart. */
+export interface EquityPunkt {
+  index: number;
+  datum: string;
+  kumR: number;
+}
+
+export function computeEquityKurve(trades: NativeBacktestTrade[]): EquityPunkt[] {
+  const chrono = [...trades]
+    .filter((t) => t.result !== "skip")
+    .sort((a, b) => a.occurred_on.localeCompare(b.occurred_on));
+
+  let kum = 0;
+  return chrono.map((t, i) => {
+    kum += t.r_multiple ?? 0;
+    return { index: i + 1, datum: t.occurred_on, kumR: Math.round(kum * 100) / 100 };
+  });
 }
