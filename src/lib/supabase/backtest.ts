@@ -117,13 +117,20 @@ export async function fetchBacktestSessions(): Promise<BacktestSession[]> {
 }
 
 /**
- * Wochenzahl für das Zielwidget: gewertete Trades (kein Skip), erfasst
+ * Wochenzahl für das Zielwidget: ALLE Trades (auch Skips), erfasst
  * (created_at) zwischen von/bis, beide inklusiv.
  *
+ * Skips zählen bewusst mit: die Roadmap-Quote von 24 Trades/Woche misst
+ * Bearbeitungsvolumen (wie viele Setups diese Woche durchgespielt wurden),
+ * nicht Trefferquote - ein Skip ist genauso viel Arbeit wie ein gewerteter
+ * Trade. Winrate/Profit Factor/Expectancy bleiben trotzdem nur unter den
+ * gewerteten Trades berechnet (computeNativeBacktestStats), das ist eine
+ * andere Frage als die Wochenquote.
+ *
  * Bewusst created_at statt occurred_on: occurred_on ist das historische
- * Datum des GVA/BOS-Setups (oft Jahre zurück) - die Roadmap-Quote von
- * 24 Trades/Woche misst aber, wie viel Backtest-ARBEIT diese Woche
- * passiert ist, nicht wann die Setups historisch stattfanden.
+ * Datum des GVA/BOS-Setups (oft Jahre zurück) - die Wochenquote misst aber,
+ * wie viel Backtest-Arbeit diese Woche passiert ist, nicht wann die Setups
+ * historisch stattfanden.
  */
 export async function fetchWeeklyNativeBacktestCount(
   von: string, bis: string,
@@ -134,22 +141,20 @@ export async function fetchWeeklyNativeBacktestCount(
   const { count } = await supabase
     .from("backtest_trades")
     .select("id", { count: "exact", head: true })
-    .neq("result", "skip")
     .gte("created_at", `${von}T00:00:00Z`)
     .lt("created_at", `${addDays(bis, 1)}T00:00:00Z`);
 
   return count ?? 0;
 }
 
-/** Gesamtzahl gewerteter Trades (kein Skip) - für /ziele und die Dashboard-Kachel. */
+/** Gesamtzahl aller Trades (auch Skips) - für /ziele und die Dashboard-Kachel. */
 export async function fetchTotalNativeBacktestCount(): Promise<number | null> {
   const supabase = createTradingClient();
   if (!supabase) return null;
 
   const { count } = await supabase
     .from("backtest_trades")
-    .select("id", { count: "exact", head: true })
-    .neq("result", "skip");
+    .select("id", { count: "exact", head: true });
 
   return count ?? 0;
 }

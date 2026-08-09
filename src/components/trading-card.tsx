@@ -70,7 +70,7 @@ export async function TradingCard() {
         </Link>
         {stand && (
           <span className="tabular text-xs text-ink-muted">
-            Backtest {stand.gewertet}/{BACKTEST_ZIEL}
+            Backtest {stand.total}/{BACKTEST_ZIEL}
             {stand.winrate !== null && ` · ${stand.winrate.toFixed(0)} % WR`}
             {` · ${stand.gesamtR.toFixed(1)} R`}
           </span>

@@ -201,8 +201,8 @@ export async function fetchModusKennzahlen(): Promise<ModusDaten> {
       if (trades.length > 0) {
         const stand = computeNativeBacktestStats(trades);
         zeilen.push({
-          text: `Backtest ${stand.gewertet}/${BACKTEST_ZIEL}`,
-          betont: stand.gewertet < BACKTEST_ZIEL,
+          text: `Backtest ${stand.total}/${BACKTEST_ZIEL}`,
+          betont: stand.total < BACKTEST_ZIEL,
         });
         if (stand.winrate !== null) {
           zeilen.push({
