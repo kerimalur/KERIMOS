@@ -2,7 +2,11 @@ import Link from "next/link";
 import { Card, Empty, cx } from "@/components/ui";
 import { Launcher } from "@/components/launcher";
 import { createClient } from "@/lib/supabase/server";
-import { fetchEssenOverview, MEAL_LABEL, type EssenTag } from "@/lib/supabase/menu";
+import {
+  fetchEssenOverview, fetchEssenWoche, MEAL_LABEL, type EssenTag,
+} from "@/lib/supabase/menu";
+import { EssenWhiteboard } from "@/components/essen-whiteboard";
+import { weekStart, heuteISO } from "@/lib/time";
 import type { NavLink } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -77,8 +81,9 @@ function TagSpalte({ titel, tag, mitZutaten }: {
 
 export default async function EssenHeutePage() {
   const supabase = await createClient();
-  const [uebersicht, { data: linkRows }] = await Promise.all([
+  const [uebersicht, woche, { data: linkRows }] = await Promise.all([
     fetchEssenOverview(),
+    fetchEssenWoche(weekStart(heuteISO())),
     supabase.from("links").select("*").eq("archived", false)
       .eq("group_name", "Essen").order("sort_order"),
   ]);
@@ -91,6 +96,11 @@ export default async function EssenHeutePage() {
 
   return (
     <>
+      {/* Das Board zuerst: der Blick auf die ganze Woche ist der Grund,
+          warum man diese Seite öffnet. Heute und morgen stehen darunter,
+          weil sie im Board schon enthalten sind - nur ohne Zutaten. */}
+      {woche && <EssenWhiteboard woche={woche} />}
+
       <Card>
         <div className="grid gap-5 sm:grid-cols-2">
           <TagSpalte titel="Heute" tag={uebersicht.heute} mitZutaten />

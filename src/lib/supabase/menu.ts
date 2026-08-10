@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient } from "@supabase/supabase-js";
-import { heutePlus, weekStart } from "@/lib/time";
+import { heutePlus, weekStart, addDays } from "@/lib/time";
+import type { EssenWoche, WocheTag } from "@/lib/essen-woche";
 
 /**
  * Zugang zur Menüplan-Datenbank. Die Menü-Tabellen liegen im selben
@@ -320,6 +321,110 @@ export async function fetchEssenOverview(): Promise<EssenOverview | null> {
       kcal: parseInt(settings.get("kcal_ziel") ?? "") || 2000,
       protein: parseInt(settings.get("protein_ziel") ?? "") || 150,
     },
+  };
+}
+
+/* ------------------------------------------------------- Wochen-Whiteboard */
+
+/**
+ * Die ganze Woche auf einen Blick — Grundlage für das Whiteboard unter
+ * /m/Essen.
+ *
+ * Bewusst eine eigene Funktion statt einer Erweiterung von
+ * fetchEssenOverview: die Übersicht holt Zutaten für heute und rechnet
+ * Durchschnitte, das Whiteboard braucht sieben Tage flach. Beide teilen sich
+ * die Hilfsfunktionen darunter.
+ *
+ * Die Trainingszeit kommt aus `day_training` (eigene kleine Tabelle, direkt
+ * auf dem Board pflegbar). Fehlt die Tabelle, bleibt das Board nutzbar und
+ * zeigt nur keine Trainingsmarken - deshalb der Fehler-Rückfall statt eines
+ * harten Abbruchs.
+ */
+export async function fetchEssenWoche(von: string): Promise<EssenWoche | null> {
+  const supabase = createMenuClient();
+  if (!supabase) return null;
+
+  const tageIso = Array.from({ length: 7 }, (_, i) => addDays(von, i));
+  const bis = tageIso[6];
+
+  const [{ data: planRows }, { data: settingRows }, trainingRes] = await Promise.all([
+    supabase.from("meal_plans")
+      .select("id, date, kcal_total, protein_total").gte("date", von).lte("date", bis),
+    supabase.from("settings").select("key, value")
+      .in("key", ["kcal_ziel", "protein_ziel"]),
+    supabase.from("day_training").select("date, start_time, note")
+      .gte("date", von).lte("date", bis),
+  ]);
+
+  const plans = (planRows ?? []) as PlanRow[];
+
+  const mealsByPlan = new Map<string, MenuMeal[]>();
+  if (plans.length > 0) {
+    const { data: mealRows } = await supabase.from("meals")
+      .select("id, plan_id, meal_type, name, kcal_total, protein_total, eaten")
+      .in("plan_id", plans.map((p) => p.id));
+    for (const m of (mealRows ?? []) as unknown as (MenuMeal & { plan_id: string })[]) {
+      const list = mealsByPlan.get(m.plan_id) ?? [];
+      list.push(m);
+      mealsByPlan.set(m.plan_id, list);
+    }
+  }
+
+  const prepByDate = await fetchPrepMeals(supabase, von, bis);
+
+  // Mehrere meal_plans-Zeilen pro Datum sind möglich (siehe Kommentar in
+  // fetchEssenOverview) - deshalb zusammenführen statt die erste nehmen.
+  const byDate = new Map<string, PlanRow[]>();
+  for (const p of plans) {
+    const list = byDate.get(p.date) ?? [];
+    list.push(p);
+    byDate.set(p.date, list);
+  }
+
+  const training = new Map<string, { start: string | null; note: string | null }>();
+  for (const t of (trainingRes.data ?? []) as
+    { date: string; start_time: string | null; note: string | null }[]) {
+    training.set(t.date, { start: t.start_time, note: t.note });
+  }
+
+  const settings = new Map((settingRows ?? []).map((s) => [s.key as string, s.value as string]));
+  const heute = isoPlus(0);
+
+  const tage: WocheTag[] = tageIso.map((iso) => {
+    const direkt = (byDate.get(iso) ?? []).flatMap((p) => mealsByPlan.get(p.id) ?? []);
+    const bekannt = new Set(direkt.map((m) => `${m.meal_type}|${m.name}`));
+    const prep = (prepByDate.get(iso) ?? [])
+      .filter((m) => !bekannt.has(`${m.meal_type}|${m.name}`));
+    const alle = sortMeals([...direkt, ...prep]);
+
+    const zeilen = byDate.get(iso) ?? [];
+    const kcalPlan = Math.max(0, ...zeilen.map((p) => Number(p.kcal_total ?? 0)), 0);
+    const proteinPlan = Math.max(0, ...zeilen.map((p) => Number(p.protein_total ?? 0)), 0);
+    const tr = training.get(iso);
+
+    return {
+      datum: iso,
+      kurz: new Date(iso + "T12:00:00").toLocaleDateString("de-CH", { weekday: "short" }),
+      istHeute: iso === heute,
+      istVergangen: iso < heute,
+      mahlzeiten: alle.map((m) => ({
+        meal_type: m.meal_type,
+        name: m.name,
+        kcal: Number(m.kcal_total ?? 0),
+        protein: Number(m.protein_total ?? 0),
+        eaten: Boolean(m.eaten),
+      })),
+      kcal: kcalPlan || alle.reduce((s, m) => s + Number(m.kcal_total ?? 0), 0),
+      protein: proteinPlan || alle.reduce((s, m) => s + Number(m.protein_total ?? 0), 0),
+      training: tr?.start ? tr.start.slice(0, 5) : null,
+      trainingNotiz: tr?.note ?? null,
+    };
+  });
+
+  return {
+    von, bis, tage,
+    zielKcal: parseInt(settings.get("kcal_ziel") ?? "") || 2000,
+    zielProtein: parseInt(settings.get("protein_ziel") ?? "") || 150,
   };
 }
 
