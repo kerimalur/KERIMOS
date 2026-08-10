@@ -101,7 +101,10 @@ export function MealForm({
       amount: Number(i.amount_per_portion), unit: i.unit,
     })));
     if (!name) setName(r.name);
-    setMealType(r.meal_type);
+    // Der Slot bleibt, wie er geöffnet wurde. Ein Rezept kennt nur
+    // "Hauptmahlzeit" oder "Snack" (siehe menu-labels.ts) - und
+    // "Hauptmahlzeit" liegt in der Datenbank als `mittagessen`. Ihn hier zu
+    // übernehmen schob jede Hauptmahlzeit vom Abend- in den Mittag-Slot.
   }
 
   async function speichern() {
