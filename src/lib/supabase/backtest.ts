@@ -3,7 +3,7 @@ import { createTradingClient } from "@/lib/supabase/trading";
 import { addDays } from "@/lib/time";
 import type {
   BacktestCategory, BacktestCategoryKey, BacktestSession, BacktestTag,
-  NativeBacktestTrade, TradeTag,
+  ChecklistPunkt, NativeBacktestTrade, TradeTag,
 } from "@/lib/backtest-types";
 
 /**
@@ -101,6 +101,25 @@ export async function fetchNativeBacktestTrades(): Promise<NativeBacktestTrade[]
         categoryKey: (tag.backtest_categories?.key ?? "") as TradeTag["categoryKey"],
       })),
   }));
+}
+
+/**
+ * Punkte der Vor-dem-Trade-Checkliste.
+ *
+ * Fehlt die Tabelle noch, kommt eine leere Liste zurück statt eines
+ * Fehlers - das Journal bleibt dann ohne Checkliste benutzbar.
+ */
+export async function fetchChecklist(includeArchived = false): Promise<ChecklistPunkt[]> {
+  const supabase = createTradingClient();
+  if (!supabase) return [];
+
+  const { data } = await supabase
+    .from("backtest_checklist")
+    .select("id, label, sort_order, archived")
+    .order("sort_order");
+
+  return ((data ?? []) as ChecklistPunkt[])
+    .filter((p) => includeArchived || !p.archived);
 }
 
 /** Sessions, neueste zuerst. */

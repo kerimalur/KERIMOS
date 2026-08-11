@@ -17,6 +17,48 @@ export const RESULT_LABEL: Record<BacktestResult, string> = {
   skip: "Skip",
 };
 
+/**
+ * Faktoren, mit denen aus dem geplanten RR das erreichte R wird.
+ *
+ * Die Werte stammen aus Kerims eigenem Sheet: über alle migrierten Trades
+ * lag R/RR bei Full TP konstant zwischen 0.808 und 0.812, bei Teil-TP-dann-BE
+ * bei 0.310. Der Abschlag gegenüber dem vollen RR bildet ab, dass der
+ * Einstieg selten exakt am Fib sitzt und Spread anfällt.
+ *
+ * SL ist bewusst KEIN Faktor, sondern fix -1: ein ausgelöster Stop kostet
+ * immer genau ein R, unabhängig davon, wie weit das Ziel entfernt war.
+ */
+export const R_FAKTOR_STANDARD: Record<BacktestResult, number | null> = {
+  full_tp: 0.81,
+  teil_tp_be: 0.31,
+  sl: -1,
+  breakeven: 0,
+  skip: null,
+};
+
+/** Nur diese zwei skalieren mit dem geplanten RR. */
+const SKALIERT: BacktestResult[] = ["full_tp", "teil_tp_be"];
+
+/**
+ * Erreichtes R aus Ergebnis und geplantem RR.
+ *
+ * Null heisst "nicht berechenbar" - beim Skip gibt es kein Ergebnis, und
+ * ohne RR lässt sich ein Full TP nicht beziffern. Das Formular lässt den
+ * Wert dann leer, statt eine Null hinzuschreiben, die wie ein Breakeven
+ * aussähe.
+ */
+export function berechneR(
+  result: BacktestResult,
+  rrGeplant: number | null,
+  faktoren: Record<BacktestResult, number | null> = R_FAKTOR_STANDARD,
+): number | null {
+  const f = faktoren[result];
+  if (f === null || f === undefined) return null;
+  if (!SKALIERT.includes(result)) return f;
+  if (rrGeplant === null || !Number.isFinite(rrGeplant)) return null;
+  return Math.round(f * rrGeplant * 100) / 100;
+}
+
 export interface BacktestTag {
   id: string;
   label: string;
@@ -67,6 +109,36 @@ export interface BacktestSession {
   status: SessionStatus;
   created_at: string;
   closed_at: string | null;
+}
+
+/** Ein Punkt der Vor-dem-Trade-Checkliste. */
+export interface ChecklistPunkt {
+  id: string;
+  label: string;
+  sort_order: number;
+  archived: boolean;
+}
+
+/**
+ * Bild-Adresse zu einem TradingView-Link.
+ *
+ * Ein geteilter Chart (tradingview.com/x/ABC123/) liegt als PNG unter
+ * s3.tradingview.com/snapshots/<erster Buchstabe klein>/<ID>.png - so lässt
+ * sich der Chart direkt anzeigen, statt nur zu verlinken. Zeigt der Link
+ * schon auf eine Bilddatei, wird er unverändert genommen.
+ *
+ * Null heisst: daraus lässt sich kein Bild ableiten (z.B. ein Link auf ein
+ * Chart-Layout statt auf einen Schnappschuss). Dann bleibt der Link ein Link.
+ */
+export function tradingViewBild(link: string | null): string | null {
+  if (!link) return null;
+  const sauber = link.trim();
+  if (/\.(png|jpe?g|webp|gif)(\?.*)?$/i.test(sauber)) return sauber;
+
+  const treffer = sauber.match(/tradingview\.com\/x\/([A-Za-z0-9]+)/);
+  if (!treffer) return null;
+  const id = treffer[1];
+  return `https://s3.tradingview.com/snapshots/${id[0].toLowerCase()}/${id}.png`;
 }
 
 export interface NativeBacktestStats {

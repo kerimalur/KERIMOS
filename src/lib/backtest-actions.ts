@@ -130,6 +130,51 @@ export async function addBacktestTrade(fd: FormData) {
   revalidatePath("/trading/backtest");
 }
 
+/**
+ * Bestehenden Trade ändern, inklusive Tags.
+ *
+ * Die Tag-Verknüpfungen werden ersetzt statt abgeglichen: bei höchstens
+ * neun Zeilen pro Trade ist Löschen-und-neu-Anlegen einfacher und weniger
+ * fehleranfällig als ein Diff.
+ */
+export async function updateBacktestTrade(fd: FormData) {
+  const id = text(fd, "id");
+  if (!id) return;
+
+  const supabase = createTradingClient();
+  if (!supabase) throw new Error("Trading-Datenbank nicht verbunden");
+
+  const { error } = await supabase
+    .from("backtest_trades")
+    .update({
+      occurred_on: text(fd, "occurred_on"),
+      direction: text(fd, "direction"),
+      result: text(fd, "result"),
+      r_multiple: num(fd, "r_multiple"),
+      rr_geplant: num(fd, "rr_geplant"),
+      notiz: text(fd, "notiz") || null,
+      tradingview_link: text(fd, "tradingview_link") || null,
+      screenshot_url: text(fd, "screenshot_url") || null,
+    })
+    .eq("id", id);
+  if (error) throw new Error(`Trade ändern: ${error.message}`);
+
+  const tagIds = [
+    ...fd.getAll("gva_typ"), ...fd.getAll("confluence"),
+    ...fd.getAll("anmerkung"), ...fd.getAll("skip_grund"),
+  ].map(String).filter(Boolean);
+
+  await supabase.from("backtest_trade_tags").delete().eq("trade_id", id);
+  if (tagIds.length > 0) {
+    const { error: tagError } = await supabase
+      .from("backtest_trade_tags")
+      .insert(tagIds.map((tag_id) => ({ trade_id: id, tag_id })));
+    if (tagError) throw new Error(`Tags verknüpfen: ${tagError.message}`);
+  }
+
+  revalidatePath("/trading/backtest");
+}
+
 export async function deleteBacktestTrade(fd: FormData) {
   const id = text(fd, "id");
   if (!id) return;
@@ -206,4 +251,57 @@ export async function reaktiviereBacktestTag(fd: FormData) {
   if (error) throw new Error(`Tag reaktivieren: ${error.message}`);
 
   revalidatePath("/trading/backtest");
+}
+
+/* ------------------------------------------------------------- Checkliste */
+
+export async function addChecklistPunkt(fd: FormData) {
+  const label = text(fd, "label");
+  if (!label) return;
+
+  const supabase = createTradingClient();
+  if (!supabase) throw new Error("Trading-Datenbank nicht verbunden");
+
+  const { data: max } = await supabase
+    .from("backtest_checklist").select("sort_order")
+    .order("sort_order", { ascending: false }).limit(1);
+
+  const { error } = await supabase.from("backtest_checklist")
+    .insert({ label, sort_order: (max?.[0]?.sort_order ?? 0) + 1 });
+  if (error) throw new Error(`Punkt anlegen: ${error.message}`);
+
+  revalidatePath("/trading/backtest");
+  revalidatePath("/trading/backtest/kategorien");
+}
+
+export async function renameChecklistPunkt(fd: FormData) {
+  const id = text(fd, "id");
+  const label = text(fd, "label");
+  if (!id || !label) return;
+
+  const supabase = createTradingClient();
+  if (!supabase) throw new Error("Trading-Datenbank nicht verbunden");
+
+  const { error } = await supabase.from("backtest_checklist")
+    .update({ label }).eq("id", id);
+  if (error) throw new Error(`Punkt umbenennen: ${error.message}`);
+
+  revalidatePath("/trading/backtest");
+  revalidatePath("/trading/backtest/kategorien");
+}
+
+/** Wie bei den Tags: archivieren statt löschen. */
+export async function archiveChecklistPunkt(fd: FormData) {
+  const id = text(fd, "id");
+  if (!id) return;
+
+  const supabase = createTradingClient();
+  if (!supabase) throw new Error("Trading-Datenbank nicht verbunden");
+
+  const { error } = await supabase.from("backtest_checklist")
+    .update({ archived: fd.get("wieder") ? false : true }).eq("id", id);
+  if (error) throw new Error(`Punkt archivieren: ${error.message}`);
+
+  revalidatePath("/trading/backtest");
+  revalidatePath("/trading/backtest/kategorien");
 }

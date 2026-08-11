@@ -1,24 +1,24 @@
 import Link from "next/link";
 import {
   fetchBacktestCategories, fetchNativeBacktestTrades, fetchBacktestSessions,
+  fetchChecklist,
 } from "@/lib/supabase/backtest";
 import { tradingConfigured } from "@/lib/supabase/trading";
 import {
   computeNativeBacktestStats, computeBreakdown, computeInsights, computeEquityKurve,
-  RESULT_LABEL, BREAKDOWN_DIMENSIONS,
-  type BreakdownDimension, type BreakdownRow,
+  BREAKDOWN_DIMENSIONS,
+  type BreakdownDimension, type BreakdownRow, type ChecklistPunkt,
 } from "@/lib/backtest-types";
 import {
-  addBacktestTrade, deleteBacktestTrade,
   startBacktestSession, closeBacktestSession, reaktiviereBacktestSession,
 } from "@/lib/backtest-actions";
-import { BacktestResultField } from "@/components/backtest-result-field";
 import { BacktestBreakdown } from "@/components/backtest-breakdown";
 import { BacktestInsights } from "@/components/backtest-insights";
 import { BacktestEquity } from "@/components/backtest-equity";
-import { Card, CardTitle, Stat, Badge, Empty, Input, Select, Label, Button, cx } from "@/components/ui";
-import { dateLabel } from "@/lib/format";
-import { heuteISO } from "@/lib/time";
+import { BacktestCheckliste } from "@/components/backtest-checkliste";
+import { BacktestTradeForm } from "@/components/backtest-trade-form";
+import { BacktestTradeListe } from "@/components/backtest-trade-liste";
+import { Card, CardTitle, Stat, Badge, Empty, Input, Button, cx } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -47,10 +47,11 @@ export default async function BacktestPage({
   }
 
   const sp = await searchParams;
-  const [categories, allTrades, sessions] = await Promise.all([
+  const [categories, allTrades, sessions, checkliste] = await Promise.all([
     fetchBacktestCategories(false),
     fetchNativeBacktestTrades(),
     fetchBacktestSessions(),
+    fetchChecklist(false),
   ]);
 
   const aktiveSessions = sessions.filter((s) => s.status === "aktiv");
@@ -75,10 +76,12 @@ export default async function BacktestPage({
     : [];
   const stats = computeNativeBacktestStats(trades);
 
-  const gvaTyp = categories.find((c) => c.key === "gva_typ") ?? null;
-  const confluence = categories.find((c) => c.key === "confluence") ?? null;
-  const anmerkung = categories.find((c) => c.key === "anmerkung") ?? null;
-  const skipGrund = categories.find((c) => c.key === "skip_grund") ?? null;
+  const kategorien = {
+    gvaTyp: categories.find((c) => c.key === "gva_typ") ?? null,
+    confluence: categories.find((c) => c.key === "confluence") ?? null,
+    anmerkung: categories.find((c) => c.key === "anmerkung") ?? null,
+    skipGrund: categories.find((c) => c.key === "skip_grund") ?? null,
+  };
 
   const tradesProSession = new Map<string, typeof allTrades>();
   for (const t of allTrades) {
@@ -189,12 +192,11 @@ export default async function BacktestPage({
           <Empty>Erst eine Session starten, dann geht es hier weiter.</Empty>
         </Card>
       ) : ansicht === "auswerten" ? (
-        <AuswertungsAnsicht session={currentSession} trades={trades} stats={stats} />
+        <AuswertungsAnsicht session={currentSession} trades={trades} stats={stats}
+          kategorien={kategorien} />
       ) : (
-        <EintragenAnsicht
-          session={currentSession} trades={trades}
-          gvaTyp={gvaTyp} confluence={confluence} anmerkung={anmerkung} skipGrund={skipGrund}
-        />
+        <EintragenAnsicht session={currentSession} trades={trades}
+          kategorien={kategorien} checkliste={checkliste} />
       )}
     </div>
   );
@@ -207,23 +209,26 @@ type Trade = Awaited<ReturnType<typeof fetchNativeBacktestTrades>>[number];
 type Session = Awaited<ReturnType<typeof fetchBacktestSessions>>[number];
 
 /**
- * Reiner Erfassungs-Modus: Formular und die Liste der schon eingetragenen
+ * Reiner Erfassungs-Modus: Checkliste, Formular und die schon eingetragenen
  * Trades, sonst nichts. Bewusst ohne Kennzahlen - wer gerade 20 Setups
  * durchspielt, soll nicht nach jedem Trade auf eine wackelnde Winrate
  * schauen und sich davon beeinflussen lassen.
  */
 function EintragenAnsicht({
-  session, trades, gvaTyp, confluence, anmerkung, skipGrund,
+  session, trades, kategorien, checkliste,
 }: {
   session: Session;
   trades: Trade[];
-  gvaTyp: Kategorie | null;
-  confluence: Kategorie | null;
-  anmerkung: Kategorie | null;
-  skipGrund: Kategorie | null;
+  kategorien: {
+    gvaTyp: Kategorie | null; confluence: Kategorie | null;
+    anmerkung: Kategorie | null; skipGrund: Kategorie | null;
+  };
+  checkliste: ChecklistPunkt[];
 }) {
   return (
     <>
+      <BacktestCheckliste punkte={checkliste} />
+
       <Card>
         <div className="mb-4 flex items-baseline justify-between gap-2">
           <CardTitle className="mb-0">Neuer Trade · {session.pair}</CardTitle>
@@ -232,141 +237,14 @@ function EintragenAnsicht({
             Auswertung ansehen ↗
           </Link>
         </div>
-
-        <form action={addBacktestTrade} className="space-y-4">
-          <input type="hidden" name="session_id" value={session.id} />
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <Label htmlFor="occurred_on">Datum</Label>
-              <Input id="occurred_on" type="date" name="occurred_on" defaultValue={heuteISO()} required />
-            </div>
-            <div>
-              <Label htmlFor="direction">Richtung</Label>
-              <Select id="direction" name="direction" required defaultValue="">
-                <option value="" disabled>— wählen —</option>
-                <option value="long">Long</option>
-                <option value="short">Short</option>
-              </Select>
-            </div>
-          </div>
-
-          {gvaTyp && (
-            <div>
-              <Label htmlFor="gva_typ_select">GVA-Typ</Label>
-              <Select id="gva_typ_select" name="gva_typ" defaultValue="">
-                <option value="">— keine Angabe —</option>
-                {gvaTyp.tags.map((t) => (
-                  <option key={t.id} value={t.id}>{t.label}</option>
-                ))}
-              </Select>
-            </div>
-          )}
-
-          <BacktestResultField skipGrund={skipGrund} />
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <Label htmlFor="rr_geplant">RR geplant</Label>
-              <Input id="rr_geplant" name="rr_geplant" type="number" step="0.01" placeholder="z. B. 3.00" />
-            </div>
-            <div>
-              <Label htmlFor="r_multiple">R erreicht</Label>
-              <Input id="r_multiple" name="r_multiple" type="number" step="0.01" placeholder="z. B. 2.15" />
-            </div>
-          </div>
-
-          <TagFeld kategorie={confluence} name="confluence" label="Confluence (mehrfach möglich)" />
-          <TagFeld kategorie={anmerkung} name="anmerkung" label="Anmerkung (mehrfach möglich)" />
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <Label htmlFor="tradingview_link">TradingView-Link (optional)</Label>
-              <Input id="tradingview_link" name="tradingview_link" placeholder="https://..." />
-            </div>
-            <div>
-              <Label htmlFor="screenshot_url">Screenshot-URL (optional)</Label>
-              <Input id="screenshot_url" name="screenshot_url" placeholder="https://..." />
-            </div>
-          </div>
-          <div>
-            <Label htmlFor="notiz">Notiz (frei)</Label>
-            <Input id="notiz" name="notiz" placeholder="Freitext" />
-          </div>
-
-          <Button type="submit">Trade speichern</Button>
-        </form>
+        <BacktestTradeForm sessionId={session.id} kategorien={kategorien} />
       </Card>
 
       <Card>
         <CardTitle>Eingetragen ({trades.length})</CardTitle>
-        {trades.length === 0 ? (
-          <Empty>Noch keine Trades in dieser Session.</Empty>
-        ) : (
-          <ul className="space-y-1.5">
-            {trades.map((t) => <TradeZeile key={t.id} t={t} />)}
-          </ul>
-        )}
+        <BacktestTradeListe trades={trades} kategorien={kategorien} />
       </Card>
     </>
-  );
-}
-
-function TagFeld({
-  kategorie, name, label,
-}: { kategorie: Kategorie | null; name: string; label: string }) {
-  if (!kategorie) return null;
-  return (
-    <div>
-      <Label>{label}</Label>
-      <div className="flex flex-wrap gap-2">
-        {kategorie.tags.map((t) => (
-          <label key={t.id}
-            className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-line
-              bg-sand px-2.5 py-1 text-xs text-ink-soft transition
-              has-[:checked]:border-accent/50 has-[:checked]:bg-accent-tint has-[:checked]:text-accent-soft">
-            <input type="checkbox" name={name} value={t.id} className="accent-accent" />
-            {t.label}
-          </label>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function TradeZeile({ t }: { t: Trade }) {
-  const tone = t.result === "skip" ? "neutral"
-    : t.r_multiple && t.r_multiple > 0 ? "good"
-      : t.r_multiple && t.r_multiple < 0 ? "bad" : "neutral";
-
-  return (
-    <li className="rounded-lg bg-sand/60 px-3 py-2.5 text-sm">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="tabular text-xs text-ink-muted">{dateLabel(t.occurred_on)}</span>
-        <Badge tone={t.direction === "long" ? "good" : "bad"}>
-          {t.direction === "long" ? "Long" : "Short"}
-        </Badge>
-        <Badge tone={tone}>{RESULT_LABEL[t.result]}</Badge>
-        {t.r_multiple !== null && (
-          <span className="tabular text-xs text-ink-soft">
-            {t.r_multiple > 0 ? "+" : ""}{t.r_multiple.toFixed(2)} R
-          </span>
-        )}
-        <form action={deleteBacktestTrade} className="ml-auto">
-          <input type="hidden" name="id" value={t.id} />
-          <button className="text-xs text-ink-faint transition hover:text-bad">löschen</button>
-        </form>
-      </div>
-      {t.tags.length > 0 && (
-        <div className="mt-1.5 flex flex-wrap gap-1">
-          {t.tags.map((tg) => (
-            <span key={tg.tagId} className="rounded bg-card px-1.5 py-0.5 text-[11px] text-ink-muted">
-              {tg.label}
-            </span>
-          ))}
-        </div>
-      )}
-      {t.notiz && <p className="mt-1.5 text-xs text-ink-muted">{t.notiz}</p>}
-    </li>
   );
 }
 
@@ -377,11 +255,15 @@ function TradeZeile({ t }: { t: Trade }) {
  * abgeleiteten Hinweise. Kein Eingabefeld - hier wird gelesen, nicht erfasst.
  */
 function AuswertungsAnsicht({
-  session, trades, stats,
+  session, trades, stats, kategorien,
 }: {
   session: Session;
   trades: Trade[];
   stats: ReturnType<typeof computeNativeBacktestStats>;
+  kategorien: {
+    gvaTyp: Kategorie | null; confluence: Kategorie | null;
+    anmerkung: Kategorie | null; skipGrund: Kategorie | null;
+  };
 }) {
   const breakdownData = Object.fromEntries(
     BREAKDOWN_DIMENSIONS.map((d) => [d, computeBreakdown(trades, d)]),
@@ -440,13 +322,7 @@ function AuswertungsAnsicht({
 
       <Card>
         <CardTitle>Alle Trades ({trades.length})</CardTitle>
-        {trades.length === 0 ? (
-          <Empty>Keine Trades in dieser Session.</Empty>
-        ) : (
-          <ul className="space-y-1.5">
-            {trades.map((t) => <TradeZeile key={t.id} t={t} />)}
-          </ul>
-        )}
+        <BacktestTradeListe trades={trades} kategorien={kategorien} />
       </Card>
     </>
   );
