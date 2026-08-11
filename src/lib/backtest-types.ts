@@ -194,6 +194,10 @@ export interface BreakdownRow {
   gesamtR: number;
   /** Ø R pro Trade in dieser Gruppe - die eigentliche Edge-Kennzahl. */
   expectancy: number | null;
+  /** Wie viele davon in den Stop liefen. */
+  sl: number;
+  /** Anteil Stopouts in Prozent. Null ohne gewertete Trades. */
+  slQuote: number | null;
 }
 
 const WOCHENTAG_ORDER = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
@@ -211,11 +215,15 @@ function wochentagVon(iso: string): string {
  */
 export function computeBreakdown(
   trades: NativeBacktestTrade[], dimension: BreakdownDimension,
+  /** Nur Stopouts betrachten - für die Frage "woran scheitern meine Trades". */
+  nurSL = false,
 ): BreakdownRow[] {
-  const buckets = new Map<string, { n: number; wins: number; sumR: number; gewertet: number }>();
-  const add = (label: string, r: number | null, istGewertet: boolean) => {
-    const b = buckets.get(label) ?? { n: 0, wins: 0, sumR: 0, gewertet: 0 };
+  const buckets = new Map<string,
+    { n: number; wins: number; sumR: number; gewertet: number; sl: number }>();
+  const add = (label: string, r: number | null, istGewertet: boolean, istSL = false) => {
+    const b = buckets.get(label) ?? { n: 0, wins: 0, sumR: 0, gewertet: 0, sl: 0 };
     b.n++;
+    if (istSL) b.sl++;
     if (istGewertet) {
       b.gewertet++;
       const rr = r ?? 0;
@@ -231,17 +239,20 @@ export function computeBreakdown(
       add(grund?.label ?? "(kein Grund erfasst)", null, false);
     }
   } else {
-    for (const t of trades.filter((x) => x.result !== "skip")) {
+    const basis = trades.filter((x) =>
+      nurSL ? x.result === "sl" : x.result !== "skip");
+    for (const t of basis) {
+      const istSL = t.result === "sl";
       if (dimension === "direction") {
-        add(t.direction === "long" ? "Long" : "Short", t.r_multiple, true);
+        add(t.direction === "long" ? "Long" : "Short", t.r_multiple, true, istSL);
       } else if (dimension === "wochentag") {
-        add(wochentagVon(t.occurred_on), t.r_multiple, true);
+        add(wochentagVon(t.occurred_on), t.r_multiple, true, istSL);
       } else if (dimension === "pair") {
-        add(t.pair, t.r_multiple, true);
+        add(t.pair, t.r_multiple, true, istSL);
       } else {
         const tags = t.tags.filter((tg) => tg.categoryKey === dimension);
-        if (tags.length === 0) add("(keine Angabe)", t.r_multiple, true);
-        for (const tg of tags) add(tg.label, t.r_multiple, true);
+        if (tags.length === 0) add("(keine Angabe)", t.r_multiple, true, istSL);
+        for (const tg of tags) add(tg.label, t.r_multiple, true, istSL);
       }
     }
   }
@@ -251,6 +262,8 @@ export function computeBreakdown(
     winrate: b.gewertet > 0 ? (b.wins / b.gewertet) * 100 : null,
     gesamtR: Math.round(b.sumR * 100) / 100,
     expectancy: b.gewertet > 0 ? b.sumR / b.gewertet : null,
+    sl: b.sl,
+    slQuote: b.gewertet > 0 ? (b.sl / b.gewertet) * 100 : null,
   }));
 
   if (dimension === "wochentag") {

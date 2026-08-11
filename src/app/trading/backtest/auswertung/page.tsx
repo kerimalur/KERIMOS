@@ -53,6 +53,11 @@ export default async function GesamtauswertungPage({
   const breakdownData = Object.fromEntries(
     BREAKDOWN_DIMENSIONS.map((d) => [d, computeBreakdown(trades, d)]),
   ) as Record<BreakdownDimension, BreakdownRow[]>;
+  // Dieselben Gruppen, aber nur über die Stopouts - beantwortet die Frage,
+  // was in den Verlust-Trades immer wieder auftaucht.
+  const slBreakdown = Object.fromEntries(
+    BREAKDOWN_DIMENSIONS.map((d) => [d, computeBreakdown(trades, d, true)]),
+  ) as Record<BreakdownDimension, BreakdownRow[]>;
   const insights = computeInsights(trades, stats);
   const equity = computeEquityKurve(trades);
 
@@ -133,7 +138,7 @@ export default async function GesamtauswertungPage({
 
           <Card>
             <CardTitle>Aufschlüsselung</CardTitle>
-            <BacktestBreakdown data={breakdownData} />
+            <BacktestBreakdown data={breakdownData} slData={slBreakdown} />
           </Card>
         </>
       )}

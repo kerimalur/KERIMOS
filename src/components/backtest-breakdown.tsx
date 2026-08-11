@@ -13,10 +13,16 @@ import {
  * greifen die Einblend-Animationen bei jedem Wechsel neu.
  */
 export function BacktestBreakdown({
-  data,
-}: { data: Record<BreakdownDimension, BreakdownRow[]> }) {
+  data, slData,
+}: {
+  data: Record<BreakdownDimension, BreakdownRow[]>;
+  /** Dieselben Dimensionen, aber nur über die Stopouts gerechnet. */
+  slData?: Record<BreakdownDimension, BreakdownRow[]>;
+}) {
   const [dimension, setDimension] = useState<BreakdownDimension>("gva_typ");
-  const rows = data[dimension] ?? [];
+  const [nurSL, setNurSL] = useState(false);
+  const quelle = nurSL && slData ? slData : data;
+  const rows = quelle[dimension] ?? [];
   const zeigeR = dimension !== "skip_grund";
 
   // Gemeinsame Skala für die R-Balken, damit die Längen untereinander
@@ -26,7 +32,7 @@ export function BacktestBreakdown({
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap gap-1.5">
+      <div className="mb-3 flex flex-wrap gap-1.5">
         {BREAKDOWN_DIMENSIONS.map((d) => (
           <button key={d} type="button" onClick={() => setDimension(d)}
             className={cx(
@@ -41,6 +47,26 @@ export function BacktestBreakdown({
         ))}
       </div>
 
+      {/* Der Stopout-Blick beantwortet eine andere Frage als der Gesamtblick:
+          nicht "was funktioniert", sondern "was steht in den Verlierern drin".
+          Genau dafür sind die Anmerkungen gedacht. */}
+      {slData && dimension !== "skip_grund" && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => setNurSL(!nurSL)}
+            className={cx("rounded-lg border px-2.5 py-1 text-xs transition",
+              nurSL
+                ? "border-bad/50 bg-bad-tint text-bad-bright"
+                : "border-line bg-field text-ink-muted hover:text-ink-soft")}>
+            {nurSL ? "nur Stopouts" : "alle Trades"}
+          </button>
+          <span className="text-[11px] text-ink-faint">
+            {nurSL
+              ? "Zeigt, was in den Verlust-Trades stand."
+              : "Umschalten, um nur die Stopouts zu untersuchen."}
+          </span>
+        </div>
+      )}
+
       {rows.length === 0 ? (
         <Empty>Noch keine Daten für diese Auswertung.</Empty>
       ) : (
@@ -52,7 +78,12 @@ export function BacktestBreakdown({
                 <span className="text-sm text-ink">{r.label}</span>
                 <span className="tabular text-xs text-ink-muted">
                   {r.n} {r.n === 1 ? "Trade" : "Trades"}
-                  {zeigeR && r.winrate !== null && ` · ${r.winrate.toFixed(0)} % WR`}
+                  {zeigeR && !nurSL && r.winrate !== null && ` · ${r.winrate.toFixed(0)} % WR`}
+                  {zeigeR && !nurSL && r.slQuote !== null && r.slQuote > 0 && (
+                    <span className={r.slQuote >= 50 ? "text-bad-bright" : undefined}>
+                      {" "}· {r.slQuote.toFixed(0)} % SL
+                    </span>
+                  )}
                   {zeigeR && r.expectancy !== null &&
                     ` · Ø ${r.expectancy > 0 ? "+" : ""}${r.expectancy.toFixed(2)} R`}
                 </span>
