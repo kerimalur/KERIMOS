@@ -14,43 +14,85 @@ import { createTradingClient } from "@/lib/supabase/trading";
  * Benutzer-ID selbst mitführen. Vergisst man das einmal, entstehen
  * besitzerlose Zeilen, die im Screener unsichtbar wären.
  *
- * Die ID kommt aus `TRADING_USER_ID`. Fehlt sie, sucht `tradingUserId()` sie
- * einmalig selbst aus der Datenbank — es gibt dort genau einen Benutzer, und
- * eine App, die ohne Konfiguration läuft, ist eine App weniger, die man
- * vergisst einzurichten.
+ * Die ID kommt aus `TRADING_USER_ID`. Fehlt sie, ermittelt `tradingUserId()`
+ * sie selbst — aber **nur, wenn es genau einen Benutzer gibt**. Bei mehreren
+ * wird abgebrochen statt geraten.
+ *
+ * Diese Regel ist bewusst dieselbe wie im Screener-Backend
+ * (`Backend/supabase_signals.py::_resolve_user_id`, `SIGNALS_USER_ID`). Dort
+ * wurde früher einfach der erste Nutzer der Admin-API genommen; die
+ * Reihenfolge ist aber nicht garantiert, und Signale landeten unter einem
+ * fremden Konto — geschrieben wurde korrekt, sichtbar war nichts, weil das
+ * Frontend hart auf die eigene user_id filtert. Ein stiller Datenverlust, der
+ * erst auffällt, wenn man ihn sucht.
+ *
+ * Dasselbe gilt hier: Ein falsch geratener Besitzer schreibt Trades, die
+ * niemand mehr sieht. Lieber eine Seite, die sagt „setz die Variable", als
+ * ein Journal, das ins Leere schreibt.
  */
 
 // ---------------------------------------------------------------------------
 // Benutzer
 // ---------------------------------------------------------------------------
 
-const userIdCached = unstable_cache(
-  async (): Promise<string | null> => {
+/**
+ * Warum kein Benutzer feststeht — für die Meldung auf den Journal-Seiten.
+ * `mehrdeutig` ist der wichtige Fall: Die Datenbank antwortet, es gibt nur
+ * keine eindeutige Antwort auf die Frage „wem gehört das hier".
+ */
+export type UserBefund = "gesetzt" | "eindeutig" | "mehrdeutig" | "keiner" | "keine-db";
+
+const userCached = unstable_cache(
+  async (): Promise<{ id: string | null; befund: UserBefund }> => {
     const gesetzt = process.env.TRADING_USER_ID?.trim();
-    if (gesetzt) return gesetzt;
+    if (gesetzt) return { id: gesetzt, befund: "gesetzt" };
 
     const supabase = createTradingClient();
-    if (!supabase) return null;
+    if (!supabase) return { id: null, befund: "keine-db" };
 
-    // Reihenfolge nach Aussagekraft: wer Trades hat, ist der Besitzer. Konten
-    // und Outlooks sind die Rückfallebenen für eine noch leere Datenbank.
+    // perPage 2 statt 1 — nur so lässt sich „genau einer" von „mehrere"
+    // unterscheiden. Exakt dieselbe Mechanik wie im Backend.
+    try {
+      const { data, error } = await supabase.auth.admin.listUsers({ page: 1, perPage: 2 });
+      if (!error) {
+        if (data.users.length > 1) return { id: null, befund: "mehrdeutig" };
+        if (data.users.length === 1) return { id: data.users[0].id, befund: "eindeutig" };
+        return { id: null, befund: "keiner" };
+      }
+    } catch {
+      // Admin-API nicht erreichbar → unten über die Tabellen weiter.
+    }
+
+    // Rückfallebene, falls der Schlüssel keine Admin-Rechte hat: Besitzer aus
+    // den Daten ableiten — mit derselben Regel. Mehr als eine ID heisst
+    // abbrechen, nicht die erste nehmen.
+    const gefunden = new Set<string>();
     for (const tabelle of ["trades", "accounts", "outlooks"]) {
       const { data } = await supabase
         .from(tabelle)
         .select("user_id")
         .not("user_id", "is", null)
-        .limit(1);
-      const id = data?.[0]?.user_id as string | undefined;
-      if (id) return id;
+        .limit(500);
+      for (const zeile of (data ?? []) as { user_id?: string }[]) {
+        if (zeile.user_id) gefunden.add(zeile.user_id);
+      }
+      if (gefunden.size > 1) return { id: null, befund: "mehrdeutig" };
     }
-    return null;
+
+    if (gefunden.size === 1) return { id: [...gefunden][0], befund: "eindeutig" };
+    return { id: null, befund: "keiner" };
   },
-  ["trading-user-id"],
+  ["trading-user-v2"],
   { revalidate: 3600, tags: ["trading-user"] },
 );
 
 export async function tradingUserId(): Promise<string | null> {
-  return userIdCached();
+  return (await userCached()).id;
+}
+
+/** Wie die ID zustande kam — damit die Meldung sagen kann, was zu tun ist. */
+export async function tradingUserBefund(): Promise<UserBefund> {
+  return (await userCached()).befund;
 }
 
 /** Client + Benutzer-ID zusammen — spart in jedem Loader vier Zeilen. */
