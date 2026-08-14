@@ -42,16 +42,33 @@ const ZEIT = {
   ],
 };
 
+/**
+ * Trading laeuft in vier Schritten, und die obere Reihe bildet genau sie ab:
+ * Cockpit (was ist da?), Ranking (spricht die Fundamentallage dafuer?),
+ * Journal (was habe ich gemacht?), Backtest (traegt die Methode ueberhaupt?).
+ *
+ * Alles andere - Radar, Heatmap, Auswertung, Kategorien, Alarme - sind
+ * Detailansichten und stehen deshalb in der zweiten Reihe.
+ *
+ * Cockpit, Ranking, Radar, Heatmap und das ganze Journal sind aus dem
+ * GVA-Screener umgezogen; der ist nur noch Labor (ML, Quant, Fundamentaldaten).
+ * Siehe ../../TRADING-UMBAU.md.
+ */
 const TRADING = {
   home: { href: "/trading", label: "Übersicht" },
   primary: [
+    { href: "/trading/cockpit", label: "Cockpit" },
+    { href: "/trading/ranking", label: "Ranking" },
+    { href: "/trading/journal", label: "Journal" },
     { href: "/trading/backtest", label: "Backtest" },
-    { href: "/trading/backtest/auswertung", label: "Auswertung" },
-    { href: "/trading/alarme", label: "Alarme" },
   ],
   secondary: [
+    { href: "/trading/radar", label: "Radar" },
+    { href: "/trading/heatmap", label: "Heatmap" },
+    { href: "/trading/backtest/auswertung", label: "Auswertung" },
     { href: "/trading/backtest/kategorien", label: "Kategorien" },
-    { href: "https://gva-screener-kerim-alurs-projects.vercel.app", label: "Zum Screener ↗" },
+    { href: "/trading/alarme", label: "Alarme" },
+    { href: "https://gva-screener-kerim-alurs-projects.vercel.app", label: "Labor \u2197" },
   ],
 };
 

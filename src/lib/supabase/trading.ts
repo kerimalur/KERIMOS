@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
 
 /**
@@ -365,29 +366,51 @@ export function checkFundamental(
  * Trading-DB fehlt oder noch kein Ranking geschrieben wurde — die Seite zeigt
  * dann "—" statt zu blockieren.
  */
+const rankingCached = unstable_cache(
+  async (): Promise<{ weekStart: string | null; currencies: RankingCurrency[] }> => {
+    const supabase = createTradingClient();
+    if (!supabase) return { weekStart: null, currencies: [] };
+
+    const { data: latest } = await supabase
+      .from("ml_weekly_rankings")
+      .select("week_start")
+      .order("week_start", { ascending: false })
+      .limit(1);
+    const weekStart: string | undefined = latest?.[0]?.week_start;
+    if (!weekStart) return { weekStart: null, currencies: [] };
+
+    const { data } = await supabase
+      .from("ml_weekly_rankings")
+      .select("ccy, score, strength_quintile")
+      .eq("week_start", weekStart)
+      .eq("model", "champion");
+
+    return {
+      weekStart,
+      currencies: (data ?? []).map((r) => ({
+        ccy: r.ccy as string,
+        score: Number(r.score ?? 0),
+        strength_quintile: Number(r.strength_quintile ?? 3),
+      })),
+    };
+  },
+  ["gva-weekly-ranking"],
+  // Das Ranking wird einmal pro Woche geschrieben (GitHub Action, sonntags).
+  // 15 Minuten Cache sind grosszuegig kurz und sparen trotzdem zwei
+  // Datenbankrunden pro Seitenaufruf.
+  { revalidate: 900, tags: ["gva-ranking"] },
+);
+
 export async function fetchRanking(): Promise<RankingCurrency[]> {
-  const supabase = createTradingClient();
-  if (!supabase) return [];
+  return (await rankingCached()).currencies;
+}
 
-  const { data: latest } = await supabase
-    .from("ml_weekly_rankings")
-    .select("week_start")
-    .order("week_start", { ascending: false })
-    .limit(1);
-  const weekStart: string | undefined = latest?.[0]?.week_start;
-  if (!weekStart) return [];
-
-  const { data } = await supabase
-    .from("ml_weekly_rankings")
-    .select("ccy, score, strength_quintile")
-    .eq("week_start", weekStart)
-    .eq("model", "champion");
-
-  return (data ?? []).map((r) => ({
-    ccy: r.ccy as string,
-    score: Number(r.score ?? 0),
-    strength_quintile: Number(r.strength_quintile ?? 3),
-  }));
+/** Wie `fetchRanking`, aber mit der Woche dazu — für die Ranking-Seite. */
+export async function fetchRankingMitWoche(): Promise<{
+  weekStart: string | null;
+  currencies: RankingCurrency[];
+}> {
+  return rankingCached();
 }
 
 export interface ScreenerSnapshot {
@@ -398,21 +421,126 @@ export interface ScreenerSnapshot {
 }
 
 /**
- * Live-Board vom Screener-Backend. Null bei Timeout/Fehler — das Backend auf
- * Render schläft nach Inaktivität und braucht beim Aufwachen bis zu einer
- * Minute; die Seite zeigt das dann als Hinweis statt zu blockieren.
+ * Live-Board vom Screener-Backend. Null bei Timeout/Fehler.
+ *
+ * Zwei Dinge sind hier absichtlich so und nicht anders:
+ *
+ * **Timeout 2.5 s statt 8 s.** Das Backend liegt auf Render und schläft nach
+ * Inaktivität ein; das Aufwecken dauert bis zu einer Minute. Jede Sekunde
+ * Timeout ist eine Sekunde, die eine KerimOS-Seite auf ein fremdes System
+ * wartet. 2.5 s reichen für ein waches Backend locker — ein schlafendes wird
+ * ohnehin nicht rechtzeitig fertig, egal ob man 2.5 oder 8 Sekunden wartet.
+ *
+ * **60 Sekunden Cache.** Der Screener rechnet seine Zonen im Minutentakt;
+ * häufiger zu fragen bringt keine neue Zahl, kostet aber bei jedem
+ * Seitenaufruf eine Netzrunde. `unstable_cache` teilt das Ergebnis über alle
+ * Seiten und alle Besucher — die Startseite, /trading und die Radar-Ansicht
+ * lösen zusammen höchstens einen Aufruf pro Minute aus.
  */
+const screenerCached = unstable_cache(
+  async (): Promise<ScreenerSnapshot | null> => {
+    const base = (process.env.GVA_API_URL ?? "https://gva-screener.onrender.com")
+      .replace(/\/+$/, "");
+    try {
+      const res = await fetch(`${base}/api/screener`, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(2500),
+      });
+      if (!res.ok) return null;
+      return (await res.json()) as ScreenerSnapshot;
+    } catch {
+      return null;
+    }
+  },
+  ["gva-screener-board"],
+  { revalidate: 60, tags: ["gva-screener"] },
+);
+
 export async function fetchScreener(): Promise<ScreenerSnapshot | null> {
-  const base = (process.env.GVA_API_URL ?? "https://gva-screener.onrender.com")
-    .replace(/\/+$/, "");
-  try {
-    const res = await fetch(`${base}/api/screener`, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as ScreenerSnapshot;
-  } catch {
-    return null;
-  }
+  return screenerCached();
+}
+
+// ---------------------------------------------------------------------------
+// Ableitungen fürs Board — reine Funktionen, ohne DB und ohne Netz
+// ---------------------------------------------------------------------------
+
+/**
+ * Sortierung fürs Radar: erst was getroffen ist, dann was nah dran ist, dann
+ * der Rest. Innerhalb einer Stufe entscheidet der Abstand — das nächste Paar
+ * steht oben. Paare ohne Abstandsangabe landen am Ende ihrer Stufe.
+ */
+export function sortiereNachDringlichkeit(pairs: ScreenerPair[]): ScreenerPair[] {
+  const rang = { HIT: 0, PREPARE: 1, NEUTRAL: 2 } as const;
+  return [...pairs].sort((a, b) => {
+    const r = rang[a.status] - rang[b.status];
+    if (r !== 0) return r;
+    const da = a.distance ?? Number.POSITIVE_INFINITY;
+    const db = b.distance ?? Number.POSITIVE_INFINITY;
+    if (da !== db) return da - db;
+    return a.pair.localeCompare(b.pair);
+  });
+}
+
+/** Zählt die Paare je Status — für die Kopfzeile der Board-Seiten. */
+export function zaehleStatus(pairs: ScreenerPair[]): {
+  hit: number; prepare: number; neutral: number; stale: number;
+} {
+  return {
+    hit: pairs.filter((p) => p.status === "HIT").length,
+    prepare: pairs.filter((p) => p.status === "PREPARE").length,
+    neutral: pairs.filter((p) => p.status === "NEUTRAL").length,
+    stale: pairs.filter((p) => p.stale).length,
+  };
+}
+
+/**
+ * Die acht Währungen, aus denen sich die 28 Paare zusammensetzen — in der
+ * Reihenfolge, die auch das Ranking benutzt. Basis der Heatmap-Achsen.
+ */
+export const G8 = ["USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF"] as const;
+export type G8Code = (typeof G8)[number];
+
+export interface HeatmapZelle {
+  /** Paarname so, wie ihn der Screener liefert (z.B. "EURUSD"). */
+  pair: string;
+  base: string;
+  quote: string;
+  daten: ScreenerPair | null;
+  /** Richtung des Wochen-Rankings für dieses Paar. */
+  rankingSeite: "LONG" | "SHORT" | "NEUTRAL" | null;
+}
+
+/**
+ * 8×8-Raster: Zeile = Basiswährung, Spalte = Kurswährung. Die Diagonale bleibt
+ * leer. Der Screener liefert je Paar nur eine Richtung (z.B. EURUSD, nicht
+ * USDEUR) — die Gegenzelle bekommt deshalb dasselbe Paar, damit das Raster
+ * lesbar bleibt, statt halb leer zu sein.
+ */
+export function baueHeatmap(
+  pairs: ScreenerPair[],
+  ranking: RankingCurrency[],
+): HeatmapZelle[][] {
+  const byPair = new Map(pairs.map((p) => [p.pair.replace(/[^A-Za-z]/g, "").toUpperCase(), p]));
+  const qOf = new Map(ranking.map((r) => [r.ccy, r.strength_quintile]));
+
+  return G8.map((base) =>
+    G8.map((quote): HeatmapZelle => {
+      if (base === quote) {
+        return { pair: "", base, quote, daten: null, rankingSeite: null };
+      }
+      const direkt = byPair.get(base + quote);
+      const invers = byPair.get(quote + base);
+      const daten = direkt ?? invers ?? null;
+      const baseQ = qOf.get(base);
+      const quoteQ = qOf.get(quote);
+      const rankingSeite =
+        baseQ === undefined || quoteQ === undefined
+          ? null
+          : rankingPairBias(baseQ, quoteQ);
+      return {
+        pair: daten?.pair ?? base + quote,
+        base, quote, daten, rankingSeite,
+      };
+    }),
+  );
 }

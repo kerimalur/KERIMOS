@@ -261,6 +261,21 @@ function WatchlistCard({
   );
 }
 
+/** Einstieg in eine der Such-Ansichten. Klein gehalten - es ist ein Weg, kein Inhalt. */
+function FindenKachel({ href, titel, text }: { href: string; titel: string; text: string }) {
+  return (
+    <Link href={href}
+      className="group rounded-2xl border border-line/70 bg-card px-4 py-3 shadow-card
+                 transition duration-150 ease-tactile hover:border-line-strong active:scale-[0.98]">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-display text-sm font-bold text-ink">{titel}</span>
+        <span className="text-xs text-ink-faint transition group-hover:text-accent-soft">→</span>
+      </div>
+      <p className="mt-0.5 text-xs text-ink-muted">{text}</p>
+    </Link>
+  );
+}
+
 export default async function TradingPage() {
   const [screener, weekEvents, ranking, watchlist, journal] = await Promise.all([
     fetchScreener(),
@@ -306,6 +321,18 @@ export default async function TradingPage() {
             Backtest-Journal ↗
           </Link>.
         </p>
+      </div>
+
+      {/* Wege ins Detail. Bewusst als Zeile ganz oben: die drei Ansichten sind
+          Werkzeuge zum Suchen, nicht Inhalte zum Lesen - sie gehoeren dorthin,
+          wo man sie greift, nicht ans Seitenende. */}
+      <div className="grid gap-2 sm:grid-cols-3">
+        <FindenKachel href="/trading/ranking" titel="Ranking"
+          text="Fundamentale Wochenlage der acht Waehrungen" />
+        <FindenKachel href="/trading/radar" titel="Radar"
+          text="Alle 28 Paare, das Dringendste zuerst" />
+        <FindenKachel href="/trading/heatmap" titel="Heatmap"
+          text="8x8-Raster - eine Waehrung auf einen Blick" />
       </div>
 
       <WatchlistCard watchlist={watchlist} pairs={pairs} />
