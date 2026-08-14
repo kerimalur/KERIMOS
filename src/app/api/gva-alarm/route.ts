@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createTradingClient } from "@/lib/supabase/trading";
 import { fetchScreener, type ScreenerPair } from "@/lib/supabase/trading";
-import { sendePush } from "@/lib/push";
+import { ladeEinstellungen, heuteGesendet } from "@/lib/alarm/einstellungen";
+import { pruefe, type Alarmart } from "@/lib/alarm/regeln";
+import { verschicke, type Meldung } from "@/lib/alarm/versand";
 import { heuteISO, heuteMinuten, ZONE } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
@@ -17,9 +19,18 @@ export const maxDuration = 30;
  *   hit   - die Linie ist erreicht oder durchschritten
  *   zeit  - eine frei gesetzte Uhrzeit ist da (z.B. 08:00 Sessionstart)
  *
+ * Verschickt wird über `lib/alarm/versand`: Web-Push und Telegram, je nach
+ * dem, was unter /trading/alarme/einstellungen eingeschaltet ist. Die Regeln
+ * (Ruhezeit, Paarliste, Tagesgrenze) stehen in `lib/alarm/regeln` und sind
+ * dort einzeln prüfbar - diese Datei entscheidet nur noch, WAS gemeldet
+ * werden könnte, nicht mehr, ob es darf.
+ *
  * Gegen Dauerfeuer schützt `alarm_log`: pro Linie, Art und Tag genau eine
  * Meldung. Ein Unique-Index macht das auch dann dicht, wenn zwei Läufe
- * sich überschneiden - der zweite Insert scheitert schlicht.
+ * sich überschneiden - der zweite Insert scheitert schlicht. Deshalb wird
+ * der Log-Eintrag erst gesetzt, NACHDEM die Regeln zugestimmt haben: sonst
+ * verbraucht eine wegen Ruhezeit unterdrückte Meldung den Tagesplatz einer
+ * späteren, die durchgekommen wäre.
  *
  * AUFRUF: bewusst NICHT über Vercel-Cron. Der Hobby-Plan erlaubt nur einen
  * Lauf pro Tag ("Hobby accounts are limited to daily cron jobs") und lehnt
@@ -79,10 +90,30 @@ export async function GET(request: NextRequest) {
   }
 
   const heute = heuteISO();
-  const { data } = await supabase
-    .from("trading_watchlist")
-    .select("id, pair, line_level, side, alarm_pips, alarm_on_hit, alarm_time, show_until, archived, note")
-    .eq("archived", false);
+  const jetztMinuten = heuteMinuten();
+
+  const [{ werte: einst, hinweis }, { data }] = await Promise.all([
+    ladeEinstellungen(),
+    supabase
+      .from("trading_watchlist")
+      .select("id, pair, line_level, side, alarm_pips, alarm_on_hit, alarm_time, show_until, archived, note")
+      .eq("archived", false),
+  ]);
+
+  // Zwei Abbrüche, die für JEDE Linie gelten - hier gespart, statt sie
+  // linienweise festzustellen: der Screener-Aufruf unten kostet bis 2.5 s.
+  if (!einst.push_an && !einst.telegram_an) {
+    return NextResponse.json({
+      ok: true, zone: ZONE, geprueft: 0, gesendet: 0,
+      hinweis: "kein Kanal eingeschaltet - siehe /trading/alarme/einstellungen",
+    });
+  }
+  if (einst.stumm_bis && heute <= einst.stumm_bis) {
+    return NextResponse.json({
+      ok: true, zone: ZONE, geprueft: 0, gesendet: 0,
+      hinweis: `stumm bis ${einst.stumm_bis}`,
+    });
+  }
 
   const linien = ((data ?? []) as Linie[])
     .filter((l) => !l.show_until || l.show_until >= heute);
@@ -97,26 +128,44 @@ export async function GET(request: NextRequest) {
     if (typeof p.price === "number") preise.set(p.pair.toUpperCase(), p.price);
   }
 
-  const jetztMinuten = heuteMinuten();
   const berichte: string[] = [];
+  const unterdrueckt: string[] = [];
   let gesendet = 0;
+  // Startwert aus alarm_log, damit die Tagesgrenze über alle Cron-Läufe
+  // hinweg gilt und nicht in jedem Lauf bei null anfängt.
+  let heuteSchon = await heuteGesendet(heute);
 
-  /** Meldet einmal pro Linie/Art/Tag. Der Unique-Index ist die Sperre. */
-  async function melde(linie: Linie, art: "naehe" | "hit" | "zeit", nachricht: {
-    title: string; body: string; requireInteraction?: boolean;
-  }) {
+  /** Meldet einmal pro Linie/Art/Tag - wenn die Regeln zustimmen. */
+  async function melde(
+    linie: Linie, art: Alarmart, nachricht: Omit<Meldung, "art" | "pair" | "tag">,
+  ) {
+    const urteil = pruefe(einst, {
+      art, pair: linie.pair, jetztMinuten, heute, bereitsGesendet: heuteSchon,
+    });
+    if (!urteil.erlaubt) {
+      unterdrueckt.push(`${linie.pair} ${art}: ${urteil.grund}`);
+      return;
+    }
+
+    // Erst jetzt den Tagesplatz belegen. Schlägt der Insert fehl, wurde diese
+    // Meldung heute schon verschickt - dann still weiter.
     const { error } = await supabase!
       .from("alarm_log")
       .insert({ watchlist_id: linie.id, art, tag: heute });
-    if (error) return; // schon gemeldet (Unique-Verletzung) - still übergehen
+    if (error) return;
 
-    const ergebnis = await sendePush({
-      ...nachricht,
-      tag: `gva-${linie.id}-${art}`,
-      url: "/trading",
-    });
-    gesendet += ergebnis.gesendet;
-    berichte.push(`${linie.pair} ${art}: ${ergebnis.gesendet} gesendet`);
+    // Der Zählerstand VOR dem Hochzählen geht an verschicke: sonst würde die
+    // 40. Meldung die Grenze von 40 selbst reissen und ihren Log-Platz
+    // verbrauchen, ohne je gesendet worden zu sein.
+    const platz = heuteSchon;
+    heuteSchon++;
+    const ergebnis = await verschicke(
+      { ...nachricht, art, pair: linie.pair, tag: `gva-${linie.id}-${art}` },
+      einst,
+      { jetztMinuten, heute, bereitsGesendet: platz },
+    );
+    if (ergebnis.push.gesendet > 0 || ergebnis.telegram.ok) gesendet++;
+    berichte.push(ergebnis.zeile);
   }
 
   for (const linie of linien) {
@@ -129,10 +178,11 @@ export async function GET(request: NextRequest) {
       // vorwärts, damit ein später Lauf nicht rückwirkend feuert.
       if (jetztMinuten >= ziel && jetztMinuten < ziel + 10) {
         await melde(linie, "zeit", {
-          title: `${linie.pair} — Erinnerung`,
-          body: linie.note
+          titel: `${linie.pair} — Erinnerung`,
+          text: linie.note
             ? `${linie.note} (${linie.alarm_time.slice(0, 5)})`
             : `Deine gesetzte Zeit ${linie.alarm_time.slice(0, 5)} ist da.`,
+          url: "/trading",
         });
       }
     }
@@ -153,19 +203,21 @@ export async function GET(request: NextRequest) {
 
     if (linie.alarm_on_hit && getroffen) {
       await melde(linie, "hit", {
-        title: `${linie.pair} — GVA erreicht`,
-        body: `Preis ${preis} ist an deiner Linie ${level}` +
+        titel: `${linie.pair} — GVA erreicht`,
+        text: `Preis ${preis} ist an deiner Linie ${level}` +
           (linie.side ? ` (${linie.side.toUpperCase()})` : "") + ".",
-        requireInteraction: true,
+        url: "/trading",
+        wichtig: true,
       });
       continue; // kein zusätzlicher Nähe-Alarm, wenn schon getroffen
     }
 
     if (linie.alarm_pips && abstand <= linie.alarm_pips) {
       await melde(linie, "naehe", {
-        title: `${linie.pair} — ${Math.round(abstand)} Pips zur GVA`,
-        body: `Preis ${preis}, deine Linie ${level}` +
+        titel: `${linie.pair} — ${Math.round(abstand)} Pips zur GVA`,
+        text: `Preis ${preis}, deine Linie ${level}` +
           (linie.side ? ` (${linie.side.toUpperCase()})` : "") + ". Chart aufmachen.",
+        url: "/trading",
       });
     }
   }
@@ -180,6 +232,13 @@ export async function GET(request: NextRequest) {
     geprueft: linien.length,
     preiseBekannt: preise.size,
     gesendet,
+    kanaele: {
+      push: einst.push_an,
+      telegram: einst.telegram_an,
+    },
+    heuteGesamt: heuteSchon,
     berichte,
+    unterdrueckt,
+    ...(hinweis ? { einstellungen: hinweis } : {}),
   });
 }

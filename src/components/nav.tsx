@@ -68,6 +68,7 @@ const TRADING = {
     { href: "/trading/backtest/auswertung", label: "Auswertung" },
     { href: "/trading/backtest/kategorien", label: "Kategorien" },
     { href: "/trading/alarme", label: "Alarme" },
+    { href: "/trading/alarme/einstellungen", label: "Alarm-Setup" },
     { href: "https://gva-screener-kerim-alurs-projects.vercel.app", label: "Labor \u2197" },
   ],
 };

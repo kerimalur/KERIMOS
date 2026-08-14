@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "check:meal-swap": "node tools/checks/meal-swap.mjs"
+    "check:meal-swap": "node tools/checks/meal-swap.mjs",
+    "check:alarm": "npx -y tsx tools/checks/alarm-regeln.mts",
+    "check:journal": "npx -y tsx --conditions=react-server tools/checks/journal-kennzahlen.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
