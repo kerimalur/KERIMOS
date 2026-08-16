@@ -1,0 +1,175 @@
+//@version=6
+// =============================================================================
+//  KerimOS Regime — Risiko- und Zinsregime als Chart-Hintergrund
+// =============================================================================
+//
+//  KEIN EINSTIEGSSIGNAL. Der Indikator färbt den Chart nach Regime und
+//  markiert Wechsel — mehr nicht. Der Einstieg bleibt die GVA-Linie.
+//
+//  Warum überhaupt: Die Confluence-Seite in KerimOS sagt, ob die
+//  Fundamentallage für einen Trade spricht. Sie liegt aber im Browser, nicht
+//  im Chart. Dieser Indikator bringt die beiden Faktoren, die sich aus
+//  TradingView-eigenen Symbolen rekonstruieren lassen, dorthin, wo der
+//  Einstieg entsteht.
+//
+//  DIESELBEN SCHWELLEN wie in KerimOS (src/lib/confluence/faktoren.ts):
+//    Risiko    VIX (18 → 0, ±8 → ±1), S&P gegen SMA50 (±3 %),
+//              Kupfer/Gold gegen SMA50 (±5 %); Mittel der drei;
+//              ab ±0.20 heisst es Risk-on bzw. Risk-off.
+//    Zinsen    10-Jahres-Differenz Basis − Quote, Schwelle 0.25 pp,
+//              plus 6-Monats-Richtung; schrumpft die Differenz um mehr als
+//              0.50 pp gegen ihr eigenes Vorzeichen, gilt sie als aufgehoben.
+//  Weichen die Zahlen hier je von der Seite ab, ist eine der beiden Stellen
+//  geändert worden, ohne die andere nachzuziehen — dann gilt KerimOS.
+//
+//  Nur TradingView-eigene Symbole: keine Brücke zu Supabase, kein Webhook,
+//  nichts, was ausfallen kann.
+// =============================================================================
+
+indicator("KerimOS Regime", shorttitle = "KerimOS", overlay = true)
+
+// ------------------------------------------------------------------ Eingaben
+grpAnz   = "Anzeige"
+zeigeBg  = input.bool(true,  "Hintergrund nach Risiko-Regime", group = grpAnz)
+zeigeTab = input.bool(true,  "Übersicht einblenden",           group = grpAnz)
+zeigeMrk = input.bool(true,  "Regimewechsel markieren",        group = grpAnz)
+tabPos   = input.string("Oben rechts", "Position", options = ["Oben rechts", "Oben links", "Unten rechts", "Unten links"], group = grpAnz)
+deckung  = input.int(93, "Transparenz Hintergrund", minval = 70, maxval = 99, group = grpAnz)
+
+grpSw    = "Schwellen (Vorgabe = KerimOS)"
+vixMitte = input.float(18.0, "VIX neutral bei",        minval = 5,    maxval = 40,  step = 0.5, group = grpSw)
+vixSpanne= input.float(8.0,  "VIX Spanne für ±1",      minval = 2,    maxval = 20,  step = 0.5, group = grpSw)
+spxSpanne= input.float(3.0,  "S&P Abstand SMA50 in %", minval = 0.5,  maxval = 10,  step = 0.25, group = grpSw)
+rohSpanne= input.float(5.0,  "Kupfer/Gold in %",       minval = 0.5,  maxval = 15,  step = 0.25, group = grpSw)
+regimeSw = input.float(0.20, "Grenze Risk-on/off",     minval = 0.05, maxval = 0.6, step = 0.05, group = grpSw)
+zinsSw   = input.float(0.25, "Zinsdifferenz in pp",    minval = 0.05, maxval = 2.0, step = 0.05, group = grpSw)
+drehSw   = input.float(0.50, "6M-Gegenbewegung in pp", minval = 0.1,  maxval = 3.0, step = 0.05, group = grpSw)
+
+// ------------------------------------------------------------------ Daten
+// lookahead_off: ohne das würde der Indikator auf historischen Balken Werte
+// zeigen, die es an dem Tag noch nicht gab — der Rückblick sähe grossartig
+// aus und wäre wertlos. Genau derselbe Grund wie der Publikationsverzug in
+// KerimOS.
+tag(simple string sym) =>
+    request.security(sym, "D", close, lookahead = barmerge.lookahead_off)
+
+vix    = tag("CBOE:VIX")
+spx    = tag("SP:SPX")
+gold   = tag("TVC:GOLD")
+kupfer = tag("COMEX:HG1!")
+
+us10 = tag("TVC:US10Y")
+de10 = tag("TVC:DE10Y")
+gb10 = tag("TVC:GB10Y")
+jp10 = tag("TVC:JP10Y")
+ch10 = tag("TVC:CH10Y")
+au10 = tag("TVC:AU10Y")
+nz10 = tag("TVC:NZ10Y")
+ca10 = tag("TVC:CA10Y")
+
+// SMA50 auf Tagesbasis, unabhängig vom Chart-Timeframe: sonst wäre der
+// "50-Tage-Schnitt" auf dem 4-Stunden-Chart ein 50-Kerzen-Schnitt.
+spxSma = request.security("SP:SPX",   "D", ta.sma(close, 50), lookahead = barmerge.lookahead_off)
+ghRoh  = request.security("COMEX:HG1!", "D", close, lookahead = barmerge.lookahead_off)
+goRoh  = request.security("TVC:GOLD",   "D", close, lookahead = barmerge.lookahead_off)
+rohSma = request.security("COMEX:HG1!", "D", ta.sma(close, 50), lookahead = barmerge.lookahead_off) /
+         request.security("TVC:GOLD",   "D", ta.sma(close, 50), lookahead = barmerge.lookahead_off)
+
+// ------------------------------------------------------------------ Risiko
+klemme(v) => math.max(-1.0, math.min(1.0, v))
+
+teilVix = na(vix) ? na : klemme((vixMitte - vix) / vixSpanne)
+teilSpx = na(spx) or na(spxSma) or spxSma == 0 ? na : klemme((spx / spxSma - 1) / (spxSpanne / 100))
+ghJetzt = na(ghRoh) or na(goRoh) or goRoh == 0 ? na : ghRoh / goRoh
+teilRoh = na(ghJetzt) or na(rohSma) or rohSma == 0 ? na : klemme((ghJetzt / rohSma - 1) / (rohSpanne / 100))
+
+// Mittel über die vorhandenen Teile. Fällt eine Quelle aus, rechnet der
+// Indikator mit den übrigen weiter, statt gar nichts zu zeigen — sagt aber
+// in der Tabelle, mit wie vielen.
+summe = (na(teilVix) ? 0.0 : teilVix) + (na(teilSpx) ? 0.0 : teilSpx) + (na(teilRoh) ? 0.0 : teilRoh)
+anzahl = (na(teilVix) ? 0 : 1) + (na(teilSpx) ? 0 : 1) + (na(teilRoh) ? 0 : 1)
+risiko = anzahl == 0 ? na : summe / anzahl
+
+// 1 = Risk-on, -1 = Risk-off, 0 = neutral, na = unbekannt
+lage = na(risiko) ? na : risiko >= regimeSw ? 1 : risiko <= -regimeSw ? -1 : 0
+
+// ------------------------------------------------------------------ Zinsen
+// request.security verlangt einen konstanten Symbolnamen, deshalb werden alle
+// acht Renditen geholt und erst danach die beiden passenden ausgewählt.
+rendite(cur) =>
+    switch cur
+        "USD" => us10
+        "EUR" => de10
+        "GBP" => gb10
+        "JPY" => jp10
+        "CHF" => ch10
+        "AUD" => au10
+        "NZD" => nz10
+        "CAD" => ca10
+        => na
+
+basisCur = syminfo.basecurrency
+quoteCur = syminfo.currency
+rBasis   = rendite(basisCur)
+rQuote   = rendite(quoteCur)
+
+diff = na(rBasis) or na(rQuote) ? na : rBasis - rQuote
+// 126 Handelstage ≈ 6 Monate. Auf dem Tages-Request gerechnet, damit der
+// Wert auf jedem Chart-Timeframe derselbe ist.
+diffVor = ta.valuewhen(not na(diff), diff, 0)[126]
+trend   = na(diff) or na(diffVor) ? na : diff - diffVor
+
+zinsRoh = na(diff) ? na : diff >= zinsSw ? 1 : diff <= -zinsSw ? -1 : 0
+// Eine Differenz, die schneller wegläuft als sie trägt, ist kein Rückenwind:
+// der Markt handelt die Erwartung, nicht den Bestand.
+dreht   = not na(trend) and not na(zinsRoh) and zinsRoh != 0 and
+          math.sign(trend) != math.sign(diff) and math.abs(trend) >= drehSw
+zins    = dreht ? 0 : zinsRoh
+
+// ------------------------------------------------------------------ Anzeige
+farbeAn  = color.new(#2E7D5B, deckung)
+farbeAus = color.new(#B4443F, deckung)
+bgcolor(zeigeBg and not na(lage) ? (lage == 1 ? farbeAn : lage == -1 ? farbeAus : na) : na, title = "Risiko-Regime")
+
+wechsel = not na(lage) and not na(lage[1]) and lage != lage[1]
+plotshape(zeigeMrk and wechsel and lage ==  1, title = "Wechsel zu Risk-on",  location = location.belowbar, style = shape.triangleup,   size = size.tiny, color = color.new(#2E7D5B, 0))
+plotshape(zeigeMrk and wechsel and lage == -1, title = "Wechsel zu Risk-off", location = location.abovebar, style = shape.triangledown, size = size.tiny, color = color.new(#B4443F, 0))
+plotshape(zeigeMrk and wechsel and lage ==  0, title = "Wechsel zu neutral",  location = location.belowbar, style = shape.circle,       size = size.tiny, color = color.new(#8A8A8A, 0))
+
+wort(v) => na(v) ? "unbekannt" : v == 1 ? "Risk-on" : v == -1 ? "Risk-off" : "neutral"
+zinsWort(v) => na(v) ? "unbekannt" : v == 1 ? basisCur + " stärker" : v == -1 ? quoteCur + " stärker" : "keine Aussage"
+ton(v) => na(v) ? color.gray : v == 1 ? #2E7D5B : v == -1 ? #B4443F : #8A8A8A
+
+pos = tabPos == "Oben rechts" ? position.top_right : tabPos == "Oben links" ? position.top_left : tabPos == "Unten rechts" ? position.bottom_right : position.bottom_left
+
+var table t = table.new(pos, 2, 6, border_width = 1, frame_width = 1, frame_color = color.new(color.gray, 60))
+
+if zeigeTab and barstate.islast
+    table.cell(t, 0, 0, "KerimOS Regime", text_color = color.white, bgcolor = color.new(#3A3A3A, 20), text_size = size.small)
+    table.cell(t, 1, 0, syminfo.ticker,   text_color = color.white, bgcolor = color.new(#3A3A3A, 20), text_size = size.small)
+
+    table.cell(t, 0, 1, "Risiko", text_color = color.silver, text_size = size.small)
+    table.cell(t, 1, 1, wort(lage) + (na(risiko) ? "" : " (" + str.tostring(risiko, "#.00") + ")"), text_color = color.white, bgcolor = color.new(ton(lage), 70), text_size = size.small)
+
+    table.cell(t, 0, 2, "davon Quellen", text_color = color.silver, text_size = size.small)
+    table.cell(t, 1, 2, str.tostring(anzahl) + " von 3", text_color = anzahl == 3 ? color.silver : color.orange, text_size = size.small)
+
+    table.cell(t, 0, 3, "10J-Differenz", text_color = color.silver, text_size = size.small)
+    table.cell(t, 1, 3, na(diff) ? "—" : str.tostring(diff, "#.00") + " pp", text_color = color.white, text_size = size.small)
+
+    table.cell(t, 0, 4, "in 6 Monaten", text_color = color.silver, text_size = size.small)
+    table.cell(t, 1, 4, na(trend) ? "—" : (trend > 0 ? "+" : "") + str.tostring(trend, "#.00") + " pp" + (dreht ? "  dreht" : ""), text_color = dreht ? color.orange : color.white, text_size = size.small)
+
+    table.cell(t, 0, 5, "Zinsregime", text_color = color.silver, text_size = size.small)
+    table.cell(t, 1, 5, zinsWort(zins), text_color = color.white, bgcolor = color.new(ton(zins), 70), text_size = size.small)
+
+// ------------------------------------------------------------------ Alarme
+// Bewusst nur Regimewechsel. Ein Alarm auf "Zinsdifferenz über Schwelle"
+// würde bei jedem Zappeln um die Grenze feuern und wäre in einer Woche
+// abgeschaltet.
+alertcondition(wechsel and lage ==  1, title = "Wechsel zu Risk-on",  message = "KerimOS: Regime wechselt zu Risk-on ({{ticker}})")
+alertcondition(wechsel and lage == -1, title = "Wechsel zu Risk-off", message = "KerimOS: Regime wechselt zu Risk-off ({{ticker}})")
+alertcondition(wechsel,                title = "Regimewechsel",       message = "KerimOS: Risiko-Regime hat gewechselt ({{ticker}})")
+
+plot(na(risiko) ? na : risiko, title = "Risiko-Score", display = display.data_window)
+plot(na(diff)   ? na : diff,   title = "10J-Differenz", display = display.data_window)

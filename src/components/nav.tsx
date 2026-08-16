@@ -44,11 +44,15 @@ const ZEIT = {
 
 /**
  * Trading laeuft in vier Schritten, und die obere Reihe bildet genau sie ab:
- * Cockpit (was ist da?), Ranking (spricht die Fundamentallage dafuer?),
+ * Cockpit (was ist da?), Confluence (spricht die Fundamentallage dafuer?),
  * Journal (was habe ich gemacht?), Backtest (traegt die Methode ueberhaupt?).
  *
- * Alles andere - Radar, Heatmap, Auswertung, Kategorien, Alarme - sind
- * Detailansichten und stehen deshalb in der zweiten Reihe.
+ * Confluence hat seit dem Kurswechsel den Platz von Ranking uebernommen: die
+ * Frage "habe ich Rueckenwind" wird vor jedem Einstieg gestellt, das
+ * Modell-Ranking dagegen selten - und ML ruht ohnehin.
+ *
+ * Alles andere - Ranking, Radar, Heatmap, Auswertung, Kategorien, Alarme -
+ * sind Detailansichten und stehen deshalb in der zweiten Reihe.
  *
  * Cockpit, Ranking, Radar, Heatmap und das ganze Journal sind aus dem
  * GVA-Screener umgezogen; der ist nur noch Labor (ML, Quant, Fundamentaldaten).
@@ -58,11 +62,12 @@ const TRADING = {
   home: { href: "/trading", label: "Übersicht" },
   primary: [
     { href: "/trading/cockpit", label: "Cockpit" },
-    { href: "/trading/ranking", label: "Ranking" },
+    { href: "/trading/confluence", label: "Confluence" },
     { href: "/trading/journal", label: "Journal" },
     { href: "/trading/backtest", label: "Backtest" },
   ],
   secondary: [
+    { href: "/trading/ranking", label: "Ranking" },
     { href: "/trading/radar", label: "Radar" },
     { href: "/trading/heatmap", label: "Heatmap" },
     { href: "/trading/backtest/auswertung", label: "Auswertung" },
