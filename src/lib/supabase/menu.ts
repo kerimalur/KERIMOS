@@ -408,6 +408,10 @@ export async function fetchEssenWoche(von: string): Promise<EssenWoche | null> {
       istHeute: iso === heute,
       istVergangen: iso < heute,
       mahlzeiten: alle.map((m) => ({
+        // Prep-Mahlzeiten (aus batch_portions) haben keine eigene meals-Zeile.
+        // Leere ID heisst: im Tagesmenü nicht auswählbar - man kann sie nicht
+        // verschieben, ohne die Vorratsplanung zu zerlegen.
+        id: String((m as { id?: string }).id ?? ""),
         meal_type: m.meal_type,
         name: m.name,
         kcal: Number(m.kcal_total ?? 0),

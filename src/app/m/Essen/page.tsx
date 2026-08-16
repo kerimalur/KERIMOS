@@ -6,6 +6,7 @@ import {
   fetchEssenOverview, fetchEssenWoche, MEAL_LABEL, type EssenTag,
 } from "@/lib/supabase/menu";
 import { EssenWhiteboard } from "@/components/essen-whiteboard";
+import { BonusKarte } from "@/components/essen/bonus-karte";
 import { weekStart, heuteISO } from "@/lib/time";
 import type { NavLink } from "@/lib/types";
 
@@ -100,6 +101,11 @@ export default async function EssenHeutePage() {
           warum man diese Seite öffnet. Heute und morgen stehen darunter,
           weil sie im Board schon enthalten sind - nur ohne Zutaten. */}
       {woche && <EssenWhiteboard woche={woche} />}
+
+      {/* Wie viel darf ich heute essen? Nach einem langen Lauf ist die
+          Antwort eine andere als sonst - deshalb steht sie hier und nicht
+          nur als feste Zahl in den Einstellungen. */}
+      <BonusKarte datum={heuteISO()} />
 
       <Card>
         <div className="grid gap-5 sm:grid-cols-2">

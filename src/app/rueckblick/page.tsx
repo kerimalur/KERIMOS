@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { Faelliges } from "@/components/faelliges";
+import { TagesZeilen } from "@/components/tages-zeilen";
 import { saveWeeklyReview, deleteWeeklyReview } from "@/lib/actions";
 import { Button, Card, CardTitle, Input, Label, Stat, Empty, cx } from "@/components/ui";
 import { chf } from "@/lib/format";
@@ -170,6 +172,12 @@ export default async function RueckblickPage({
           </Link>
         </div>
       </div>
+
+      {/* Was faellig ist, steht VOR dem Rueckblick: ein Rueckblick, der nur
+          zurueckschaut, laesst genau das liegen, was gerade kippt. */}
+      <Faelliges />
+
+      <TagesZeilen woche={week} />
 
       <Card>
         <CardTitle>Zahlen dieser Woche</CardTitle>

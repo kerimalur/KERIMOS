@@ -2,7 +2,7 @@ import Link from "next/link";
 import {
   createGymClient, gymConfigured, buildSeries,
   fetchCalendarEntries, fetchTrainingDays,
-  fetchWeeklyGoal, countSessionsSince,
+  fetchWeeklyGoal, countWeeklyTrainingBreakdown,
   type GymTopSet, type BodyWeightEntry,
 } from "@/lib/supabase/gym";
 import { GymCockpit } from "@/components/gym-cockpit";
@@ -55,7 +55,7 @@ export default async function GymPage() {
 
   const [
     { data, error }, { data: weightData },
-    entries, days, wochenZiel, dieseWoche,
+    entries, days, wochenZiel, woche,
   ] = await Promise.all([
     supabase!.from("v_exercise_progress").select("*").order("day", { ascending: true }),
     supabase!.from("body_weight_entries")
@@ -63,7 +63,7 @@ export default async function GymPage() {
     fetchCalendarEntries(heute),
     fetchTrainingDays(),
     fetchWeeklyGoal(),
-    countSessionsSince(weekStart(heute)),
+    countWeeklyTrainingBreakdown(weekStart(heute)),
   ]);
 
   // Was wurde an welchem Tag tatsächlich trainiert? Zwei Dinge hängen daran:
@@ -101,7 +101,8 @@ export default async function GymPage() {
       heute={heute}
       morgen={addDays(heute, 1)}
       wochenZiel={wochenZiel}
-      dieseWoche={dieseWoche}
+      kraft={woche.kraft}
+      ausdauer={woche.ausdauer}
     />
   );
 

@@ -86,8 +86,11 @@ export default async function WochePage({
           <WeekNav weekStart={week} isCurrent={week === current} />
         </div>
         <Empty>
-          Für diese Woche liegt noch nichts vor.{" "}
-          <Link href="/zeit" className="text-accent hover:underline">Zeit erfassen</Link>
+          Für diese Woche liegt noch nichts vor. Seit dem Umbau wird keine Zeit
+          mehr minutengenau erfasst — was aus einem Tag geworden ist, steht im{" "}
+          <Link href="/rueckblick/heute" className="text-accent hover:underline">
+            Tagesrückblick
+          </Link>.
         </Empty>
       </div>
     );
@@ -138,27 +141,28 @@ export default async function WochePage({
 
           if (luecken.length === 0) return null;
 
+          // Frueher fuehrte jede Luecke ins Nachtragen. Die Erfassung gibt es
+          // nicht mehr - jetzt ist die Luecke einfach freie Zeit, und genau
+          // die ist die Frage: wo neben der Arbeit ist Platz fuer Training
+          // und Kochen?
           return (
             <div className="mt-4 border-t border-line pt-3">
               <div className="mb-2 text-xs text-ink-muted">
-                Wo sie fehlen — antippen zum Nachtragen:
+                Freier Platz neben Arbeit und Schlaf:
               </div>
               <ul className="flex flex-wrap gap-1.5">
                 {luecken.map((l) => (
-                  <li key={l.datum}>
-                    <Link href="/zeit"
-                      className="flex items-center gap-2 rounded-lg border border-line/70
-                                 bg-sand/60 px-2.5 py-1.5 text-xs transition
-                                 hover:border-line-strong">
-                      <span className="text-ink-soft">
-                        {new Date(l.datum + "T12:00:00").toLocaleDateString("de-CH", {
-                          weekday: "short", day: "2-digit", month: "2-digit",
-                        })}
-                      </span>
-                      <span className="tabular font-medium text-ink">
-                        {fmtHours(l.offen)}
-                      </span>
-                    </Link>
+                  <li key={l.datum}
+                    className="flex items-center gap-2 rounded-lg border border-line/70
+                               bg-sand/60 px-2.5 py-1.5 text-xs">
+                    <span className="text-ink-soft">
+                      {new Date(l.datum + "T12:00:00").toLocaleDateString("de-CH", {
+                        weekday: "short", day: "2-digit", month: "2-digit",
+                      })}
+                    </span>
+                    <span className="tabular font-medium text-ink">
+                      {fmtHours(l.offen)}
+                    </span>
                   </li>
                 ))}
               </ul>

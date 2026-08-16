@@ -179,10 +179,6 @@ export function DayCalendar({
             </span>
             {/* Dieselben Daten als durchgehende Achse - dort sind die
                 Lücken auf einen Blick sichtbar statt Zelle für Zelle. */}
-            <Link href="/achse"
-              className="shrink-0 text-xs font-medium text-accent-soft transition hover:underline">
-              Als Achse →
-            </Link>
           </span>
         </div>
 

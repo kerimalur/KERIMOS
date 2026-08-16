@@ -508,6 +508,12 @@ export interface HeatmapZelle {
   daten: ScreenerPair | null;
   /** Richtung des Wochen-Rankings für dieses Paar. */
   rankingSeite: "LONG" | "SHORT" | "NEUTRAL" | null;
+  /**
+   * Die Gegenzelle eines Paares, das schon woanders steht (USD/EUR zu
+   * EUR/USD). Bleibt in der Anzeige leer — sonst stünde jedes Paar zweimal
+   * im Raster und man zählt 56 statt 28.
+   */
+  gespiegelt: boolean;
 }
 
 /**
@@ -526,20 +532,26 @@ export function baueHeatmap(
   return G8.map((base) =>
     G8.map((quote): HeatmapZelle => {
       if (base === quote) {
-        return { pair: "", base, quote, daten: null, rankingSeite: null };
+        return { pair: "", base, quote, daten: null, rankingSeite: null, gespiegelt: false };
       }
       const direkt = byPair.get(base + quote);
       const invers = byPair.get(quote + base);
-      const daten = direkt ?? invers ?? null;
+
+      // Jedes Paar genau einmal: nur die Zelle, in der es auch gehandelt
+      // notiert wird (EURUSD in Zeile EUR / Spalte USD), bekommt Daten. Die
+      // Gegenzelle bleibt leer statt dieselbe Zahl ein zweites Mal zu zeigen.
+      const gespiegelt = !direkt && invers !== undefined;
+      const daten = direkt ?? null;
+
       const baseQ = qOf.get(base);
       const quoteQ = qOf.get(quote);
       const rankingSeite =
-        baseQ === undefined || quoteQ === undefined
+        gespiegelt || baseQ === undefined || quoteQ === undefined
           ? null
           : rankingPairBias(baseQ, quoteQ);
       return {
         pair: daten?.pair ?? base + quote,
-        base, quote, daten, rankingSeite,
+        base, quote, daten, rankingSeite, gespiegelt,
       };
     }),
   );

@@ -9,20 +9,26 @@ import { Logo } from "./logo";
 // übereinander verwirren mehr, als sie helfen.
 type Section = "geld" | "zeit" | "trading" | null;
 
+/**
+ * Zeit: erfasst wird nichts mehr.
+ *
+ * Die minutengenaue Erfassung hat zwei Fragen beantworten sollen - "was mache
+ * ich eigentlich?" und "wo habe ich neben der Arbeit Platz?". Die erste
+ * beantwortet der Tagesrueckblick besser und in einer Minute statt in vielen,
+ * die zweite die Wochenansicht. Erfassen kostete taeglich Zeit und wurde
+ * deshalb nicht gemacht; drei Saetze am Abend kosten eine Minute.
+ *
+ * Raus sind: /zeit, /quick, /aktivitaeten, /achse, /heute, /fokus, /ziele.
+ * Siehe ../../TRADING-UMBAU.md.
+ */
 const GELD = {
   home: { href: "/geld", label: "Übersicht" },
   primary: [
-    { href: "/analyse", label: "Analyse" },
-    { href: "/runway", label: "Runway" },
     { href: "/transaktionen", label: "Transaktionen" },
-    { href: "/konten", label: "Konten" },
   ],
   secondary: [
-    { href: "/fixkosten", label: "Fixkosten" },
-    { href: "/kategorien", label: "Kategorien" },
     { href: "/import", label: "Import" },
-    { href: "/ziele", label: "Ziele" },
-    { href: "/zuruecksetzen", label: "Zurücksetzen" },
+    { href: "/kategorien", label: "Kategorien" },
   ],
 };
 
@@ -32,30 +38,31 @@ const ZEIT = {
     { href: "/woche", label: "Woche" },
     { href: "/termine", label: "Termine" },
     { href: "/aufgaben", label: "Aufgaben" },
+    { href: "/rueckblick/heute", label: "Heute" },
     { href: "/rueckblick", label: "Rückblick" },
   ],
   secondary: [
     { href: "/schichten", label: "Schichten" },
-    { href: "/aktivitaeten", label: "Aktivitäten" },
-    { href: "/fokus", label: "Fokus" },
-    { href: "/zuruecksetzen", label: "Zurücksetzen" },
   ],
 };
 
 /**
- * Trading laeuft in vier Schritten, und die obere Reihe bildet genau sie ab:
- * Cockpit (was ist da?), Confluence (spricht die Fundamentallage dafuer?),
- * Journal (was habe ich gemacht?), Backtest (traegt die Methode ueberhaupt?).
+ * Trading: sechs Bereiche in EINER Zeile, keine zweite Reihe mehr.
  *
- * Confluence hat seit dem Kurswechsel den Platz von Ranking uebernommen: die
- * Frage "habe ich Rueckenwind" wird vor jedem Einstieg gestellt, das
- * Modell-Ranking dagegen selten - und ML ruht ohnehin.
+ * Die alte Trennung in Haupt- und Nebenabschnitte war die Schwachstelle: bei
+ * jeder neuen Seite musste man entscheiden, in welche Reihe sie gehoert, und
+ * die Antwort war nie offensichtlich. Jetzt gilt eine Regel — oben der
+ * Bereich, innerhalb des Bereichs die Ansicht (siehe components/trading/
+ * bereich-tabs.tsx).
  *
- * Alles andere - Ranking, Radar, Heatmap, Auswertung, Kategorien, Alarme -
- * sind Detailansichten und stehen deshalb in der zweiten Reihe.
+ * Die Reihenfolge bildet den Arbeitsweg ab:
+ *   Uebersicht     was habe ich mir selbst vorgenommen (nur die Watchlist)
+ *   Cockpit        was ist gerade los am Chart (Radar, Heatmap, Board, News)
+ *   Confluence     spricht die Fundamentallage dafuer (inkl. Ranking)
+ *   Journal        was habe ich gemacht
+ *   Backtest       traegt die Methode ueberhaupt (Auswertung, Kategorien)
+ *   Einstellungen  Alarme und der Weg ins Labor
  *
- * Cockpit, Ranking, Radar, Heatmap und das ganze Journal sind aus dem
- * GVA-Screener umgezogen; der ist nur noch Labor (ML, Quant, Fundamentaldaten).
  * Siehe ../../TRADING-UMBAU.md.
  */
 const TRADING = {
@@ -65,23 +72,14 @@ const TRADING = {
     { href: "/trading/confluence", label: "Confluence" },
     { href: "/trading/journal", label: "Journal" },
     { href: "/trading/backtest", label: "Backtest" },
+    { href: "/trading/einstellungen", label: "Einstellungen" },
   ],
-  secondary: [
-    { href: "/trading/ranking", label: "Ranking" },
-    { href: "/trading/radar", label: "Radar" },
-    { href: "/trading/heatmap", label: "Heatmap" },
-    { href: "/trading/backtest/auswertung", label: "Auswertung" },
-    { href: "/trading/backtest/kategorien", label: "Kategorien" },
-    { href: "/trading/alarme", label: "Alarme" },
-    { href: "/trading/alarme/einstellungen", label: "Alarm-Setup" },
-    { href: "https://gva-screener-kerim-alurs-projects.vercel.app", label: "Labor \u2197" },
-  ],
+  secondary: [] as { href: string; label: string }[],
 };
 
-const GELD_PATHS = ["/geld", "/analyse", "/runway", "/transaktionen", "/konten",
-  "/fixkosten", "/kategorien", "/import"];
-const ZEIT_PATHS = ["/zeit", "/kalender", "/woche", "/aktivitaeten", "/ziele",
-  "/rueckblick", "/schichten", "/termine", "/aufgaben"];
+const GELD_PATHS = ["/geld", "/transaktionen", "/kategorien", "/import"];
+const ZEIT_PATHS = ["/kalender", "/woche", "/rueckblick", "/schichten",
+  "/termine", "/aufgaben"];
 const TRADING_PATHS = ["/trading"];
 // "/", "/links", "/gym" und "/m/…" gehören zu keinem Bereich - dort zeigt
 // die Navigation nichts bzw. der Bereich bringt seine eigene Leiste mit.
@@ -101,8 +99,6 @@ function sectionOf(path: string): Section {
 
 export function Nav({ email }: { email?: string }) {
   const path = usePathname();
-  // Der Zen-Modus zeigt bewusst nichts ausser dem Zähler
-  if (path === "/fokus") return null;
   const section = sectionOf(path);
   const config = section === "geld" ? GELD : section === "zeit" ? ZEIT : TRADING;
 
@@ -171,6 +167,10 @@ export function Nav({ email }: { email?: string }) {
           </div>
         </div>
 
+        {/* Zweite Zeile nur, wenn der Bereich sie ueberhaupt hat. Trading hat
+            seit dem Umbau keine mehr - dann darf hier auch kein leerer
+            Streifen Platz wegnehmen. */}
+        {config.secondary.length > 0 && (
         <nav className="flex flex-wrap items-center gap-x-5 gap-y-1 pb-3 pt-2.5">
           {config.secondary.map((l) =>
             l.href.startsWith("http") ? (
@@ -188,6 +188,8 @@ export function Nav({ email }: { email?: string }) {
             )
           )}
         </nav>
+        )}
+        {config.secondary.length === 0 && <div className="pb-3" />}
       </div>
     </header>
   );

@@ -132,7 +132,7 @@ export async function GeldVorwaerts() {
       )}
 
       {ohneKategorie && (
-        <Link href="/geld/offen"
+        <Link href="/transaktionen?ohne=1"
           className="mt-3 inline-block text-xs text-accent-soft transition hover:underline">
           {chf(Math.round(ohneKategorie.proMonat))} im Monat sind noch nicht zugeordnet —
           jetzt zuordnen →

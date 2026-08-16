@@ -7,6 +7,12 @@
  */
 
 export interface WocheMahlzeit {
+  /**
+   * Zeilen-ID aus `meals`. Gebraucht fürs Tagesmenü im Wochenplan: ohne sie
+   * liesse sich nur der ganze Tag verschieben, nicht drei von fünf Mahlzeiten.
+   * Leer bei Prep-Mahlzeiten, die keine eigene meals-Zeile haben.
+   */
+  id: string;
   meal_type: string;
   name: string;
   kcal: number;

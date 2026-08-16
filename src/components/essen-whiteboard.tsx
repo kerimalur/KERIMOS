@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { cx } from "@/components/ui";
 import { MEAL_LABEL, MEAL_ORDER } from "@/lib/menu-labels";
 import { setzeTrainingszeit } from "@/lib/essen-woche-actions";
+import { TagMenue } from "@/components/essen/tag-menue";
 import {
   slotZeiten, strahlPosition, zuUhrzeit, zuMinuten,
   STRAHL_VON, STRAHL_BIS,
@@ -109,6 +110,13 @@ export function EssenWhiteboard({ woche }: { woche: EssenWoche }) {
 
 /* ------------------------------------------------------------ gemeinsame Teile */
 
+/** Der Tag danach - Vorschlag fuers Zielfeld beim Verschieben. */
+function folgetag(iso: string): string {
+  const d = new Date(iso + "T12:00:00");
+  d.setDate(d.getDate() + 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function TagKopf({ tag, onEdit }: { tag: WocheTag; onEdit: () => void }) {
   return (
     <div className="min-w-0">
@@ -119,6 +127,14 @@ function TagKopf({ tag, onEdit }: { tag: WocheTag; onEdit: () => void }) {
         </span>
         <span className="tabular text-[11px]" style={{ color: T.muted }}>
           {tag.datum.slice(8, 10)}.{tag.datum.slice(5, 7)}.
+        </span>
+        <span className="ml-auto">
+          <TagMenue datum={tag.datum} standardZiel={folgetag(tag.datum)}
+            mahlzeiten={tag.mahlzeiten
+              .filter((m) => m.id)
+              .map((m) => ({
+                id: m.id, meal_type: m.meal_type, name: m.name, kcal: m.kcal,
+              }))} />
         </span>
       </div>
       <button type="button" onClick={onEdit}

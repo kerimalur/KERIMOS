@@ -1,202 +1,192 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { computeRunway } from "@/lib/runway";
-import { chf, monthsToHuman, dateLabel } from "@/lib/format";
-
-import { Card, CardTitle, Stat, Badge, Empty } from "@/components/ui";
-import { SetupWizard } from "@/components/setup-wizard";
-import { CashflowChart } from "@/components/cashflow-chart";
-import { GeldVorwaerts } from "@/components/geld-vorwaerts";
-import type { AccountBalance, MonthlyCashflow, RunwayInputs, Transaction } from "@/lib/types";
+import { chf } from "@/lib/format";
+import { heuteISO } from "@/lib/time";
+import { Card, CardTitle, Badge, Empty } from "@/components/ui";
+import type { Transaction } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-export default async function Cockpit() {
-  const supabase = await createClient();
+/**
+ * Geld — eine Seite, eine Frage: wofür ging das Geld?
+ *
+ * Vorher waren es sieben Seiten: Cockpit, Analyse, Runway, Konten,
+ * Fixkosten, Ziele, Offene. Gebraucht wurde davon eine Sache — zu sehen,
+ * wo Geld hingeht, das da nicht hingehen sollte. Alles andere zeigt die
+ * Bank ohnehin und besser, weil es dort ohne Pflege aktuell ist.
+ *
+ * Was hier zusätzlich zur Bank steht, ist der Vergleich mit dem Vormonat.
+ * Der beantwortet die Frage „ist das viel?", und genau die kann eine
+ * Umsatzliste nicht beantworten.
+ */
 
-  const [
-    { data: accounts }, { data: inputsRows }, { data: cashflow }, { data: recent },
-    offeneZahl,
-  ] = await Promise.all([
-    supabase.from("v_account_balances").select("*").eq("archived", false).order("sort_order"),
-    supabase.rpc("runway_inputs", { months_lookback: 3 }),
-    supabase.from("v_monthly_cashflow").select("*").order("month", { ascending: false }).limit(6),
-    supabase.from("transactions").select("*").order("occurred_on", { ascending: false }).limit(6),
-    supabase.from("transactions").select("id", { count: "exact", head: true })
+interface Zeile { kategorie: string; jetzt: number; vorher: number }
+
+/** Monatsanfang als ISO, `zurueck` Monate in der Vergangenheit. */
+function monatsStart(zurueck: number): string {
+  const d = new Date(`${heuteISO()}T12:00:00`);
+  d.setDate(1);
+  d.setMonth(d.getMonth() - zurueck);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+}
+
+function monatsName(iso: string): string {
+  return new Date(`${iso}T12:00:00`)
+    .toLocaleDateString("de-CH", { month: "long", year: "numeric" });
+}
+
+export default async function GeldPage() {
+  const db = await createClient();
+  const dieserMonat = monatsStart(0);
+  const letzterMonat = monatsStart(1);
+
+  const [{ data: buchungen }, { data: kategorien }, offeneZahl] = await Promise.all([
+    db.from("transactions")
+      .select("amount, category_id, occurred_on, is_transfer, description")
+      .gte("occurred_on", letzterMonat).lt("amount", 0).eq("is_transfer", false)
+      .order("occurred_on", { ascending: false }),
+    db.from("categories").select("id, name"),
+    db.from("transactions").select("id", { count: "exact", head: true })
       .is("category_id", null).eq("is_transfer", false).lt("amount", 0),
   ]);
 
-  const offen = offeneZahl.count ?? 0;
+  const name = new Map(
+    ((kategorien ?? []) as { id: string; name: string }[]).map((k) => [k.id, k.name]),
+  );
 
-  const accountList = (accounts ?? []) as AccountBalance[];
-  if (accountList.length === 0) {
-    return (
-      <div className="py-10">
-        <SetupWizard />
-      </div>
-    );
+  const proKategorie = new Map<string, Zeile>();
+  for (const b of (buchungen ?? []) as Transaction[]) {
+    const kat = b.category_id ? (name.get(b.category_id) ?? "Unbekannt") : "Nicht zugeordnet";
+    const betrag = Math.abs(Number(b.amount));
+    const z = proKategorie.get(kat) ?? { kategorie: kat, jetzt: 0, vorher: 0 };
+    if (b.occurred_on >= dieserMonat) z.jetzt += betrag; else z.vorher += betrag;
+    proKategorie.set(kat, z);
   }
 
-  const inputs = ((inputsRows as RunwayInputs[] | null)?.[0] ?? {
-    liquid: 0, net_worth: 0, avg_income: 0, avg_expenses: 0,
-    recurring_fixed: 0, months_with_data: 0,
-  }) as RunwayInputs;
+  const zeilen = [...proKategorie.values()]
+    .filter((z) => z.jetzt > 0 || z.vorher > 0)
+    .sort((a, b) => b.jetzt - a.jetzt);
 
-  const now = computeRunway(inputs);
-  const noIncome = computeRunway(inputs, {
-    incomeFactor: 0, expenseDeltaMonthly: 0, oneOffCost: 0,
-  });
+  const summeJetzt = zeilen.reduce((s, z) => s + z.jetzt, 0);
+  const summeVorher = zeilen.reduce((s, z) => s + z.vorher, 0);
+  const groesste = Math.max(...zeilen.map((z) => Math.max(z.jetzt, z.vorher)), 1);
+  const offen = offeneZahl.count ?? 0;
 
-  const months = (cashflow ?? []).slice().reverse() as MonthlyCashflow[];
-  const txns = (recent ?? []) as Transaction[];
-
-  const runwayTone =
-    noIncome.runwayMonths === null ? "good"
-      : noIncome.runwayMonths >= 12 ? "good"
-        : noIncome.runwayMonths >= 6 ? "warn" : "bad";
+  // Auffällig heisst: mehr als die Hälfte über dem Vormonat UND mindestens
+  // 50 Franken Unterschied. Ohne die zweite Bedingung wäre jede Kategorie
+  // auffällig, in der letzten Monat zufällig nichts lief.
+  const auffaellig = zeilen.filter(
+    (z) => z.vorher > 0 && z.jetzt > z.vorher * 1.5 && z.jetzt - z.vorher >= 50,
+  );
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+    <div className="mx-auto max-w-3xl space-y-5 py-6">
+      <div>
+        <div className="flex flex-wrap items-center gap-2">
           <h1 className="font-display text-xl font-bold text-ink">Geld</h1>
-          <p className="mt-1 text-sm text-ink-muted">
-            Stand {dateLabel(new Date().toISOString())}
-          </p>
+          <span className="tabular text-sm text-ink-muted">{monatsName(dieserMonat)}</span>
+          {offen > 0 && (
+            <Link href="/transaktionen">
+              <Badge tone="warn">{offen} ohne Kategorie</Badge>
+            </Link>
+          )}
         </div>
-        {/* Solange Buchungen ohne Kategorie herumliegen, ist jede Auswertung
-            darunter unvollständig - deshalb der Weg dorthin ganz oben. */}
-        {offen > 0 && (
-          <Link href="/geld/offen"
-            className="rounded-xl border border-warn/30 bg-warn-tint px-3 py-2 text-sm
-                       text-ink-soft transition hover:border-warn/60">
-            {offen} Buchungen ohne Kategorie zuordnen →
-          </Link>
-        )}
+        <p className="mt-1 max-w-2xl text-sm text-ink-muted">
+          Wofür ging das Geld — und wo ist es mehr als sonst. Kontostände,
+          Runway und Fixkosten zeigt dir Raiffeisen aktueller, als es hier je
+          gepflegt wäre.
+        </p>
       </div>
 
-      {/* Die Hauptfrage zuerst: komme ich vorwärts, und wo geht es hin? */}
-      <GeldVorwaerts />
-
-      {/* Kennzahlen */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {auffaellig.length > 0 && (
         <Card>
-          <Stat
-            label="Runway ohne Einkommen"
-            tone={runwayTone}
-            value={
-              noIncome.runwayMonths === null
-                ? "unbegrenzt"
-                : monthsToHuman(noIncome.runwayMonths)
-            }
-            sub={
-              noIncome.depletionDate
-                ? `Leer am ${dateLabel(noIncome.depletionDate.toISOString())}`
-                : "Einnahmen decken die Ausgaben"
-            }
-          />
+          <CardTitle>Das fällt auf</CardTitle>
+          <ul className="space-y-1.5">
+            {auffaellig.map((z) => (
+              <li key={z.kategorie}
+                className="flex flex-wrap items-center gap-2 rounded-lg bg-warn-tint px-3 py-2 text-sm">
+                <span className="font-medium text-ink">{z.kategorie}</span>
+                <span className="tabular text-ink-soft">{chf(Math.round(z.jetzt))}</span>
+                <span className="text-xs text-ink-muted">
+                  statt {chf(Math.round(z.vorher))} im Vormonat
+                </span>
+                <span className="tabular ml-auto text-xs font-medium text-accent">
+                  +{Math.round(((z.jetzt - z.vorher) / z.vorher) * 100)} %
+                </span>
+              </li>
+            ))}
+          </ul>
         </Card>
-        <Card>
-          <Stat label="Liquide" value={chf(inputs.liquid)}
-            sub={`Vermögen gesamt ${chf(inputs.net_worth)}`} />
-        </Card>
-        <Card>
-          <Stat
-            label="Monatlicher Saldo"
-            tone={now.netMonthly >= 0 ? "good" : "bad"}
-            value={`${now.netMonthly >= 0 ? "+" : ""}${chf(now.netMonthly)}`}
-            sub={`${chf(now.monthlyIncome)} ein · ${chf(now.monthlyExpenses)} aus`}
-          />
-        </Card>
-        <Card>
-          <Stat label="Fixkosten / Monat" value={chf(inputs.recurring_fixed)}
-            sub={
-              now.expenseBasis === "recurring"
-                ? "Basis der Berechnung"
-                : `Ø Ausgaben ${chf(inputs.avg_expenses)}`
-            } />
-        </Card>
-      </div>
-
-      {now.expenseBasis === "recurring" && (
-        <div className="rounded-lg border border-warn/40 bg-warn-tint px-4 py-3 text-sm text-warn">
-          Gerechnet wird noch mit den hinterlegten Fixkosten. Sobald zwei bis drei Monate
-          Transaktionen erfasst sind, schaltet KerimOS automatisch auf deine echten
-          Durchschnittswerte um.
-        </div>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        {/* Cashflow */}
-        <Card className="lg:col-span-2">
-          <CardTitle>Ein- und Ausgaben je Monat</CardTitle>
-          {months.length > 0 ? (
-            <CashflowChart data={months} />
-          ) : (
-            <Empty>
-              Noch keine Transaktionen.{" "}
-              <Link href="/transaktionen" className="text-accent hover:underline">
-                Erste erfassen
-              </Link>{" "}
-              oder{" "}
-              <Link href="/import" className="text-accent hover:underline">
-                Bankauszug importieren
-              </Link>
-              .
-            </Empty>
-          )}
-        </Card>
-
-        {/* Konten */}
-        <Card>
-          <CardTitle>Konten</CardTitle>
-          <ul className="space-y-2.5">
-            {accountList.map((a) => (
-              <li key={a.account_id} className="flex items-center justify-between gap-2">
-                <span className="flex items-center gap-2 text-sm text-ink-soft">
-                  {a.name}
-                  {!a.include_in_runway && <Badge>nicht im Runway</Badge>}
-                </span>
-                <span className="tabular text-sm font-medium text-ink">
-                  {chf(Number(a.balance))}
-                </span>
-              </li>
-            ))}
-          </ul>
-          <Link href="/konten"
-            className="mt-4 block text-xs text-accent transition hover:underline">
-            Konten verwalten →
-          </Link>
-        </Card>
-      </div>
-
-      {/* Letzte Buchungen */}
       <Card>
-        <CardTitle>Zuletzt erfasst</CardTitle>
-        {txns.length > 0 ? (
-          <ul className="divide-y divide-line">
-            {txns.map((t) => (
-              <li key={t.id} className="flex items-center justify-between gap-3 py-2.5">
-                <div className="min-w-0">
-                  <div className="truncate text-sm text-ink">
-                    {t.description || t.counterparty || "Ohne Bezeichnung"}
-                  </div>
-                  <div className="text-xs text-ink-muted">{dateLabel(t.occurred_on)}</div>
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <CardTitle className="mb-0">Ausgaben nach Kategorie</CardTitle>
+          <span className="tabular text-sm text-ink-muted">
+            {chf(Math.round(summeJetzt))}
+            {summeVorher > 0 && (
+              <span className="ml-2 text-xs">
+                Vormonat {chf(Math.round(summeVorher))}
+              </span>
+            )}
+          </span>
+        </div>
+
+        {zeilen.length === 0 ? (
+          <Empty>
+            Für diesen und den letzten Monat sind keine Ausgaben erfasst.{" "}
+            <Link href="/import" className="text-accent-soft hover:underline">
+              Kontoauszug importieren
+            </Link>
+          </Empty>
+        ) : (
+          <ul className="space-y-2.5">
+            {zeilen.map((z) => (
+              <li key={z.kategorie}>
+                <div className="mb-1 flex items-baseline justify-between gap-2 text-sm">
+                  <span className={z.kategorie === "Nicht zugeordnet"
+                    ? "text-accent" : "text-ink"}>
+                    {z.kategorie}
+                  </span>
+                  <span className="tabular text-ink-soft">
+                    {chf(Math.round(z.jetzt))}
+                    {z.vorher > 0 && (
+                      <span className="ml-2 text-xs text-ink-faint">
+                        {z.jetzt > z.vorher ? "+" : ""}
+                        {Math.round(z.jetzt - z.vorher)}
+                      </span>
+                    )}
+                  </span>
                 </div>
-                <span
-                  className={`tabular shrink-0 text-sm font-medium ${
-                    Number(t.amount) >= 0 ? "text-good" : "text-ink-soft"
-                  }`}
-                >
-                  {Number(t.amount) >= 0 ? "+" : ""}
-                  {chf(Number(t.amount))}
-                </span>
+                {/* Zwei Balken übereinander: dieser Monat kräftig, der
+                    Vormonat blass dahinter. Ein Zahlenvergleich allein sagt
+                    nicht, ob 300 Franken viel sind - der Vormonat schon. */}
+                <div className="relative h-[7px] overflow-hidden rounded-full bg-sand">
+                  <div className="absolute inset-y-0 left-0 rounded-full bg-line-strong/40"
+                    style={{ width: `${(z.vorher / groesste) * 100}%` }} />
+                  <div className="absolute inset-y-0 left-0 rounded-full bg-accent"
+                    style={{ width: `${(z.jetzt / groesste) * 100}%` }} />
+                </div>
               </li>
             ))}
           </ul>
-        ) : (
-          <Empty>Noch nichts erfasst.</Empty>
         )}
+
+        <p className="mt-3.5 border-t border-line/70 pt-3 text-[11px] leading-relaxed text-ink-faint">
+          Kräftig ist dieser Monat, blass der Vormonat. Nur Ausgaben, keine
+          Umbuchungen.{" "}
+          <Link href="/transaktionen" className="text-accent-soft hover:underline">
+            Einzelne Buchungen
+          </Link>{" "}
+          ·{" "}
+          <Link href="/kategorien" className="text-accent-soft hover:underline">
+            Kategorien
+          </Link>{" "}
+          ·{" "}
+          <Link href="/import" className="text-accent-soft hover:underline">
+            Import
+          </Link>
+        </p>
       </Card>
     </div>
   );

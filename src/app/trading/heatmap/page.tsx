@@ -1,8 +1,8 @@
-import Link from "next/link";
 import {
   fetchScreener, fetchRanking, baueHeatmap, zaehleStatus, G8,
   type HeatmapZelle,
 } from "@/lib/supabase/trading";
+import { BereichTabs, COCKPIT_REITER } from "@/components/trading/bereich-tabs";
 import { Card, CardTitle, Stat, Badge, Empty } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -16,9 +16,12 @@ export const dynamic = "force-dynamic";
  * („was ist gerade mit dem Franken los?"), liest eine Zeile und eine Spalte
  * und hat alle sieben Paare auf einmal. Das kann eine sortierte Liste nicht.
  *
- * Der Screener liefert je Paar nur die übliche Richtung (EURUSD, nicht USDEUR).
- * Die Gegenzelle zeigt dasselbe Paar — ein halb leeres Raster wäre schwerer zu
- * lesen als eine gespiegelte Angabe.
+ * Jedes Paar steht genau EINMAL im Raster, in seiner gehandelten Notation
+ * (EURUSD in Zeile EUR / Spalte USD). Vorher füllte die Gegenzelle dieselben
+ * Daten ein zweites Mal — das Raster zeigte 56 Kacheln für 28 Paare, und beim
+ * Zählen kam man nie auf die richtige Zahl. Die leere Hälfte ist der Preis
+ * dafür, und er ist es wert: die sieben Paare einer Währung findet man
+ * weiterhin, indem man ihre Zeile UND ihre Spalte liest.
  */
 
 function zellenFarbe(z: HeatmapZelle): string {
@@ -29,8 +32,16 @@ function zellenFarbe(z: HeatmapZelle): string {
 }
 
 function Zelle({ z }: { z: HeatmapZelle }) {
+  // Diagonale und Gegenzelle: beide bleiben leer. Die Gegenzelle bekommt einen
+  // Hauch Kontur, damit das Raster als Raster lesbar bleibt.
   if (!z.pair) {
     return <div className="aspect-square rounded-lg bg-transparent" />;
+  }
+  if (z.gespiegelt) {
+    return (
+      <div title={`${z.quote}${z.base} steht in der Gegenzelle`}
+        className="aspect-square rounded-lg border border-line/40 bg-transparent" />
+    );
   }
 
   const d = z.daten;
@@ -91,6 +102,8 @@ export default async function HeatmapSeite() {
   const raster = baueHeatmap(pairs, ranking);
   const z = zaehleStatus(pairs);
 
+  const gezeigt = raster.flat().filter((z) => z.pair && !z.gespiegelt).length;
+
   return (
     <div className="mx-auto max-w-4xl space-y-5 py-6">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
@@ -98,13 +111,13 @@ export default async function HeatmapSeite() {
           <h1 className="font-display text-2xl font-bold text-ink">Heatmap 28</h1>
           <p className="mt-1 text-sm text-ink-muted">
             Zeile = Basiswährung, Spalte = Kurswährung. Die Zahl ist der Abstand
-            zur nächsten GVA-Linie in Pips.
+            zur nächsten GVA-Linie in Pips. Jedes Paar steht einmal — die leeren
+            Kacheln sind die Gegenrichtung.
           </p>
         </div>
-        <Link href="/trading" className="text-xs text-accent-soft transition hover:underline">
-          ← Trading-Übersicht
-        </Link>
       </div>
+
+      <BereichTabs reiter={COCKPIT_REITER} />
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Card area={z.hit > 0 ? "trading" : undefined}>
@@ -169,6 +182,7 @@ export default async function HeatmapSeite() {
             <span className="text-bad-bright">▼</span> Ranking sagt Short
           </span>
           <Badge tone="neutral">Zahl = Pips bis zur Linie</Badge>
+          <Badge tone="neutral">{gezeigt} Paare, jedes einmal</Badge>
         </div>
       </Card>
     </div>

@@ -27,7 +27,7 @@ function datumText(iso: string, heute: string, morgen: string): string {
  * Einheit an und wechselt in die Gym-App.
  */
 export function GymCockpit({
-  entries, days, heute, morgen, wochenZiel, dieseWoche,
+  entries, days, heute, morgen, wochenZiel, kraft, ausdauer,
   letzterSplit, letzterTag, naechsterSplit,
 }: {
   entries: Entry[];
@@ -35,7 +35,10 @@ export function GymCockpit({
   heute: string;
   morgen: string;
   wochenZiel: number;
-  dieseWoche: number;
+  /** Krafteinheiten dieser Woche - nur die zaehlen gegen das Wochenziel. */
+  kraft: number;
+  /** Ausdauer dieser Woche (Laufen, Velo) - steht daneben, nicht darin. */
+  ausdauer: number;
   /** Split der letzten tatsächlich trainierten Einheit. */
   letzterSplit: string | null;
   /** Tag dazu, ISO. */
@@ -80,22 +83,36 @@ export function GymCockpit({
         </div>
       )}
 
-      {/* Wochenziel */}
+      {/* Wochenziel - Kraft gegen das Ziel, Ausdauer daneben.
+
+          Vorher liefen beide in einen Zaehler: drei Krafteinheiten und ein
+          Lauf standen als "4 von 4" da, also Ziel erreicht, obwohl eine
+          Krafteinheit fehlte. Ein Ziel, das man durch Joggen erfuellt, ist
+          kein Krafttrainingsziel. */}
       <Card>
         <CardTitle>Diese Woche</CardTitle>
-        <div className="mb-1 flex items-baseline justify-between">
+        <div className="mb-1 flex items-baseline justify-between gap-3">
           <span className="tabular text-[26px] font-medium leading-tight text-ink">
-            {dieseWoche} <span className="text-base text-ink-muted">von {wochenZiel}</span>
+            {kraft} <span className="text-base text-ink-muted">von {wochenZiel} Kraft</span>
           </span>
-          {dieseWoche >= wochenZiel && <Badge tone="good">Ziel erreicht</Badge>}
+          {kraft >= wochenZiel && <Badge tone="good">Ziel erreicht</Badge>}
         </div>
         <div className="h-2 w-full overflow-hidden rounded-full bg-sand">
           <div className={cx("h-full rounded-full",
-            dieseWoche >= wochenZiel ? "bg-good" : "bg-accent")}
+            kraft >= wochenZiel ? "bg-good" : "bg-accent")}
             style={{
               width: `${wochenZiel > 0
-                ? (Math.min(dieseWoche, wochenZiel) / wochenZiel) * 100 : 0}%`,
+                ? (Math.min(kraft, wochenZiel) / wochenZiel) * 100 : 0}%`,
             }} />
+        </div>
+        <div className="mt-2.5 flex items-center gap-2 border-t border-line/70 pt-2.5">
+          <span className="text-xs text-ink-muted">Ausdauer</span>
+          <span className="tabular text-sm font-medium text-ink">{ausdauer}</span>
+          <span className="text-xs text-ink-faint">
+            {ausdauer === 0 ? "diese Woche noch nichts gelaufen"
+              : ausdauer === 1 ? "Einheit - zaehlt nicht gegen das Kraftziel"
+                : "Einheiten - zaehlen nicht gegen das Kraftziel"}
+          </span>
         </div>
       </Card>
 
@@ -160,45 +177,6 @@ export function GymCockpit({
               </li>
             ))}
           </ul>
-        )}
-      </Card>
-
-      {/* Trainingstage als Schnellstart */}
-      <Card>
-        <div className="mb-3 flex items-center justify-between">
-          <CardTitle className="mb-0">Meine Trainingstage</CardTitle>
-          <Link href="/gym/trainingstage"
-            className="text-xs font-medium text-accent-soft transition hover:underline">
-            Verwalten →
-          </Link>
-        </div>
-        {days.length === 0 ? (
-          <Empty>
-            Noch kein Trainingstag.{" "}
-            <Link href="/gym/trainingstage" className="text-accent-soft hover:underline">
-              Ersten anlegen
-            </Link>
-          </Empty>
-        ) : (
-          <div className="grid gap-2 sm:grid-cols-2">
-            {days.map((d) => (
-              <div key={d.id}
-                className="flex items-center gap-3 rounded-xl border border-line bg-card p-3">
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-ink">{d.name}</span>
-                  <span className="block text-xs text-ink-muted">
-                    {d.anzahlUebungen} Übungen
-                    {d.muscles.length > 0 && ` · ${d.muscles.slice(0, 2).join(", ")}`}
-                  </span>
-                </span>
-                <Button onClick={() => starten(d.id)}
-                  disabled={busy || d.anzahlUebungen === 0}
-                  variant="ghost" className="shrink-0 px-3 py-1.5 text-xs">
-                  Start
-                </Button>
-              </div>
-            ))}
-          </div>
         )}
       </Card>
 

@@ -107,10 +107,7 @@ export default async function KalenderPage({
           <p className="mt-2 text-sm text-ink-muted">
             KerimOS legt dir ein Set an Aktivitäten an, sortiert nach Lebensbereich —
             Ziele, Arbeit, Pflicht, Regeneration, Soziales, Spass und Leerlauf.
-            Umbenennen und ergänzen kannst du danach alles unter{" "}
-            <Link href="/aktivitaeten" className="text-accent-soft hover:underline">
-              Aktivitäten
-            </Link>.
+            Umbenennen und ergänzen kannst du danach direkt beim Eintragen.
           </p>
           <form action={seedActivities} className="mt-5">
             <Button type="submit" className="w-full">Aktivitäten anlegen</Button>

@@ -10,11 +10,16 @@ import { cx } from "@/components/ui";
 /**
  * Seit die Garmin-Uhr das Tracking übernimmt, haben sich die Gewichte
  * verschoben: geplant wird nicht mehr in KerimOS, sondern auf der Uhr.
- * "Tage" und "Plan" sind damit keine täglichen Wege mehr und rutschen unter
- * "Mehr" - gelöscht wird nichts, manuelles Erfassen bleibt der Notfallweg.
+ * "Plan" ist damit kein täglicher Weg mehr und rutscht unter "Mehr" -
+ * gelöscht wird nichts, manuelles Erfassen bleibt der Notfallweg.
+ *
+ * "Tage" steht wieder oben: die Trainingstage sind von der Übersicht
+ * verschwunden (dort gehört nur die Übersicht hin), und unter "Mehr" hätte
+ * sie niemand mehr gefunden.
  */
 const TABS = [
   { href: "/gym", label: "Übersicht" },
+  { href: "/gym/trainingstage", label: "Tage" },
   { href: "/gym/verlauf", label: "Verlauf" },
   { href: "/gym/garmin", label: "Garmin" },
   { href: "/gym/einstellungen", label: "Mehr" },
@@ -22,8 +27,7 @@ const TABS = [
 
 /** Unterseiten, die unter "Mehr" einsortiert sind. */
 const UNTER_MEHR = [
-  "/gym/uebungen", "/gym/fortschritt",
-  "/gym/trainingstage", "/gym/kalender", "/gym/workout",
+  "/gym/uebungen", "/gym/fortschritt", "/gym/kalender", "/gym/workout",
 ];
 
 /**
