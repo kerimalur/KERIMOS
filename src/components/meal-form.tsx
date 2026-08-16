@@ -1,10 +1,13 @@
 "use client";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createPlanMeal } from "@/lib/actions";
+import { createPlanMeal, createFood } from "@/lib/actions";
 import { Button, Card, Input, Select, cx } from "@/components/ui";
 import { MEAL_LABEL, MEAL_ORDER, istSnack } from "@/lib/menu-labels";
 import { rechne, summe, einheitenFuer, type FoodValues } from "@/lib/nutrition";
+import {
+  SchnellNaehrwerte, SCHNELL_EINHEIT, type SchnellWerte,
+} from "@/components/essen/schnell-naehrwerte";
 
 export interface FoodOption extends FoodValues {
   id: string;
@@ -24,11 +27,20 @@ interface Position {
   food_name: string;
   amount: number;
   unit: string;
+  /**
+   * Nährwerte je Einheit für Positionen ohne Lebensmittel in der Datenbank
+   * (schnelle Eingabe). Steht das hier, wird damit gerechnet statt mit einem
+   * Nachschlag in `foods` — der ginge ins Leere.
+   */
+  eigen?: FoodValues;
 }
 
+const NICHTS = { kcal: 0, protein: 0, carbs: 0, fat: 0, cost: 0 };
+
 /**
- * Mahlzeit anlegen — mit Lebensmittelsuche, Rezept als Startpunkt und
- * laufender Nährwertsumme. Ersetzt den Sprung in die alte Menü-App.
+ * Mahlzeit anlegen — mit Lebensmittelsuche, Rezept als Startpunkt, schnellen
+ * Nährwerten für alles Unbekannte und laufender Summe. Ersetzt den Sprung in
+ * die alte Menü-App.
  */
 export function MealForm({
   date, slot, foods, rezepte, onFertig,
@@ -48,6 +60,11 @@ export function MealForm({
   const [rezeptSuche, setRezeptSuche] = useState("");
   // Standard: nur Rezepte, die zum Slot passen. Auf Wunsch auch die anderen.
   const [andereSorte, setAndereSorte] = useState(false);
+  // Block für die schnelle Nährwert-Eingabe offen?
+  const [schnellOffen, setSchnellOffen] = useState(false);
+  // Nur für den Fall, dass das Merken als Lebensmittel scheitert — die
+  // Position selbst ist dann trotzdem drin.
+  const [hinweis, setHinweis] = useState("");
 
   const nurSnacks = slot === "snack";
 
@@ -76,12 +93,19 @@ export function MealForm({
     return foods.filter((f) => f.name.toLowerCase().includes(q)).slice(0, 8);
   }, [foods, suche]);
 
-  /** Nährwerte einer Position - Lebensmittel ohne Bezug tragen 0 bei. */
+  /**
+   * Nährwerte einer Position. Erst das Lebensmittel, sonst die selbst
+   * eingegebenen Werte; eine Position ohne beides trägt 0 bei — das trifft
+   * nur Rezeptzutaten, die nie mit einem Lebensmittel verknüpft wurden.
+   */
   const werte = (p: Position) => {
-    const f = p.food_id ? foodById.get(p.food_id) : undefined;
-    return f ? rechne(f, p.amount, p.unit)
-      : { kcal: 0, protein: 0, carbs: 0, fat: 0, cost: 0 };
+    const f = p.food_id ? foodById.get(p.food_id) : p.eigen;
+    return f ? rechne(f, p.amount, p.unit) : NICHTS;
   };
+
+  /** Einheiten-Auswahl einer Position: vom Lebensmittel, sonst die eigene. */
+  const einheiten = (p: Position) =>
+    p.food_id ? einheitenFuer(foodById.get(p.food_id)?.unit ?? "g") : [p.unit];
 
   const gesamt = summe(positionen.map(werte));
 
@@ -92,6 +116,43 @@ export function MealForm({
       amount: einheit === "stk" ? 1 : 100, unit: einheit,
     }]);
     setSuche("");
+  }
+
+  /**
+   * Selbst eingegebene Nährwerte als Position übernehmen.
+   *
+   * Die Mahlzeit bekommt den Namen, falls noch keiner dasteht — wer „Döner
+   * auswärts" eingibt, meint fast immer auch die Mahlzeit so. Das Merken als
+   * Lebensmittel läuft danach und darf die Position nicht gefährden: schlägt
+   * es fehl, steht der Eintrag trotzdem in der Mahlzeit.
+   */
+  async function schnellUebernehmen(e: SchnellWerte) {
+    setPositionen((p) => [...p, {
+      food_id: null, food_name: e.name, amount: 1,
+      unit: SCHNELL_EINHEIT, eigen: e.werte,
+    }]);
+    if (!name.trim()) setName(e.name);
+    setSuche("");
+    setSchnellOffen(false);
+    setHinweis("");
+
+    if (!e.merken) return;
+    const fd = new FormData();
+    fd.set("name", e.name);
+    fd.set("unit", SCHNELL_EINHEIT);
+    fd.set("kcal", String(e.werte.calories_per_100));
+    fd.set("protein", String(e.werte.protein_per_100));
+    fd.set("carbs", String(e.werte.carbs_per_100 ?? 0));
+    fd.set("fat", String(e.werte.fat_per_100 ?? 0));
+    fd.set("cost", String(e.werte.cost_per_100));
+    try {
+      await createFood(fd);
+    } catch {
+      setHinweis(
+        `„${e.name}" ist in der Mahlzeit, liess sich aber nicht als `
+        + "Lebensmittel ablegen. Unter Mehr → Lebensmittel geht es von Hand."
+      );
+    }
   }
 
   function rezeptUebernehmen(r: RezeptOption) {
@@ -114,8 +175,16 @@ export function MealForm({
     fd.set("date", date);
     fd.set("meal_type", mealType);
     fd.set("name", name.trim());
+    // `eigen` bleibt hier draussen: die Nährwerte stehen fertig gerechnet in
+    // der Position, die Datenbank braucht die Herkunft nicht.
     fd.set("items", JSON.stringify(
-      positionen.map((p) => ({ ...p, ...werte(p) }))
+      positionen.map((p) => ({
+        food_id: p.food_id,
+        food_name: p.food_name,
+        amount: p.amount,
+        unit: p.unit,
+        ...werte(p),
+      }))
     ));
     await createPlanMeal(fd);
     setBusy(false);
@@ -150,7 +219,7 @@ export function MealForm({
       {/* Rezepte passend zum Slot: im Snack-Slot Snacks, sonst Hauptmahlzeiten.
           Der Umschalter darunter holt die jeweils andere Sorte dazu, falls man
           doch etwas anderes einfuegen will. */}
-      {rezepte.length > 0 && positionen.length === 0 && (
+      {rezepte.length > 0 && positionen.length === 0 && !schnellOffen && (
         <div className="mb-3">
           <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
             <span className="text-xs text-ink-muted">
@@ -189,26 +258,54 @@ export function MealForm({
         </div>
       )}
 
+      {/* Schnelle Nährwerte — der dritte Weg neben Lebensmittel und Rezept */}
+      {schnellOffen && (
+        <SchnellNaehrwerte
+          startName={suche.trim()}
+          onUebernehmen={schnellUebernehmen}
+          onAbbrechen={() => setSchnellOffen(false)}
+        />
+      )}
+
       {/* Lebensmittelsuche */}
-      <div className="relative mb-3">
-        <Input value={suche} onChange={(e) => setSuche(e.target.value)}
-          placeholder="Lebensmittel suchen …" aria-label="Lebensmittel suchen" />
-        {treffer.length > 0 && (
-          <ul className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border border-line bg-card shadow-lg">
-            {treffer.map((f) => (
-              <li key={f.id}>
-                <button onClick={() => hinzufuegen(f)}
-                  className="flex w-full items-baseline justify-between gap-3 px-3 py-2 text-left text-sm transition hover:bg-sand">
-                  <span className="min-w-0 truncate text-ink">{f.name}</span>
-                  <span className="tabular shrink-0 text-xs text-ink-muted">
-                    {Math.round(f.calories_per_100)} kcal / 100 {f.unit}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      {!schnellOffen && (
+        <div className="mb-3">
+          <div className="relative">
+            <Input value={suche} onChange={(e) => setSuche(e.target.value)}
+              placeholder="Lebensmittel suchen …" aria-label="Lebensmittel suchen" />
+            {treffer.length > 0 && (
+              <ul className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border border-line bg-card shadow-lg">
+                {treffer.map((f) => (
+                  <li key={f.id}>
+                    <button onClick={() => hinzufuegen(f)}
+                      className="flex w-full items-baseline justify-between gap-3 px-3 py-2 text-left text-sm transition hover:bg-sand">
+                      <span className="min-w-0 truncate text-ink">{f.name}</span>
+                      <span className="tabular shrink-0 text-xs text-ink-muted">
+                        {Math.round(f.calories_per_100)} kcal / 100 {f.unit}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Der Ausweg, wenn die Suche nichts hergibt. Steht auch ohne Suche
+              da, damit man ihn kennt, bevor man ihn braucht. */}
+          <button onClick={() => setSchnellOffen(true)}
+            className="mt-1.5 text-xs text-accent-soft transition hover:underline">
+            {suche.trim() && treffer.length === 0
+              ? `„${suche.trim()}" ist nicht in der Liste — Nährwerte selbst eingeben`
+              : "Nicht in der Liste? Nährwerte selbst eingeben"}
+          </button>
+        </div>
+      )}
+
+      {hinweis && (
+        <p className="mb-3 rounded-lg bg-warn-tint px-3 py-2 text-xs text-ink-soft">
+          {hinweis}
+        </p>
+      )}
 
       {/* Positionen */}
       {positionen.length === 0 ? (
@@ -218,12 +315,14 @@ export function MealForm({
       ) : (
         <ul className="divide-y divide-line/70">
           {positionen.map((p, i) => {
-            const f = p.food_id ? foodById.get(p.food_id) : undefined;
             const w = werte(p);
             return (
               <li key={i} className="flex flex-wrap items-center gap-2 py-2">
                 <span className="min-w-0 flex-1 truncate text-sm text-ink">
                   {p.food_name}
+                  {p.eigen && (
+                    <span className="ml-1.5 text-[11px] text-ink-faint">eigene Werte</span>
+                  )}
                 </span>
                 <Input type="number" min={0} step="any" value={p.amount}
                   onChange={(e) => {
@@ -236,7 +335,7 @@ export function MealForm({
                   onChange={(e) => setPositionen((list) => list.map((x, j) =>
                     j === i ? { ...x, unit: e.target.value } : x))}
                   className="w-20" aria-label={`Einheit ${p.food_name}`}>
-                  {einheitenFuer(f?.unit ?? "g").map((u) => (
+                  {einheiten(p).map((u) => (
                     <option key={u} value={u}>{u}</option>
                   ))}
                 </Select>
