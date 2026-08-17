@@ -1017,6 +1017,71 @@ export async function fetchRangeTotals(
   return result;
 }
 
+/** Eine Mahlzeit, wie sie das Tagesmenü (die drei Pünktchen) braucht. */
+export interface RangeMeal {
+  id: string;
+  meal_type: string;
+  name: string;
+  kcal: number;
+}
+
+/**
+ * Alle frei geplanten Mahlzeiten eines Zeitraums, nach Datum gruppiert —
+ * Grundlage für die drei Pünktchen in der Wochen- und der Monatsansicht.
+ *
+ * Bewusst nur `meals`-Zeilen, keine Prep-Boxen: verschieben, kopieren und
+ * löschen laufen über Mahlzeiten-IDs, und eine Box aus `batch_portions` hat
+ * keine. Sie hier mitzuliefern hiesse, Einträge zum Anhaken anzubieten, mit
+ * denen keine der drei Aktionen etwas anfangen kann.
+ */
+export async function fetchRangeMeals(
+  von: string, bis: string
+): Promise<Map<string, RangeMeal[]>> {
+  const result = new Map<string, RangeMeal[]>();
+  const supabase = createMenuClient();
+  if (!supabase) return result;
+
+  const { data: planRows } = await supabase.from("meal_plans")
+    .select("id, date").gte("date", von).lte("date", bis);
+  const plans = (planRows ?? []) as { id: string; date: string }[];
+  if (plans.length === 0) return result;
+
+  // Mehrere meal_plans-Zeilen pro Datum sind möglich (siehe fetchEssenWoche);
+  // deshalb Plan -> Datum, nicht Datum -> Plan.
+  const datumFuerPlan = new Map(plans.map((p) => [p.id, p.date]));
+
+  // Ein voller Monat liegt bei rund 150 Zeilen, die PostgREST-Grenze von 1000
+  // ist also weit weg. Trotzdem ausgeschrieben, damit nie stillschweigend
+  // abgeschnitten wird, falls hier je ein Jahr angefragt wird.
+  const { data: mealRows } = await supabase.from("meals")
+    .select("id, plan_id, meal_type, name, kcal_total")
+    .in("plan_id", plans.map((p) => p.id))
+    .range(0, 999);
+
+  for (const m of (mealRows ?? []) as unknown as {
+    id: string; plan_id: string; meal_type: string;
+    name: string; kcal_total: number | null;
+  }[]) {
+    const datum = datumFuerPlan.get(m.plan_id);
+    if (!datum) continue;
+    const liste = result.get(datum) ?? [];
+    liste.push({
+      id: m.id,
+      meal_type: m.meal_type,
+      name: m.name,
+      kcal: Math.round(Number(m.kcal_total ?? 0)),
+    });
+    result.set(datum, liste);
+  }
+
+  for (const liste of result.values()) {
+    liste.sort(
+      (a, b) => MEAL_ORDER.indexOf(a.meal_type) - MEAL_ORDER.indexOf(b.meal_type)
+    );
+  }
+  return result;
+}
+
 /** Eine Zeile der Einkaufsliste. */
 export interface ShoppingItem {
   id: string;

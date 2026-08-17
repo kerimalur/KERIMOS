@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { PlanDay } from "@/components/plan-day";
 import { Card, CardTitle, Empty, cx } from "@/components/ui";
+import { TagMenue } from "@/components/essen/tag-menue";
 import {
-  fetchDayView, fetchRangeTotals, fetchFoods, fetchRecipes, fetchDayTemplates,
-  fetchPrepStock,
+  fetchDayView, fetchRangeTotals, fetchRangeMeals, fetchFoods, fetchRecipes,
+  fetchDayTemplates, fetchPrepStock,
 } from "@/lib/supabase/menu";
 import { heuteISO, addDays, weekStart, dayNameShort, toISODate } from "@/lib/time";
 import { dateLabel } from "@/lib/format";
@@ -96,7 +97,9 @@ export default async function EssenPlanPage({
   if (ansicht === "woche") {
     const start = weekStart(datum);
     const ende = addDays(start, 6);
-    const totals = await fetchRangeTotals(start, ende);
+    const [totals, mahlzeiten] = await Promise.all([
+      fetchRangeTotals(start, ende), fetchRangeMeals(start, ende),
+    ]);
     const tage = Array.from({ length: 7 }, (_, i) => addDays(start, i));
     const gefuellt = tage.filter((d) => (totals.get(d)?.kcal ?? 0) > 0);
     const schnitt = gefuellt.length > 0
@@ -133,20 +136,34 @@ export default async function EssenPlanPage({
             const kcal = totals.get(d)?.kcal ?? 0;
             const anteil = Math.min(100, (kcal / 2500) * 100);
             return (
-              <Link key={d} href={`/m/Essen/plan?ansicht=tag&d=${d}`}
-                className="block rounded-xl border border-line/70 bg-card p-3 transition hover:border-line-strong">
-                <div className="mb-1.5 flex items-center justify-between text-sm">
+              <div key={d}
+                className="relative rounded-xl border border-line/70 bg-card p-3
+                           transition hover:border-line-strong">
+                {/* Die ganze Karte führt in den Tag — als Fläche UNTER dem
+                    Inhalt, nicht als Klammer darum. Ein Knopf innerhalb eines
+                    Links wäre ungültiges Markup, und ein Tipp auf die drei
+                    Pünktchen würde zusätzlich navigieren. */}
+                <Link href={`/m/Essen/plan?ansicht=tag&d=${d}`}
+                  aria-label={`${dayNameShort(d)} ${Number(d.slice(8, 10))}. öffnen`}
+                  className="absolute inset-0 rounded-xl" />
+
+                <div className="pointer-events-none relative mb-1.5 flex items-center gap-2 text-sm">
                   <span className={cx("font-medium", d === heute ? "text-accent-soft" : "text-ink")}>
                     {dayNameShort(d)} {Number(d.slice(8, 10))}.
                   </span>
-                  <span className="tabular text-ink-soft">{Math.round(kcal)} kcal</span>
+                  <span className="tabular ml-auto text-ink-soft">{Math.round(kcal)} kcal</span>
+                  <span className="pointer-events-auto">
+                    <TagMenue datum={d} mahlzeiten={mahlzeiten.get(d) ?? []}
+                      standardZiel={addDays(d, 1)} />
+                  </span>
                 </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-sand">
+
+                <div className="pointer-events-none relative h-1.5 overflow-hidden rounded-full bg-sand">
                   <div className="h-full rounded-full bg-good"
                     style={{ width: `${anteil}%` }} />
                 </div>
                 {i === 6 && <span className="sr-only">Ende der Woche</span>}
-              </Link>
+              </div>
             );
           })}
         </div>
@@ -160,7 +177,9 @@ export default async function EssenPlanPage({
   const monat = d.getMonth();
   const erster = `${jahr}-${String(monat + 1).padStart(2, "0")}-01`;
   const letzter = toISODate(new Date(jahr, monat + 1, 0));
-  const totals = await fetchRangeTotals(erster, letzter);
+  const [totals, mahlzeiten] = await Promise.all([
+    fetchRangeTotals(erster, letzter), fetchRangeMeals(erster, letzter),
+  ]);
 
   const vorspann = (new Date(jahr, monat, 1).getDay() + 6) % 7;
   const tageImMonat = new Date(jahr, monat + 1, 0).getDate();
@@ -203,22 +222,31 @@ export default async function EssenPlanPage({
             const voll = kcal >= 1800;
             const teilweise = kcal > 0 && !voll;
             return (
-              <Link key={iso} href={`/m/Essen/plan?ansicht=tag&d=${iso}`}
-                className={cx(
-                  "grid aspect-square place-items-center rounded-lg text-xs transition",
-                  iso === heute ? "bg-accent text-ink-on"
-                    : voll ? "bg-good-tint text-ink"
-                      : teilweise ? "bg-warn-tint text-ink"
-                        : "text-ink-muted hover:bg-sand"
-                )}>
-                <span className="tabular font-medium">{Number(iso.slice(8, 10))}</span>
-                {kcal > 0 && (
-                  <span className={cx("text-[9px]",
-                    iso === heute ? "text-ink-on/80" : "text-ink-muted")}>
-                    {Math.round(kcal)}
-                  </span>
-                )}
-              </Link>
+              <div key={iso} className="relative">
+                <Link href={`/m/Essen/plan?ansicht=tag&d=${iso}`}
+                  className={cx(
+                    "grid aspect-square place-items-center rounded-lg text-xs transition",
+                    iso === heute ? "bg-accent text-ink-on"
+                      : voll ? "bg-good-tint text-ink"
+                        : teilweise ? "bg-warn-tint text-ink"
+                          : "text-ink-muted hover:bg-sand"
+                  )}>
+                  <span className="tabular font-medium">{Number(iso.slice(8, 10))}</span>
+                  {kcal > 0 && (
+                    <span className={cx("text-[9px]",
+                      iso === heute ? "text-ink-on/80" : "text-ink-muted")}>
+                      {Math.round(kcal)}
+                    </span>
+                  )}
+                </Link>
+                {/* Neben dem Link, nicht darin. Zeigt sich nur an Tagen mit
+                    Mahlzeiten; das Auswahlfenster legt sich als Blatt über
+                    den Bildschirm, weil eine Kachel dafür zu schmal ist. */}
+                <span className="absolute right-0 top-0">
+                  <TagMenue datum={iso} mahlzeiten={mahlzeiten.get(iso) ?? []}
+                    standardZiel={addDays(iso, 1)} variante="blatt" />
+                </span>
+              </div>
             );
           })}
         </div>

@@ -105,7 +105,31 @@ export function PlanDay({ tag, foods, rezepte, vorlagen = [], prepBestand = {} }
     an ? "bg-accent text-ink-on" : "bg-sand text-ink-muted hover:text-ink-soft"
   );
 
-  const offenKcal = Math.max(0, Math.round(tag.kcal - tag.gegessenKcal));
+  /**
+   * Was noch ins Budget passt — gerechnet auf den PLAN, nicht auf das
+   * Abgehakte.
+   *
+   * Das Häkchen beantwortet „habe ich das schon gegessen", nicht „wie viel
+   * Spielraum habe ich heute noch". Wer 2256 kcal eingeplant hat, ist bei
+   * einem Ziel von 2100 um 156 drüber — ob null oder alle Haken gesetzt sind,
+   * ändert daran nichts. Vorher lief „Noch offen" gegen das Gegessene und
+   * stand deshalb am Abend immer auf 0, egal wie der Tag wirklich aussah.
+   */
+  const offenKcal = Math.round(tag.ziele.kcal - tag.kcal);
+  const offenProtein = Math.round(tag.ziele.protein - tag.protein);
+
+  const kacheln: { label: string; wert: string; sub: string; warn?: boolean }[] = [
+    { label: "Geplant", wert: `${Math.round(tag.kcal)} kcal`,
+      sub: `Ziel ${tag.ziele.kcal}` },
+    { label: "Noch offen", wert: `${Math.abs(offenKcal)} kcal`,
+      sub: offenKcal >= 0 ? "bis zum Ziel" : "über dem Ziel",
+      warn: offenKcal < 0 },
+    { label: "Protein geplant", wert: `${Math.round(tag.protein)} g`,
+      sub: `Ziel ${tag.ziele.protein}` },
+    { label: "Protein offen", wert: `${Math.abs(offenProtein)} g`,
+      // Mehr Protein als geplant ist kein Problem, deshalb keine Warnfarbe.
+      sub: offenProtein >= 0 ? "bis zum Ziel" : "darüber" },
+  ];
 
   return (
     <div className="space-y-4">
@@ -122,24 +146,25 @@ export function PlanDay({ tag, foods, rezepte, vorlagen = [], prepBestand = {} }
       {/* Summen */}
       <Card className="p-4">
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          {[
-            { label: "Gegessen", wert: `${Math.round(tag.gegessenKcal)} kcal`,
-              sub: `von ${Math.round(tag.kcal)}` },
-            { label: "Noch offen", wert: `${offenKcal} kcal`, sub: "" },
-            { label: "Protein", wert: `${Math.round(tag.gegessenProtein)} g`,
-              sub: `von ${Math.round(tag.protein)}` },
-            { label: "Ziel", wert: `${tag.ziele.kcal} kcal`,
-              sub: `${tag.ziele.protein} g Protein` },
-          ].map((k) => (
+          {kacheln.map((k) => (
             <div key={k.label}>
               <div className="text-[10px] uppercase tracking-[0.1em] text-ink-muted">
                 {k.label}
               </div>
-              <div className="tabular mt-0.5 text-lg font-medium text-ink">{k.wert}</div>
+              <div className={cx("tabular mt-0.5 text-lg font-medium",
+                k.warn ? "text-warn" : "text-ink")}>
+                {k.wert}
+              </div>
               {k.sub && <div className="text-xs text-ink-muted">{k.sub}</div>}
             </div>
           ))}
         </div>
+        {/* Das Abgehakte steht bewusst klein und getrennt: es beantwortet eine
+            andere Frage als die vier Zahlen darüber. */}
+        <p className="mt-3 border-t border-line/70 pt-2.5 text-xs text-ink-faint">
+          davon gegessen: {Math.round(tag.gegessenKcal)} kcal ·{" "}
+          {Math.round(tag.gegessenProtein)} g Protein
+        </p>
       </Card>
 
       {/* Ganzen Tag auf einmal setzen. Steht bewusst ueber den Slots: wer
