@@ -7,6 +7,7 @@ import { Tagessatz } from "@/components/tagessatz";
 import { Tagesstrahl } from "@/components/tagesstrahl";
 import { GewichtHeute } from "@/components/gewicht-heute";
 import { GvaLinienKarte } from "@/components/gva-linien-karte";
+import { DisplayModeToggle } from "@/components/display-mode-toggle";
 import { Logo } from "@/components/logo";
 import { QuickSearch } from "@/components/quick-search";
 import { Button, Card } from "@/components/ui";
@@ -123,6 +124,12 @@ export default async function Start() {
 
       <div className="mb-6">
         <QuickSearch links={links} />
+      </div>
+
+      {/* Abendmodus: schaltet die Farben des ganzen Windows-PCs um. Blendet
+          sich selbst aus, solange die Zeile noch nicht geladen ist. */}
+      <div className="mb-6">
+        <DisplayModeToggle />
       </div>
 
       {/* Was heute eine Entscheidung braucht. Jede Karte blendet sich selbst
