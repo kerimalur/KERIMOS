@@ -2,6 +2,7 @@ import Link from "next/link";
 import { PlanDay } from "@/components/plan-day";
 import { Card, CardTitle, Empty, cx } from "@/components/ui";
 import { TagMenue } from "@/components/essen/tag-menue";
+import { ladeBudget } from "@/lib/supabase/essen-bonus-db";
 import {
   fetchDayView, fetchRangeTotals, fetchRangeMeals, fetchFoods, fetchRecipes,
   fetchDayTemplates, fetchPrepStock,
@@ -51,9 +52,12 @@ export default async function EssenPlanPage({
 
   /* ------------------------------- Tag ------------------------------- */
   if (ansicht === "tag") {
-    const [tag, foods, rezepte, vorlagen, prepBestand] = await Promise.all([
+    // ladeBudget statt einer eigenen Rechnung: es ist dieselbe Funktion, die
+    // die Bonus-Karte unter „Heute" benutzt. Zwei Stellen, die das Tagesziel
+    // bestimmen, hiessen zwei Zahlen — und genau das stand vorher da.
+    const [tag, foods, rezepte, vorlagen, prepBestand, bonus] = await Promise.all([
       fetchDayView(datum), fetchFoods(), fetchRecipes(), fetchDayTemplates(),
-      fetchPrepStock(),
+      fetchPrepStock(), ladeBudget(datum),
     ]);
     const wochentag = new Date(datum + "T12:00:00")
       .toLocaleDateString("de-CH", { weekday: "long" });
@@ -81,6 +85,7 @@ export default async function EssenPlanPage({
           <Empty>Menü-Datenbank nicht verbunden.</Empty>
         ) : (
           <PlanDay tag={tag} foods={foods} vorlagen={vorlagen} prepBestand={prepBestand}
+            budget={bonus.budget}
             rezepte={rezepte.map((r) => ({
               id: r.id, name: r.name, meal_type: r.meal_type,
               items: r.items.map((i) => ({

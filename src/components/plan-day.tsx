@@ -11,6 +11,7 @@ import { MealForm, type FoodOption, type RezeptOption } from "@/components/meal-
 import { MealEdit } from "@/components/meal-edit";
 import { TemplateApplyDialog } from "@/components/template-apply-dialog";
 import type { DayView, DayTemplate } from "@/lib/supabase/menu";
+import type { Budget } from "@/lib/essen-bonus";
 
 /** "300 g Reis" — Menge weggelassen, wenn sie fehlt. */
 function menge(amount: number, unit: string): string {
@@ -24,7 +25,7 @@ function menge(amount: number, unit: string): string {
  * Mahlzeiten, alles abhakbar. Die Summen kommen aus der Datenbank, das
  * Abgehakte wird lokal sofort gespiegelt, damit das Antippen nicht wartet.
  */
-export function PlanDay({ tag, foods, rezepte, vorlagen = [], prepBestand = {} }: {
+export function PlanDay({ tag, foods, rezepte, vorlagen = [], prepBestand = {}, budget }: {
   tag: DayView;
   foods: FoodOption[];
   rezepte: RezeptOption[];
@@ -32,6 +33,15 @@ export function PlanDay({ tag, foods, rezepte, vorlagen = [], prepBestand = {} }
   vorlagen?: DayTemplate[];
   /** recipe_id -> vorgekochte Portionen, die noch offen sind. */
   prepBestand?: Record<string, number>;
+  /**
+   * Tagesbudget inklusive Aktivitätsbonus — dieselbe Rechnung wie auf der
+   * Bonus-Karte unter „Heute". Ohne Angabe gilt das nackte Grundziel.
+   *
+   * Der Bonus MUSS von aussen kommen und darf hier nicht nachgerechnet
+   * werden: sonst gäbe es zwei Stellen, die dasselbe Ziel bestimmen, und
+   * genau das war der Fehler — „Heute" zeigte 2480, der Plan 2100.
+   */
+  budget?: Budget;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -115,12 +125,18 @@ export function PlanDay({ tag, foods, rezepte, vorlagen = [], prepBestand = {} }
    * ändert daran nichts. Vorher lief „Noch offen" gegen das Gegessene und
    * stand deshalb am Abend immer auf 0, egal wie der Tag wirklich aussah.
    */
-  const offenKcal = Math.round(tag.ziele.kcal - tag.kcal);
+  // Das Ziel ist das Budget des Tages, nicht die Grundeinstellung: wer 10 km
+  // gelaufen ist, darf mehr essen, und das muss hier stehen — sonst zeigt
+  // „Heute" 2480 und der Plan daneben 2100.
+  const zielKcal = Math.round(budget?.gesamt ?? tag.ziele.kcal);
+  const bonusKcal = Math.round(budget?.bonus ?? 0);
+
+  const offenKcal = Math.round(zielKcal - tag.kcal);
   const offenProtein = Math.round(tag.ziele.protein - tag.protein);
 
   const kacheln: { label: string; wert: string; sub: string; warn?: boolean }[] = [
     { label: "Geplant", wert: `${Math.round(tag.kcal)} kcal`,
-      sub: `Ziel ${tag.ziele.kcal}` },
+      sub: `Ziel ${zielKcal}` },
     { label: "Noch offen", wert: `${Math.abs(offenKcal)} kcal`,
       sub: offenKcal >= 0 ? "bis zum Ziel" : "über dem Ziel",
       warn: offenKcal < 0 },
@@ -160,8 +176,15 @@ export function PlanDay({ tag, foods, rezepte, vorlagen = [], prepBestand = {} }
           ))}
         </div>
         {/* Das Abgehakte steht bewusst klein und getrennt: es beantwortet eine
-            andere Frage als die vier Zahlen darüber. */}
+            andere Frage als die vier Zahlen darüber. Der Bonus davor, weil er
+            erklärt, warum das Ziel heute nicht die eingestellte Zahl ist. */}
         <p className="mt-3 border-t border-line/70 pt-2.5 text-xs text-ink-faint">
+          {bonusKcal > 0 && (
+            <>
+              Ziel enthält {bonusKcal} kcal aus Aktivität
+              {" "}({tag.ziele.kcal} + {bonusKcal}) ·{" "}
+            </>
+          )}
           davon gegessen: {Math.round(tag.gegessenKcal)} kcal ·{" "}
           {Math.round(tag.gegessenProtein)} g Protein
         </p>
