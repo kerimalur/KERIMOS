@@ -11,7 +11,7 @@ import {
 } from "../../src/lib/confluence/reihen";
 import {
   werteFuer, baueRegime, verhaeltnisReihe, faktorZins, faktorReal,
-  faktorRegime, baueVeto, bewertePaar, waehrungsBild, bewerteAlle,
+  faktorErwartung, faktorRegime, baueVeto, bewertePaar, waehrungsBild, bewerteAlle,
   RISIKO_BETA, SCHWELLE, VETO_GRENZE, LEERE_DATEN, PAARE,
   type Rohdaten, type RegimeLage,
 } from "../../src/lib/confluence/faktoren";
@@ -156,10 +156,15 @@ function daten(vorgabe: {
   leitzins?: Record<string, [string, number][]>;
   cpi?: Record<string, [string, number][]>;
   cot?: Record<string, [string, number][]>;
+  zwei?: Record<string, [string, number][]>;
 }): Rohdaten {
   const um = (o: Record<string, [string, number][]> = {}) =>
     Object.fromEntries(Object.entries(o).map(([k, v]) => [k, r(...v)]));
-  return { ...LEERE_DATEN, leitzins: um(vorgabe.leitzins), cpi: um(vorgabe.cpi), cot: um(vorgabe.cot) };
+  return {
+    ...LEERE_DATEN,
+    leitzins: um(vorgabe.leitzins), cpi: um(vorgabe.cpi),
+    cot: um(vorgabe.cot), zwei: um(vorgabe.zwei),
+  };
 }
 
 const w = (d: Rohdaten, ccy: string) => werteFuer(d, ccy, STICHTAG);
@@ -250,10 +255,41 @@ const klar = daten({
   cpi: { AUD: [["2026-01-01", 2.0]], JPY: [["2026-01-01", 3.0]] },
 });
 
+/* --------------------------------------------------- Faktor Zinserwartung */
+// Gemessen wird (2J-Rendite − Leitzins) je Waehrung, verglichen zwischen
+// beiden — also NUR das, was im Leitzins noch nicht steht.
+const erwartungKlar = daten({
+  leitzins: { EUR: [["2026-01-01", 2.0]], USD: [["2026-01-01", 4.0]] },
+  // EUR: Markt preist +0.60 pp ein, USD: −0.40 pp -> 1.00 pp Unterschied
+  zwei: { EUR: [["2026-08-13", 2.6]], USD: [["2026-08-13", 3.6]] },
+});
+check("Markt erwartet fuer EUR mehr als fuer USD",
+  faktorErwartung(w(erwartungKlar, "EUR"), w(erwartungKlar, "USD")).dir, 1);
+check("Staerke bei 1 pp Unterschied voll ausgereizt",
+  faktorErwartung(w(erwartungKlar, "EUR"), w(erwartungKlar, "USD")).staerke, 1);
+
+// Gegenprobe: dieselben 2J-Renditen, aber die Leitzinsdifferenz zeigt
+// entgegengesetzt — der Faktor darf NICHT einfach die Zinsdifferenz spiegeln.
+check("Zinsdifferenz zeigt hier nach unten",
+  faktorZins(w(erwartungKlar, "EUR"), w(erwartungKlar, "USD")).dir, -1);
+
+const erwartungGleich = daten({
+  leitzins: { EUR: [["2026-01-01", 2.0]], USD: [["2026-01-01", 4.0]] },
+  zwei: { EUR: [["2026-08-13", 2.1]], USD: [["2026-08-13", 4.1]] },
+});
+check("gleicher erwarteter Pfad = keine Richtung",
+  faktorErwartung(w(erwartungGleich, "EUR"), w(erwartungGleich, "USD")).dir, 0);
+
+check("ohne 2J-Rendite keine Aussage",
+  faktorErwartung(w(daten({}), "GBP"), w(daten({}), "USD")).luecke,
+  "keine 2J-Rendite für GBP");
+
 const langAufAudJpy = bewertePaar(klar, "AUDJPY", STICHTAG, NEUTRAL, 1);
 check("zwei Faktoren dafuer, keiner dagegen = Rueckenwind", langAufAudJpy.urteil, "rueckenwind");
+// Seit dem Faktor Zinserwartung (19.08.2026) schweigen ZWEI: das Regime ist
+// neutral, und diese Vorlage hat keine 2J-Renditen. dafuer/dagegen unberuehrt.
 check("Zaehlung stimmt",
-  [langAufAudJpy.dafuer, langAufAudJpy.dagegen, langAufAudJpy.stumm], [2, 0, 1]);
+  [langAufAudJpy.dafuer, langAufAudJpy.dagegen, langAufAudJpy.stumm], [2, 0, 2]);
 check("Einigkeit voll", langAufAudJpy.einigkeit, 1);
 
 const shortAufAudJpy = bewertePaar(klar, "AUDJPY", STICHTAG, NEUTRAL, -1);

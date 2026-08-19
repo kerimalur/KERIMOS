@@ -27,10 +27,11 @@ import {
  * Rein rechnerisch, keine Datenbank. Siehe `tools/checks/confluence.mts`.
  */
 
-export type FaktorKey = "zins" | "real" | "regime" | "cot";
+export type FaktorKey = "zins" | "erwartung" | "real" | "regime" | "cot";
 
 export const FAKTOR_LABEL: Record<FaktorKey, string> = {
   zins: "Zinsdifferenz",
+  erwartung: "Zinserwartung",
   real: "Realzins",
   regime: "Risiko-Regime",
   cot: "COT-Perzentil",
@@ -38,6 +39,7 @@ export const FAKTOR_LABEL: Record<FaktorKey, string> = {
 
 export const FAKTOR_ROLLE: Record<FaktorKey, string> = {
   zins: "Kernfilter — wer hat strukturellen Rückenwind",
+  erwartung: "Wohin der Markt die Notenbank erwartet, nicht wo sie steht",
   real: "Bestätigung — Zins abzüglich Inflation",
   regime: "Kontextschalter — in Risk-off gewinnen JPY und CHF unabhängig vom Zins",
   cot: "Veto — kein eigenes Signal",
@@ -99,6 +101,16 @@ const klemme = (v: number, lo = -1, hi = 1) => Math.max(lo, Math.min(hi, v));
 export const SCHWELLE = {
   /** Prozentpunkte Leitzins-Differenz. Darunter ist es Rauschen. */
   zins: 0.25,
+  /**
+   * Prozentpunkte Unterschied im eingepreisten Zinspfad.
+   *
+   * Bewusst NICHT die 2-Jahres-Differenz selbst: die wäre zu 95 % dieselbe
+   * Information wie die Leitzinsdifferenz, und zwei Faktoren, die dasselbe
+   * messen, sehen wie Bestätigung aus, ohne welche zu sein. Gemessen wird
+   * deshalb der ABSTAND zwischen 2-Jahres-Rendite und Leitzins — also das,
+   * was der Markt an Änderung erwartet und was im Leitzins noch nicht steht.
+   */
+  erwartung: 0.25,
   /** Prozentpunkte Realzins-Differenz — verrauschter, deshalb höher. */
   real: 0.5,
   /** Produkt aus Beta-Abstand und Regime-Stärke. */
@@ -122,6 +134,15 @@ export interface WaehrungsWerte {
   cpiFrische: Frische;
   /** Leitzins − CPI. Null, wenn eines fehlt. */
   realzins: number | null;
+  /** 2-Jahres-Rendite in %. Null, wenn es für die Währung keine Quelle gibt. */
+  zweiJahr: number | null;
+  zweiJahrDatum: string | null;
+  zweiJahrFrische: Frische;
+  /**
+   * 2-Jahres-Rendite − Leitzins: was der Markt an Zinsänderung einpreist.
+   * Positiv = Erhöhungen erwartet, negativ = Senkungen. Null, wenn eines fehlt.
+   */
+  erwartung: number | null;
   cotRang: number | null;
   cotDatum: string | null;
   cotFrische: Frische;
@@ -159,6 +180,10 @@ export function werteFuer(
   // Perzentil, länger und Zinswenden von vor Jahren bestimmen das Urteil.
   const cot = perzentil(cotReihe, stichtag, 1095, VERZUG.cot, 26);
 
+  // 2-Jahres-Rendite: echte Marktdaten, also Tagesverzug und Tages-Massstab.
+  const zweiReihe = daten.zwei?.[ccy] ?? [];
+  const zwei = wertZum(zweiReihe, stichtag, VERZUG.taeglich);
+
   return {
     ccy,
     leitzins: zins?.wert ?? null,
@@ -169,6 +194,10 @@ export function werteFuer(
     cpiDatum: preis?.datum ?? null,
     cpiFrische: frischeVon(preis?.alterTage ?? null, "monatlich"),
     realzins: zins && preis ? zins.wert - preis.wert : null,
+    zweiJahr: zwei?.wert ?? null,
+    zweiJahrDatum: zwei?.datum ?? null,
+    zweiJahrFrische: frischeVon(zwei?.alterTage ?? null, "taeglich"),
+    erwartung: zwei && zins ? zwei.wert - zins.wert : null,
     cotRang: cot?.rang ?? null,
     cotDatum: cot?.datum ?? null,
     cotFrische: frischeVon(
@@ -346,6 +375,42 @@ export function faktorZins(b: WaehrungsWerte, q: WaehrungsWerte): FaktorUrteil {
   };
 }
 
+/**
+ * Zinserwartung: was der Markt an Änderung einpreist, die im Leitzins noch
+ * nicht steht.
+ *
+ * Gemessen als (2-Jahres-Rendite − Leitzins) je Währung, verglichen zwischen
+ * beiden. Der Leitzins sagt, wo eine Notenbank steht; die 2-Jahres-Rendite
+ * sagt, wo der Markt sie in zwei Jahren sieht. Die Differenz der beiden
+ * Erwartungen ist das, was `faktorZins` NICHT schon enthält — deshalb ist
+ * dies ein eigener Faktor und keine Dopplung.
+ *
+ * Nur fünf Währungen haben eine Quelle (USD, EUR, JPY, CAD, AUD). Für Paare
+ * mit GBP, CHF oder NZD sagt der Faktor „keine Aussage" — bewusst, statt auf
+ * eine andere Laufzeit auszuweichen und eine Zahl zu erfinden.
+ */
+export function faktorErwartung(b: WaehrungsWerte, q: WaehrungsWerte): FaktorUrteil {
+  if (b.erwartung === null || q.erwartung === null) {
+    const wer = b.erwartung === null ? b : q;
+    const was = wer.zweiJahr === null ? "keine 2J-Rendite" : "kein Leitzins";
+    return ohne("erwartung", `${was} für ${wer.ccy}`);
+  }
+  const diff = b.erwartung - q.erwartung;
+  const pfad = (v: number) =>
+    `${v > 0 ? "+" : ""}${v.toFixed(2)} pp ${v > 0 ? "erwartet" : v < 0 ? "erwartet" : "eingepreist"}`;
+
+  return {
+    key: "erwartung", label: FAKTOR_LABEL.erwartung,
+    dir: diff >= SCHWELLE.erwartung ? 1 : diff <= -SCHWELLE.erwartung ? -1 : 0,
+    // 1 pp Unterschied im erwarteten Pfad ist viel — dort kappt die Stärke.
+    staerke: klemme(Math.abs(diff), 0, 1),
+    text: `Markt preist für ${b.ccy} ${pfad(b.erwartung)}, für ${q.ccy} `
+      + `${pfad(q.erwartung)} → ${diff > 0 ? "+" : ""}${diff.toFixed(2)} pp Unterschied.`,
+    frische: schlechtere(b.zweiJahrFrische, q.zweiJahrFrische),
+    luecke: null,
+  };
+}
+
 export function faktorReal(b: WaehrungsWerte, q: WaehrungsWerte): FaktorUrteil {
   if (b.realzins === null || q.realzins === null) {
     const wer = b.realzins === null ? b : q;
@@ -501,11 +566,20 @@ export function bewertePaar(
   const b = werteFuer(daten, basis, stichtag);
   const q = werteFuer(daten, quote, stichtag);
 
-  const faktoren = [faktorZins(b, q), faktorReal(b, q), faktorRegime(b, q, regime)];
+  const faktoren = [
+    faktorZins(b, q), faktorErwartung(b, q), faktorReal(b, q), faktorRegime(b, q, regime),
+  ];
   const veto = baueVeto(b, q);
 
   const gerichtet = faktoren.filter((f) => f.dir !== 0);
-  const netto = faktoren.reduce((s, f) => s + f.dir * f.staerke, 0) / faktoren.length;
+  // Geteilt wird durch die Faktoren, die ueberhaupt etwas sagen KONNTEN, nicht
+  // durch alle. Sonst wuerde eine fehlende Quelle das Urteil verwaessern:
+  // GBP, CHF und NZD haben keine 2J-Rendite, ihre Paare saehen allein deshalb
+  // neutraler aus als sie sind. Ein Faktor, der Daten hat und trotzdem unter
+  // der Schwelle bleibt, zaehlt dagegen zu Recht mit — das ist eine Aussage.
+  const mitDaten = faktoren.filter((f) => f.luecke === null).length;
+  const netto = faktoren.reduce((s, f) => s + f.dir * f.staerke, 0)
+    / Math.max(1, mitDaten);
   const richtung: -1 | 0 | 1 = gerichtet.length === 0 ? 0
     : netto > 0.05 ? 1 : netto < -0.05 ? -1 : 0;
 
