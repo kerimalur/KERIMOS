@@ -1,7 +1,7 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { createTradingClient } from "@/lib/supabase/trading";
-import { plusTage } from "./reihen";
+import { plusTage, VERZUG } from "./reihen";
 import { nettoReihe, zuReihe } from "./rechnen";
 import { G8, LEERE_DATEN, type Rohdaten } from "./faktoren";
 import type { Punkt } from "./reihen";
@@ -22,19 +22,45 @@ import type { Punkt } from "./reihen";
 
 /* ------------------------------------------------------------- Katalog */
 
-/** Leitzins bzw. kurzfristiger Geldmarktsatz je Währung (FRED-Serien-IDs). */
-export const LEITZINS_SERIE: Record<string, string> = {
+/**
+ * Leitzins je Währung — die tagesgenaue BIS-Reihe.
+ *
+ * Bis zum 19.08.2026 stand hier etwas anderes, und das war der schwerste
+ * Befund des Daten-Audits: benutzt wurden OECD-Monatsserien (`IRSTCI01*`,
+ * `IR3TIB01*`), deren jüngster Wert der **1. Mai 2026** war — und bei CHF und
+ * NZD messen sie nicht einmal den Leitzins, sondern den 3-Monats-
+ * Interbankensatz. Der CHF-Wert stand bei −0,04 %, was mit dem SNB-Satz
+ * nichts zu tun hat. Nur USD und EUR waren echte Notenbanksätze.
+ *
+ * `BIS_CBPOL_D_*` ist der Beschluss der jeweiligen Notenbank, am Tag seiner
+ * Gültigkeit, für alle acht Währungen aus einer Quelle.
+ */
+export const LEITZINS_SERIE: Record<string, string> =
+  Object.fromEntries(G8.map((c) => [c, `BIS_CBPOL_D_${c}`]));
+
+/**
+ * Ersatz, falls die BIS-Reihe (noch) leer ist.
+ *
+ * Bewusst behalten statt gelöscht: Der Rückblick reicht weiter zurück als die
+ * BIS-Tagesreihe im rollierenden Fenster des Screeners. Fehlt sie für einen
+ * alten Stichtag, ist ein Monatswert immer noch besser als "keine Aussage" —
+ * er wird dann aber mit dem ehrlichen 45-Tage-Verzug gerechnet, siehe
+ * `leitzinsVerzug` unten.
+ */
+export const LEITZINS_ERSATZ: Record<string, string> = {
   USD: "FEDFUNDS",
   EUR: "ECBDFR",
   GBP: "IRSTCI01GBM156N",
   JPY: "IRSTCI01JPM156N",
-  // CH/NZ: die IRSTCI01-Serien sind seit 2024 tot, deshalb 3M-Interbank als
-  // Ersatz — dieselbe Wahl wie im Labor (lib/constants/fredSeries.ts).
   CHF: "IR3TIB01CHM156N",
   AUD: "IRSTCI01AUM156N",
   NZD: "IR3TIB01NZM156N",
   CAD: "IRSTCI01CAM156N",
 };
+
+/** 2-Jahres-Rendite je Währung — die Zinserwartung des Marktes. */
+export const ZWEIJAHR_SERIE: Record<string, string> =
+  Object.fromEntries(G8.map((c) => [c, `Y2_${c}`]));
 
 /** CPI als Jahresrate in Prozent. Quelle BIS, weil die OECD-Serien tot sind. */
 export const CPI_SERIE: Record<string, string> =
@@ -92,6 +118,8 @@ interface LegacyZeile {
 export interface Ladebericht {
   /** Woher das COT-Perzentil je Währung kommt. */
   cotQuelle: Record<string, "tff" | "legacy" | "keine">;
+  /** Woher der Leitzins je Währung kommt — steht so auch auf der Seite. */
+  zinsQuelle: Record<string, "bis-taeglich" | "oecd-monatlich" | "keine">;
   /** Serien, die gar nichts geliefert haben. */
   leer: string[];
   von: string;
@@ -105,20 +133,22 @@ export interface Geladen {
 
 async function ladeRoh(von: string, bis: string): Promise<Geladen> {
   const db = createTradingClient();
-  const bericht: Ladebericht = { cotQuelle: {}, leer: [], von, bis };
+  const bericht: Ladebericht = { cotQuelle: {}, zinsQuelle: {}, leer: [], von, bis };
   if (!db) {
     bericht.leer.push("Trading-Datenbank nicht verbunden");
     return { daten: LEERE_DATEN, bericht };
   }
 
   const zinsIds = Object.values(LEITZINS_SERIE);
+  const ersatzIds = Object.values(LEITZINS_ERSATZ);
+  const zweiIds = Object.values(ZWEIJAHR_SERIE);
   const cpiIds = Object.values(CPI_SERIE);
   const contracts = Object.values(COT_CONTRACT);
 
   const [fred, preise, tff, legacy] = await Promise.all([
     holeAlle<FredZeile>((a, b) => db
       .from("fred_series").select("series_id, date, value")
-      .in("series_id", [...zinsIds, ...cpiIds, VIX_SERIE])
+      .in("series_id", [...zinsIds, ...ersatzIds, ...zweiIds, ...cpiIds, VIX_SERIE])
       .gte("date", von).lte("date", bis)
       .order("date", { ascending: true }).range(a, b)),
     holeAlle<PreisZeile>((a, b) => db
@@ -148,9 +178,24 @@ async function ladeRoh(von: string, bis: string): Promise<Geladen> {
   const leitzins: Record<string, Punkt[]> = {};
   const cpi: Record<string, Punkt[]> = {};
   const cot: Record<string, Punkt[]> = {};
+  const zwei: Record<string, Punkt[]> = {};
+  const leitzinsVerzug: Record<string, number> = {};
 
   for (const ccy of G8) {
-    leitzins[ccy] = nachSerie(LEITZINS_SERIE[ccy]);
+    // Erst die Tagesreihe, sonst der Monats-Ersatz. Welche es wurde, bestimmt
+    // auch den Publikationsverzug — eine Tagesreihe 45 Tage zu verzögern wäre
+    // genauso falsch wie eine Monatsreihe gar nicht zu verzögern.
+    const taeglich = nachSerie(LEITZINS_SERIE[ccy]);
+    if (taeglich.length > 0) {
+      leitzins[ccy] = taeglich;
+      leitzinsVerzug[ccy] = VERZUG.taeglich;
+      bericht.zinsQuelle[ccy] = "bis-taeglich";
+    } else {
+      leitzins[ccy] = nachSerie(LEITZINS_ERSATZ[ccy]);
+      leitzinsVerzug[ccy] = VERZUG.monatlich;
+      bericht.zinsQuelle[ccy] = leitzins[ccy].length > 0 ? "oecd-monatlich" : "keine";
+    }
+    zwei[ccy] = nachSerie(ZWEIJAHR_SERIE[ccy]);
     cpi[ccy] = nachSerie(CPI_SERIE[ccy]);
     if (leitzins[ccy].length === 0) bericht.leer.push(`${ccy} Leitzins (${LEITZINS_SERIE[ccy]})`);
     if (cpi[ccy].length === 0) bericht.leer.push(`${ccy} CPI (${CPI_SERIE[ccy]})`);
@@ -185,7 +230,10 @@ async function ladeRoh(von: string, bis: string): Promise<Geladen> {
   if (gold.length === 0) bericht.leer.push("Gold");
   if (kupfer.length === 0) bericht.leer.push("Kupfer");
 
-  return { daten: { leitzins, cpi, cot, vix, spx, gold, kupfer }, bericht };
+  return {
+    daten: { leitzins, cpi, cot, zwei, leitzinsVerzug, vix, spx, gold, kupfer },
+    bericht,
+  };
 }
 
 /* ------------------------------------------------------------- Fenster */

@@ -66,6 +66,21 @@ export interface Rohdaten {
   cpi: Partial<Record<string, Punkt[]>>;
   /** COT: Netto-Position der Leveraged Funds als Anteil des Open Interest. */
   cot: Partial<Record<string, Punkt[]>>;
+  /**
+   * 2-Jahres-Staatsanleihenrendite in % je Währung — die Zinserwartung.
+   * Optional: nicht jede Währung hat eine Quelle, und die Kontrollwerte
+   * bauen ihre Vorlagen ohne dieses Feld.
+   */
+  zwei?: Partial<Record<string, Punkt[]>>;
+  /**
+   * Publikationsverzug der Leitzinsreihe je Währung, in Tagen.
+   *
+   * Nötig, seit der Leitzins aus der BIS-Tagesreihe kommt: Ein Tageswert 45
+   * Tage lang zurückzuhalten wäre genauso falsch wie einen Monatswert sofort
+   * zu benutzen. Fehlt der Eintrag, gilt weiter der Monats-Verzug — damit
+   * bleiben alte Aufrufer und die Kontrollwerte unverändert gültig.
+   */
+  leitzinsVerzug?: Partial<Record<string, number>>;
   vix: Punkt[];
   spx: Punkt[];
   gold: Punkt[];
@@ -122,7 +137,11 @@ export function werteFuer(
   const cpiReihe = daten.cpi[ccy] ?? [];
   const cotReihe = daten.cot[ccy] ?? [];
 
-  const zins = wertZum(zinsReihe, stichtag, VERZUG.monatlich);
+  // Verzug und Rhythmus haengen daran, WELCHE Reihe geliefert wurde.
+  const zinsVerzug = daten.leitzinsVerzug?.[ccy] ?? VERZUG.monatlich;
+  const zinsRhythmus = zinsVerzug <= VERZUG.woechentlich ? "taeglich" : "monatlich";
+
+  const zins = wertZum(zinsReihe, stichtag, zinsVerzug);
   const preis = wertZum(cpiReihe, stichtag, VERZUG.monatlich);
   // Drei Jahre Fenster: kürzer und ein einzelner Trend füllt das ganze
   // Perzentil, länger und Zinswenden von vor Jahren bestimmen das Urteil.
@@ -132,8 +151,8 @@ export function werteFuer(
     ccy,
     leitzins: zins?.wert ?? null,
     leitzinsDatum: zins?.datum ?? null,
-    leitzinsFrische: frischeVon(zins?.alterTage ?? null, "monatlich"),
-    leitzins6M: aenderung(zinsReihe, stichtag, 182, VERZUG.monatlich),
+    leitzinsFrische: frischeVon(zins?.alterTage ?? null, zinsRhythmus),
+    leitzins6M: aenderung(zinsReihe, stichtag, 182, zinsVerzug),
     cpi: preis?.wert ?? null,
     cpiDatum: preis?.datum ?? null,
     cpiFrische: frischeVon(preis?.alterTage ?? null, "monatlich"),
