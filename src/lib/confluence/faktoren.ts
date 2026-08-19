@@ -137,9 +137,21 @@ export function werteFuer(
   const cpiReihe = daten.cpi[ccy] ?? [];
   const cotReihe = daten.cot[ccy] ?? [];
 
-  // Verzug und Rhythmus haengen daran, WELCHE Reihe geliefert wurde.
+  // Verzug und Rhythmus haengen daran, WELCHE Reihe geliefert wurde — und sie
+  // beantworten zwei VERSCHIEDENE Fragen:
+  //
+  //   Verzug   = ab wann darf der Wert benutzt werden? Ein Zinsbeschluss ist
+  //              am Tag der Sitzung oeffentlich, also ein Tag. Kein Lookahead.
+  //   Rhythmus = wie alt darf die letzte Meldung sein, bevor die Anzeige
+  //              warnt? Hier gilt NICHT "taeglich", obwohl die BIS-Reihe
+  //              taeglich getaktet ist: BIS veroeffentlicht sie mit ein bis
+  //              zwei Wochen Verzug. Mit dem Tages-Massstab stuenden vier von
+  //              acht Waehrungen dauerhaft auf "veraltet", obwohl sich an der
+  //              Geldpolitik nichts geaendert hat — ein Leitzins ist eine
+  //              Treppenfunktion, kein Kurs. Ein Warnzeichen, das immer
+  //              leuchtet, bringt einem nur bei, es zu uebersehen.
   const zinsVerzug = daten.leitzinsVerzug?.[ccy] ?? VERZUG.monatlich;
-  const zinsRhythmus = zinsVerzug <= VERZUG.woechentlich ? "taeglich" : "monatlich";
+  const zinsRhythmus = zinsVerzug <= VERZUG.woechentlich ? "woechentlich" : "monatlich";
 
   const zins = wertZum(zinsReihe, stichtag, zinsVerzug);
   const preis = wertZum(cpiReihe, stichtag, VERZUG.monatlich);
