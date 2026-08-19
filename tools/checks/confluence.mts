@@ -21,6 +21,9 @@ import {
   type TradeUrteil,
 } from "../../src/lib/confluence/bilanz";
 import { nettoReihe } from "../../src/lib/confluence/rechnen";
+import {
+  ergebnisKreuz, faktorBilanz, auffaellige, type TiefenTrade,
+} from "../../src/lib/confluence/tiefe";
 
 let fails = 0;
 function check(name: string, actual: unknown, expected: unknown) {
@@ -578,6 +581,98 @@ check("nur belegte Urteile erscheinen", verteilung.length, 3);
 check("Anteil gerechnet", verteilung[0].anteil, 0.5);
 check("Anteile summieren sich auf 1",
   verteilung.reduce((s, a) => s + a.anteil, 0), 1);
+
+/* ------------------------------------------------- Tiefere Auswertung */
+// Zwei Dinge werden hier festgenagelt, weil beide leicht falsch herum gebaut
+// werden: dass ein stummer Faktor aus BEIDEN Seiten faellt (nicht bei
+// "dagegen" landet), und dass die Faktor-Richtung am TRADE gemessen wird
+// (bei einem Short spricht dir = -1 FUER den Trade).
+
+const tt = (p: Partial<TiefenTrade>): TiefenTrade => ({
+  ...tu({}), ergebnis: "full_tp", faktoren: [], link: null, ...p,
+});
+
+const ERGEBNISSE = ["full_tp", "teil_tp_be", "breakeven", "sl"];
+
+const kreuz = ergebnisKreuz([
+  tt({ urteil: "rueckenwind", ergebnis: "full_tp", r: 2, gewonnen: true }),
+  tt({ urteil: "leichter-rueckenwind", ergebnis: "sl", r: -1, gewonnen: false }),
+  tt({ urteil: "gegenwind", ergebnis: "sl", r: -1, gewonnen: false }),
+  tt({ urteil: "neutral", ergebnis: "breakeven", r: 0, gewonnen: null }),
+], ERGEBNISSE);
+
+check("Kreuz hat vier Lager", kreuz.map((z) => z.lager),
+  ["rueckenwind", "uneinig", "gegenwind", "ohne"]);
+check("leichter Rueckenwind faellt ins selbe Lager", kreuz[0].n, 2);
+check("Ergebnisse werden je Lager gezaehlt", kreuz[0].proErgebnis, [1, 0, 0, 1]);
+check("Summe R je Lager", kreuz[0].gesamtR, 1);
+// Break-even zaehlt zur Gruppengroesse, aber nicht in die Trefferquote —
+// dieselbe Konvention wie in bilanz.gruppiere.
+check("Break-even ist in n, nicht in der Quote",
+  [kreuz[3].n, kreuz[3].quote.n], [1, 0]);
+check("jeder Trade landet in genau einem Lager",
+  kreuz.reduce((s, z) => s + z.n, 0), 4);
+
+// --- Faktor-Bilanz
+const mitFaktor = (dir: -1 | 0 | 1, rest: Partial<TiefenTrade> = {}) =>
+  tt({ faktoren: [{ key: "zins", dir }], ...rest });
+
+const bilanzZins = faktorBilanz([
+  ...Array.from({ length: 20 }, () => mitFaktor(1, { r: 1, gewonnen: true })),
+  ...Array.from({ length: 20 }, () => mitFaktor(-1, { r: -1, gewonnen: false })),
+  ...Array.from({ length: 7 }, () => mitFaktor(0, { r: 1, gewonnen: true })),
+], ["zins"])[0];
+check("dafuer und dagegen werden getrennt gezaehlt",
+  [bilanzZins.dafuer.n, bilanzZins.dagegen.n], [20, 20]);
+check("stumme Trades fallen aus BEIDEN Seiten", bilanzZins.stumm, 7);
+check("klarer Unterschied wird als tragend gemeldet", bilanzZins.befund, "traegt");
+check("Abstand in Punkten", bilanzZins.abstand?.toFixed(0), "100");
+
+// Derselbe Faktor, aber alle Trades sind Shorts: dir = -1 spricht dann FUER
+// den Trade. Ohne die Multiplikation mit t.richtung stuende hier alles auf
+// dem Kopf — und die Tabelle wuerde jeden Faktor als "verkehrt" melden.
+const bilanzShort = faktorBilanz([
+  ...Array.from({ length: 20 }, () => mitFaktor(-1, { richtung: -1, r: 1, gewonnen: true })),
+  ...Array.from({ length: 20 }, () => mitFaktor(1, { richtung: -1, r: -1, gewonnen: false })),
+], ["zins"])[0];
+check("bei Shorts dreht sich die Faktor-Richtung mit",
+  [bilanzShort.dafuer.n, bilanzShort.dagegen.n, bilanzShort.befund], [20, 20, "traegt"]);
+
+check("kleine Stichprobe ergibt kein Urteil",
+  faktorBilanz([
+    ...Array.from({ length: 5 }, () => mitFaktor(1, { r: 1, gewonnen: true })),
+    ...Array.from({ length: 5 }, () => mitFaktor(-1, { r: -1, gewonnen: false })),
+  ], ["zins"])[0].befund, "zu-wenig");
+
+check("umgekehrte Wirkung wird benannt",
+  faktorBilanz([
+    ...Array.from({ length: 20 }, () => mitFaktor(1, { r: -1, gewonnen: false })),
+    ...Array.from({ length: 20 }, () => mitFaktor(-1, { r: 1, gewonnen: true })),
+  ], ["zins"])[0].befund, "verkehrt");
+
+check("ein Faktor ohne Eintrag gilt als stumm, nicht als dagegen",
+  faktorBilanz([tt({ faktoren: [] })], ["erwartung"])[0].stumm, 1);
+check("jeder Faktor bekommt eine Zeile",
+  faktorBilanz([], ["zins", "erwartung", "real"]).map((z) => z.key),
+  ["zins", "erwartung", "real"]);
+
+// --- Kandidaten fuer die Screenshot-Runde
+const kandidaten = auffaellige([
+  tt({ urteil: "rueckenwind", ergebnis: "sl", link: "https://tv/1" }),
+  tt({ urteil: "rueckenwind", ergebnis: "sl", link: null }),
+  tt({ urteil: "gegenwind", ergebnis: "full_tp", link: "https://tv/2" }),
+  tt({ urteil: "rueckenwind", ergebnis: "full_tp", link: "https://tv/3" }),
+], "sl", "full_tp");
+check("beide Widerspruchs-Gruppen erscheinen",
+  kandidaten.map((g) => g.titel),
+  ["Stop trotz Rückenwind", "Volles Ziel gegen die Lage"]);
+check("ohne Link kein Kandidat", kandidaten[0].trades.length, 1);
+// Der erwartungsgemaesse Fall (Rueckenwind -> volles Ziel) ist KEIN
+// Widerspruch und gehoert nicht in die Liste.
+check("erwartungsgemaesse Trades stehen nicht drin",
+  kandidaten.every((g) => g.trades.every((t) => t.link !== "https://tv/3")), true);
+check("leere Gruppen fallen weg",
+  auffaellige([tt({ urteil: "neutral", ergebnis: "breakeven" })], "sl", "full_tp").length, 0);
 
 console.log(fails === 0 ? "\nAlle Kontrollwerte gruen." : `\n${fails} Kontrollwert(e) FAIL.`);
 process.exitCode = fails === 0 ? 0 : 1;

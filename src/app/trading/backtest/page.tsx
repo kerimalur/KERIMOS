@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import {
   fetchBacktestCategories, fetchNativeBacktestTrades, fetchBacktestSessions,
   fetchChecklist,
@@ -19,6 +20,8 @@ import { BacktestCheckliste } from "@/components/backtest-checkliste";
 import { BacktestTradeForm } from "@/components/backtest-trade-form";
 import { BacktestTradeListe } from "@/components/backtest-trade-liste";
 import { Card, CardTitle, Stat, Badge, Empty, Input, Button, cx } from "@/components/ui";
+import { BacktestFundamental } from "@/components/backtest-fundamental";
+import { baueBacktestFundamental, KREUZ_LABEL } from "@/lib/confluence/backtest-bilanz";
 
 export const dynamic = "force-dynamic";
 
@@ -248,6 +251,21 @@ function EintragenAnsicht({
   );
 }
 
+/* ------------------------------------------------------------- Fundamental */
+
+/**
+ * Die Backtest-Trades gegen die Fundamentallage ihres jeweiligen Handelstages.
+ *
+ * Eigene async-Komponente, damit sie hinter ihrer eigenen Suspense-Grenze
+ * lädt. Läuft still leer, wenn die Trading-Datenbank nicht verbunden ist —
+ * das Backtest-Journal selbst hängt nicht daran.
+ */
+async function FundamentalBlock({ trades }: { trades: Trade[] }) {
+  if (!tradingConfigured()) return null;
+  const bild = await baueBacktestFundamental(trades);
+  return <BacktestFundamental bild={bild} ergebnisLabel={KREUZ_LABEL} />;
+}
+
 /* ----------------------------------------------------------------- Auswerten */
 
 /**
@@ -324,6 +342,21 @@ function AuswertungsAnsicht({
         <CardTitle>Aufschlüsselung</CardTitle>
         <BacktestBreakdown data={breakdownData} slData={slBreakdown} />
       </Card>
+
+      {/* Eigener Suspense-Rahmen: die Fundamentaldaten kommen aus einer
+          zweiten Datenbank und brauchen für mehrere Jahre spürbar Zeit. Ohne
+          die Grenze hier würde die ganze Auswertung darauf warten, obwohl
+          Kennzahlen, R-Kurve und Aufschlüsselung längst da sind. */}
+      <Suspense fallback={
+        <Card>
+          <CardTitle>Fundamentale Lage</CardTitle>
+          <div className="py-6 text-center text-sm text-ink-muted">
+            Zinsen, Inflation, COT und Marktdaten für {trades.length} Handelstage …
+          </div>
+        </Card>
+      }>
+        <FundamentalBlock trades={trades} />
+      </Suspense>
 
       <Card>
         <CardTitle>Alle Trades ({trades.length})</CardTitle>
