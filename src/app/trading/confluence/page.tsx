@@ -2,11 +2,12 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { tradingConfigured } from "@/lib/supabase/trading";
 import { heuteISO } from "@/lib/time";
-import { PAARE } from "@/lib/confluence/faktoren";
+import { PAARE, ampelFuer } from "@/lib/confluence/faktoren";
 import { baueJetzt, baueRueckblick, baueBilanz, type Ansicht } from "@/lib/confluence/seite";
 import {
   RegimeKarte, WaehrungsTabelle, PaarTabelle, UrteilKarte,
   FaktorZeile, VetoZeile, Luecken,
+  WaehrungsLeiste, PaarMatrix, HandelbarListe,
 } from "@/components/confluence/teile";
 import {
   GruppenTabelle, BefundKarte, VetoKarte, VerteilungKarte, TradeListe,
@@ -19,19 +20,25 @@ export const dynamic = "force-dynamic";
  * Confluences — objektive Fundamentaldaten als Filter für Einstiege, die
  * technisch am Chart entstehen.
  *
- * Drei Ansichten, eine Rechnung:
- *   Jetzt      Wie steht es gerade? Ersetzt den Weg ins Labor.
+ * Vier Ansichten, eine Rechnung:
+ *   Terminal   Der Blick zuerst: Score je Währung, Ampel je Paar.
+ *   Jetzt      Dieselbe Lage mit allen Rohwerten dahinter.
  *   Rückblick  Hätte ich bei diesem Trade Rückenwind gehabt?
  *   Bilanz     Hat der Rückenwind über alle eigenen Trades etwas bewirkt?
  *
- * Vier Faktoren, nicht acht: Zinsdifferenz mit 6-Monats-Richtung, Realzins,
- * Risiko-Regime — und COT als Veto ohne eigene Richtung. Je mehr Faktoren,
+ * Terminal und Jetzt rufen dieselbe Funktion mit demselben Stichtag auf —
+ * sie können gar nicht auseinanderlaufen. Das Terminal lässt nur weg.
+ *
+ * Fünf Faktoren, nicht zwölf: Zinsdifferenz mit 6-Monats-Richtung,
+ * Zinserwartung, Realzins, Risiko-Regime — und COT als Veto ohne eigene
+ * Richtung, getrennt nach Fonds und Real Money. Je mehr Faktoren,
  * desto sicherer findet man für jede Richtung eine Begründung; ein Filter,
  * der nie „nein" sagt, ist keiner. Siehe ../../TRADING-UMBAU.md, Abschnitt 4b.
  */
 
 const ANSICHTEN: { key: Ansicht; label: string; hinweis: string }[] = [
-  { key: "jetzt", label: "Jetzt", hinweis: "Wie steht die Fundamentallage gerade?" },
+  { key: "terminal", label: "Terminal", hinweis: "Welche Paare kann ich heute überhaupt handeln?" },
+  { key: "jetzt", label: "Jetzt", hinweis: "Dieselbe Lage mit allen Rohwerten dahinter." },
   { key: "rueckblick", label: "Rückblick", hinweis: "Hättest du an dem Tag Rückenwind gehabt?" },
   { key: "bilanz", label: "Bilanz", hinweis: "Hat der Rückenwind bei deinen Trades gewirkt?" },
 ];
@@ -55,15 +62,15 @@ export default async function ConfluencePage({ searchParams }: { searchParams: P
   }
 
   const p = await searchParams;
-  const ansicht = (["jetzt", "rueckblick", "bilanz"] as const)
-    .find((a) => a === einer(p.ansicht)) ?? "jetzt";
+  const ansicht = (["terminal", "jetzt", "rueckblick", "bilanz"] as const)
+    .find((a) => a === einer(p.ansicht)) ?? "terminal";
 
   return (
     <div className="space-y-5">
       <div>
         <h1 className="font-display text-xl font-bold text-ink">Confluences</h1>
         <p className="mt-1 max-w-3xl text-sm text-ink-muted">
-          Vier fundamentale Faktoren als Filter — nicht als Einstieg. Der Einstieg
+          Fünf fundamentale Faktoren als Filter — nicht als Einstieg. Der Einstieg
           bleibt die GVA-Linie am Chart; hier steht nur, ob die Lage dafür oder
           dagegen sprach.
         </p>
@@ -84,9 +91,10 @@ export default async function ConfluencePage({ searchParams }: { searchParams: P
       </nav>
 
       <Suspense key={ansicht + JSON.stringify(p)} fallback={<Laedt />}>
-        {ansicht === "jetzt" ? <AnsichtJetzt />
-          : ansicht === "rueckblick" ? <AnsichtRueckblick p={p} />
-            : <AnsichtBilanz />}
+        {ansicht === "terminal" ? <AnsichtTerminal />
+          : ansicht === "jetzt" ? <AnsichtJetzt />
+            : ansicht === "rueckblick" ? <AnsichtRueckblick p={p} />
+              : <AnsichtBilanz />}
       </Suspense>
     </div>
   );
@@ -99,6 +107,72 @@ function Laedt() {
         Zinsen, Inflation, COT und Marktdaten werden geholt …
       </div>
     </Card>
+  );
+}
+
+/* ------------------------------------------------------------- Terminal */
+
+/**
+ * Der Blick, um den es Kerim eigentlich geht: acht Währungen, 28 Paare, und
+ * die Frage „wo lohnt sich heute überhaupt der Chart".
+ *
+ * Bewusst ohne eine einzige Rohzahl. Die stehen einen Klick weiter unter
+ * „Jetzt" — hier würden sie nur davon ablenken, dass am Ende drei Farben
+ * die ganze Aussage sind.
+ */
+async function AnsichtTerminal() {
+  const heute = heuteISO();
+  const { regime, paare, waehrungen, matrix, handelbar, bericht } = await baueJetzt(heute);
+
+  const stufen = paare.map((u) => ampelFuer(u).stufe);
+  const zaehle = (s: string) => stufen.filter((x) => x === s).length;
+
+  return (
+    <>
+      <Card>
+        <CardTitle>Terminal — Stand {heute}</CardTitle>
+        <RegimeKarte regime={regime} />
+        <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+          {([
+            ["handelbar", zaehle("gruen"), "text-good-bright"],
+            ["nur mit gutem Chart", zaehle("gelb"), "text-warn"],
+            ["nicht aus der Lage", zaehle("rot"), "text-ink-faint"],
+          ] as [string, number, string][]).map(([label, n, farbe]) => (
+            <div key={label} className="rounded-xl bg-sand/50 px-2 py-2.5">
+              <div className={cx("num text-lg font-semibold", farbe)}>{n}</div>
+              <div className="text-[11px] text-ink-muted">{label}</div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <div className="grid gap-5 lg:grid-cols-[1fr_1.1fr]">
+        <Card>
+          <CardTitle>Wer steht wo</CardTitle>
+          <WaehrungsLeiste waehrungen={waehrungen} />
+          <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+            Der Score ist der Durchschnitt der sieben Netto-Werte einer Währung,
+            auf sie gedreht — nicht „in wie vielen Paaren liegt sie vorne",
+            sondern wie deutlich. Rechts steht dafür/dagegen; „strittig" heisst,
+            dass die Währung gegen manche stark und gegen andere schwach ist.
+            Dann ist der Score ein Mittelwert über zwei verschiedene Geschichten
+            und taugt nur als Sortierung, nicht als Urteil.
+          </p>
+        </Card>
+
+        <Card>
+          <CardTitle>Heute handelbar</CardTitle>
+          <HandelbarListe handelbar={handelbar} />
+        </Card>
+      </div>
+
+      <Card>
+        <CardTitle>Alle Paare auf einen Blick</CardTitle>
+        <PaarMatrix matrix={matrix} />
+      </Card>
+
+      <Luecken leer={bericht.leer} cotQuelle={bericht.cotQuelle} />
+    </>
   );
 }
 
@@ -129,9 +203,9 @@ async function AnsichtJetzt() {
             ))}
           </div>
           <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
-            „Deutlich" heisst: mindestens zwei der drei gerichteten Faktoren zeigen
-            dieselbe Richtung. Bei 28 Paaren ist es normal, dass die Mehrheit nichts
-            sagt — genau dafür ist ein Filter da.
+            „Deutlich" heisst: die gerichteten Faktoren zeigen zusammen ein Netto
+            von mindestens 0.20. Bei 28 Paaren ist es normal, dass die Mehrheit
+            nichts sagt — genau dafür ist ein Filter da.
           </p>
         </Card>
 

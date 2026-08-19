@@ -4,21 +4,24 @@ import {
 } from "./reihen";
 
 /**
- * Die vier Confluences — und nur diese vier.
+ * Die fünf Confluences — und nur diese fünf.
  *
- * Warum vier und nicht acht: Je mehr Faktoren, desto sicherer findet man für
+ * Warum fünf und nicht zwölf: Je mehr Faktoren, desto sicherer findet man für
  * jede Richtung eine Begründung. Ein Filter, der nie „nein" sagt, ist keiner.
  * Bewusst draussen: Saisonalität (schwächster Faktor, höchste Verwechslungs-
  * gefahr mit Zufall), Retail-Sentiment (grösstenteils eine Umverpackung des
  * COT-Faktors, und historisch erst ab Juli 2026 vorhanden).
  *
- * Drei Faktoren geben eine Richtung, einer nicht:
+ * Vier Faktoren geben eine Richtung, einer nicht:
  *   1 Zinsdifferenz + 6M-Richtung   Richtung
- *   2 Realzins-Differenz            Richtung
- *   3 Risiko-Regime                 Richtung
- *   4 COT-Perzentil                 **Veto** — „alle sind schon long" ist ein
+ *   2 Zinserwartung (2J − Leitzins) Richtung
+ *   3 Realzins-Differenz            Richtung
+ *   4 Risiko-Regime                 Richtung
+ *   5 COT-Perzentil                 **Veto** — „alle sind schon long" ist ein
  *                                   Grund, nicht einzusteigen, kein Grund,
- *                                   in die Gegenrichtung zu gehen.
+ *                                   in die Gegenrichtung zu gehen. Getrennt
+ *                                   nach Fonds und Real Money; die Banken
+ *                                   stehen nur als Gegenseite daneben.
  *
  * Jede Funktion hier nimmt einen Stichtag. Die Ansicht „Jetzt" ist derselbe
  * Code mit Stichtag = heute — dadurch können Jetzt und Rückblick gar nicht
@@ -68,6 +71,23 @@ export interface Rohdaten {
   cpi: Partial<Record<string, Punkt[]>>;
   /** COT: Netto-Position der Leveraged Funds als Anteil des Open Interest. */
   cot: Partial<Record<string, Punkt[]>>;
+  /**
+   * COT: Netto-Position der Dealer (Banken) als Anteil des Open Interest.
+   *
+   * Nur Kontext, nie Veto. Die Dealer-Position ist rechnerisch fast das
+   * Spiegelbild der anderen beiden Gruppen — sie sind die Gegenpartei. Ein
+   * eigenes Veto daraus wäre dieselbe Information ein zweites Mal gezählt.
+   * Optional: nur im TFF-Bericht vorhanden, und die Kontrollwerte bauen ihre
+   * Vorlagen ohne dieses Feld.
+   */
+  cotBanken?: Partial<Record<string, Punkt[]>>;
+  /**
+   * COT: Netto-Position der Asset Manager (Real Money) als Anteil des OI.
+   *
+   * Eigene Veto-Quelle neben den Fonds: Real Money dreht langsamer und ist
+   * deshalb an Extremen die zähere Positionierung. Optional, s. o.
+   */
+  cotRealMoney?: Partial<Record<string, Punkt[]>>;
   /**
    * 2-Jahres-Staatsanleihenrendite in % je Währung — die Zinserwartung.
    * Optional: nicht jede Währung hat eine Quelle, und die Kontrollwerte
@@ -147,6 +167,12 @@ export interface WaehrungsWerte {
   cotDatum: string | null;
   cotFrische: Frische;
   cotN: number;
+  /** Perzentilrang der Dealer (Banken). Kontext, kein Veto. */
+  bankenRang: number | null;
+  bankenN: number;
+  /** Perzentilrang der Asset Manager (Real Money). Zweite Veto-Quelle. */
+  realMoneyRang: number | null;
+  realMoneyN: number;
   risikoBeta: number;
 }
 
@@ -179,6 +205,10 @@ export function werteFuer(
   // Drei Jahre Fenster: kürzer und ein einzelner Trend füllt das ganze
   // Perzentil, länger und Zinswenden von vor Jahren bestimmen das Urteil.
   const cot = perzentil(cotReihe, stichtag, 1095, VERZUG.cot, 26);
+  // Dieselben drei Jahre und dieselbe Mindestlänge für die beiden anderen
+  // Gruppen — sonst wären die Ränge untereinander nicht vergleichbar.
+  const banken = perzentil(daten.cotBanken?.[ccy] ?? [], stichtag, 1095, VERZUG.cot, 26);
+  const real = perzentil(daten.cotRealMoney?.[ccy] ?? [], stichtag, 1095, VERZUG.cot, 26);
 
   // 2-Jahres-Rendite: echte Marktdaten, also Tagesverzug und Tages-Massstab.
   const zweiReihe = daten.zwei?.[ccy] ?? [];
@@ -205,6 +235,10 @@ export function werteFuer(
       "cot",
     ),
     cotN: cot?.n ?? 0,
+    bankenRang: banken?.rang ?? null,
+    bankenN: banken?.n ?? 0,
+    realMoneyRang: real?.rang ?? null,
+    realMoneyN: real?.n ?? 0,
     risikoBeta: RISIKO_BETA[ccy as Waehrung] ?? 0,
   };
 }
@@ -456,52 +490,101 @@ export function faktorRegime(
 
 /* ------------------------------------------------------------- Veto */
 
+export interface GruppenRang {
+  basis: number | null;
+  quote: number | null;
+}
+
 export interface VetoUrteil {
-  /** Perzentilrang der Leveraged Funds, 0…100. */
+  /** Perzentilrang der Leveraged Funds (Fonds). */
   rangBasis: number | null;
   rangQuote: number | null;
+  /** Perzentilrang der Asset Manager (Real Money) — zweite Veto-Quelle. */
+  realMoney: GruppenRang;
+  /** Perzentilrang der Dealer (Banken) — nur Kontext, kein Veto. */
+  banken: GruppenRang;
   /** Gegen welche Richtung das Veto steht. 0 = keins. */
   gegen: -1 | 0 | 1;
+  /** Welche Gruppen das Veto tragen — leer, wenn keins aktiv ist. */
+  quellen: ("fonds" | "real-money")[];
   text: string;
   frische: Frische;
 }
 
 /**
- * COT als Veto, nie als Signal.
+ * COT als Veto, nie als Signal — jetzt getrennt nach Gruppen.
  *
  * „Alle sind schon long" ist ein Grund, nicht einzusteigen — kein Grund,
  * short zu gehen. Positionierungsextreme können sich monatelang halten, und
  * wer sie als Gegensignal handelt, steht die ganze Zeit auf der falschen
  * Seite. Deshalb steht hier nur, **gegen welche Richtung** etwas spricht.
+ *
+ * Drei Gruppen, aber nur zwei dürfen ein Veto auslösen:
+ *
+ *   Leveraged Funds (Fonds)      Veto — das schnelle, überfüllte Geld.
+ *   Asset Manager (Real Money)   Veto — dreht langsamer, hält Extreme zäher.
+ *   Dealer (Banken)              KEIN Veto, nur Kontext.
+ *
+ * Die Banken sind in diesem Bericht die Gegenpartei aller anderen: ihre
+ * Netto-Position ist mechanisch ungefähr −(Fonds + Real Money). Gäbe man ihr
+ * ein eigenes Veto, zählte man dieselbe Positionierung zweimal — und ein
+ * Veto, das doppelt zählt, blockiert Setups, ohne neue Information zu haben.
+ * Sie steht deshalb nur als Zahl daneben, damit man sieht, wer die Gegenseite
+ * hält.
  */
 export function baueVeto(b: WaehrungsWerte, q: WaehrungsWerte): VetoUrteil {
   const frische = schlechtere(b.cotFrische, q.cotFrische);
-  const rb = b.cotRang;
-  const rq = q.cotRang;
+  const rahmen = {
+    realMoney: { basis: b.realMoneyRang, quote: q.realMoneyRang },
+    banken: { basis: b.bankenRang, quote: q.bankenRang },
+  };
 
-  if (rb === null && rq === null) {
-    return { rangBasis: null, rangQuote: null, gegen: 0, text: "Keine COT-Historie.", frische };
+  const alle = [b.cotRang, q.cotRang, b.realMoneyRang, q.realMoneyRang];
+  if (alle.every((r) => r === null)) {
+    return {
+      rangBasis: null, rangQuote: null, ...rahmen,
+      gegen: 0, quellen: [], text: "Keine COT-Historie.", frische,
+    };
   }
 
   const gruende: string[] = [];
-  // Long im Paar heisst: Basis kaufen, Quote verkaufen.
-  const gegenLong = (rb !== null && rb >= VETO_GRENZE.oben) || (rq !== null && rq <= VETO_GRENZE.unten);
-  const gegenShort = (rb !== null && rb <= VETO_GRENZE.unten) || (rq !== null && rq >= VETO_GRENZE.oben);
+  const quellen: ("fonds" | "real-money")[] = [];
+  let gegenLong = false;
+  let gegenShort = false;
 
-  if (rb !== null && rb >= VETO_GRENZE.oben) gruende.push(`${b.ccy} im ${rb.toFixed(0)}. Perzentil — schon voll long`);
-  if (rb !== null && rb <= VETO_GRENZE.unten) gruende.push(`${b.ccy} im ${rb.toFixed(0)}. Perzentil — schon voll short`);
-  if (rq !== null && rq >= VETO_GRENZE.oben) gruende.push(`${q.ccy} im ${rq.toFixed(0)}. Perzentil — schon voll long`);
-  if (rq !== null && rq <= VETO_GRENZE.unten) gruende.push(`${q.ccy} im ${rq.toFixed(0)}. Perzentil — schon voll short`);
+  // Long im Paar heisst: Basis kaufen, Quote verkaufen. Ein volles Long in der
+  // Basis ODER ein volles Short in der Quote spricht also gegen Long.
+  const pruefe = (
+    key: "fonds" | "real-money", name: string,
+    rb: number | null, rq: number | null,
+  ) => {
+    const lang = (rb !== null && rb >= VETO_GRENZE.oben) || (rq !== null && rq <= VETO_GRENZE.unten);
+    const kurz = (rb !== null && rb <= VETO_GRENZE.unten) || (rq !== null && rq >= VETO_GRENZE.oben);
+    if (!lang && !kurz) return;
+    gegenLong = gegenLong || lang;
+    gegenShort = gegenShort || kurz;
+    if (!quellen.includes(key)) quellen.push(key);
+    if (rb !== null && rb >= VETO_GRENZE.oben) gruende.push(`${name} ${b.ccy} im ${rb.toFixed(0)}. Perzentil — schon voll long`);
+    if (rb !== null && rb <= VETO_GRENZE.unten) gruende.push(`${name} ${b.ccy} im ${rb.toFixed(0)}. Perzentil — schon voll short`);
+    if (rq !== null && rq >= VETO_GRENZE.oben) gruende.push(`${name} ${q.ccy} im ${rq.toFixed(0)}. Perzentil — schon voll long`);
+    if (rq !== null && rq <= VETO_GRENZE.unten) gruende.push(`${name} ${q.ccy} im ${rq.toFixed(0)}. Perzentil — schon voll short`);
+  };
+
+  pruefe("fonds", "Fonds", b.cotRang, q.cotRang);
+  pruefe("real-money", "Real Money", b.realMoneyRang, q.realMoneyRang);
 
   // Steht beides gleichzeitig, hebt es sich auf: dann ist kein Extrem mehr
   // erkennbar, sondern nur eine Spreizung.
   const gegen: -1 | 0 | 1 = gegenLong && gegenShort ? 0 : gegenLong ? 1 : gegenShort ? -1 : 0;
+  const zahl = (r: number | null) => (r === null ? "·" : `${r.toFixed(0)}.`);
 
   return {
-    rangBasis: rb, rangQuote: rq, gegen,
+    rangBasis: b.cotRang, rangQuote: q.cotRang, ...rahmen,
+    gegen, quellen: gegen === 0 ? [] : quellen,
     text: gruende.length > 0
       ? gruende.join(" · ") + "."
-      : `${b.ccy} ${rb === null ? "·" : rb.toFixed(0)}. / ${q.ccy} ${rq === null ? "·" : rq.toFixed(0)}. Perzentil — kein Extrem.`,
+      : `Fonds ${b.ccy} ${zahl(b.cotRang)} / ${q.ccy} ${zahl(q.cotRang)}, `
+        + `Real Money ${zahl(b.realMoneyRang)} / ${zahl(q.realMoneyRang)} Perzentil — kein Extrem.`,
     frische,
   };
 }
@@ -621,7 +704,7 @@ function baueSatz(
     return `Für ${paar} fehlen die Daten — kein Urteil, weder dafür noch dagegen.`;
   }
   if (!richtungswort) {
-    return `${paar}: keiner der drei Faktoren zeigt deutlich in eine Richtung.`;
+    return `${paar}: keiner der Faktoren zeigt deutlich in eine Richtung.`;
   }
 
   const zaehlung = `${dafuer} dafür, ${dagegen} dagegen`
@@ -662,6 +745,16 @@ export interface WaehrungsBild extends WaehrungsWerte {
   stumm: number;
   /** −1…+1: (dafür − dagegen) / 7. */
   saldo: number;
+  /**
+   * −100…+100: der Durchschnitt der sieben Netto-Werte, auf diese Währung
+   * gedreht.
+   *
+   * Anders als `saldo` zählt hier nicht nur, WIE VIELE Paare nach oben zeigen,
+   * sondern WIE DEUTLICH. Ein EUR, der in drei Paaren knapp und in keinem
+   * klar vorne liegt, bekommt damit nicht dieselbe Note wie einer, der in
+   * drei Paaren deutlich führt. Das ist die Zahl im Terminal.
+   */
+  score: number;
   /** True, wenn mindestens zwei Paare gegeneinander stehen. */
   strittig: boolean;
 }
@@ -679,6 +772,7 @@ export function waehrungsBild(
 ): WaehrungsBild {
   const werte = werteFuer(daten, ccy, stichtag);
   let dafuer = 0, dagegen = 0, stummZahl = 0;
+  let summe = 0, gezaehlt = 0;
 
   for (const u of alle) {
     if (u.basis !== ccy && u.quote !== ccy) continue;
@@ -687,11 +781,171 @@ export function waehrungsBild(
     if (fuerWaehrung > 0) dafuer++;
     else if (fuerWaehrung < 0) dagegen++;
     else stummZahl++;
+    summe += u.basis === ccy ? u.netto : -u.netto;
+    gezaehlt++;
   }
 
   return {
     ...werte, dafuer, dagegen, stumm: stummZahl,
     saldo: (dafuer - dagegen) / 7,
+    // Geteilt wird durch die tatsaechlich gefundenen Paare, nicht stur durch
+    // 7 — sonst haette ein Tippfehler in PAARE einen stillen Score-Rabatt zur
+    // Folge, statt aufzufallen.
+    score: gezaehlt > 0 ? (summe / gezaehlt) * 100 : 0,
     strittig: dafuer > 0 && dagegen > 0,
   };
+}
+
+/* ------------------------------------------------------------- Ampel */
+
+/**
+ * Ab welchem Netto-Wert ein Paar als „deutlich" gilt.
+ *
+ * 0.25 heisst: im Schnitt eine Viertel-Stärke pro Faktor, der Daten hatte.
+ * Bewusst nicht tiefer — bei 28 Paaren findet man sonst immer zehn „klare"
+ * Setups, und eine Ampel, die dauernd grün zeigt, ist eine Dekoration.
+ */
+export const AMPEL_SCHWELLE = { klar: 0.25 } as const;
+
+export type Ampel = "gruen" | "gelb" | "rot";
+
+export interface AmpelUrteil {
+  stufe: Ampel;
+  /** Richtung, für die die Ampel gilt. 0 bei Rot ohne Richtung. */
+  richtung: -1 | 0 | 1;
+  /** Warum diese Stufe — steht so im Tooltip. */
+  grund: string;
+}
+
+export const AMPEL_LABEL: Record<Ampel, string> = {
+  gruen: "handelbar",
+  gelb: "nur mit gutem Chart",
+  rot: "nicht aus der Fundamentallage",
+};
+
+/**
+ * Die Ampel für ein Paar: darf ich hier überhaupt nach einem Einstieg suchen?
+ *
+ * Sie ersetzt den Chart nicht. Sie beantwortet nur die Vorfrage — steht die
+ * Fundamentallage im Weg, ist sie egal, oder hilft sie? Deshalb bedeutet Grün
+ * ausdrücklich **nicht** „kaufen", sondern „wenn die GVA-Linie hält, hast du
+ * die Lage im Rücken".
+ *
+ * Die Reihenfolge der Prüfungen ist der eigentliche Inhalt: was ein Setup
+ * VERBIETET, kommt vor dem, was es empfiehlt. Sonst überstimmt ein starker
+ * Zinsvorteil ein Positionierungs-Extrem, und genau dort verliert man Geld.
+ */
+export function ampelFuer(u: PaarUrteil): AmpelUrteil {
+  if (u.faktoren.every((f) => f.luecke !== null)) {
+    return { stufe: "rot", richtung: 0, grund: "Zu wenig Daten — kein Urteil möglich." };
+  }
+  if (u.richtung === 0) {
+    return { stufe: "rot", richtung: 0, grund: "Kein Faktor zeigt deutlich in eine Richtung." };
+  }
+  if (u.veto.gegen === u.richtung) {
+    return {
+      stufe: "rot", richtung: u.richtung,
+      grund: "COT-Veto genau gegen die eigene Richtung — die Position ist schon überfüllt.",
+    };
+  }
+  // Gemessen wird nur die Frische der Faktoren, die auch etwas BEIGETRAGEN
+  // haben. `u.frische` steht auf "fehlt", sobald irgendein Faktor gar keine
+  // Quelle hat — und GBP, CHF und NZD haben nun einmal keine 2-Jahres-Rendite.
+  // Ohne diese Unterscheidung stünde jedes ihrer Paare dauerhaft auf Gelb,
+  // obwohl an den benutzten Daten nichts veraltet ist. Eine fehlende Quelle ist
+  // im Netto bereits berücksichtigt (dort wird durch `mitDaten` geteilt);
+  // hier geht es allein um Werte, die es gibt, aber zu alt sind.
+  const benutzt = u.faktoren.filter((f) => f.luecke === null);
+  if (benutzt.some((f) => f.frische === "alt" || f.frische === "fehlt")) {
+    return {
+      stufe: "gelb", richtung: u.richtung,
+      grund: "Richtung vorhanden, aber eine benutzte Quelle ist veraltet.",
+    };
+  }
+  if (Math.abs(u.netto) >= AMPEL_SCHWELLE.klar && u.einigkeit === 1) {
+    return {
+      stufe: "gruen", richtung: u.richtung,
+      grund: `Alle gerichteten Faktoren zeigen dieselbe Richtung, Netto ${u.netto.toFixed(2)}.`,
+    };
+  }
+  return {
+    stufe: "gelb", richtung: u.richtung,
+    grund: u.einigkeit !== null && u.einigkeit < 1
+      ? "Die Faktoren zeigen nicht alle in dieselbe Richtung."
+      : `Richtung vorhanden, aber schwach (Netto ${u.netto.toFixed(2)}).`,
+  };
+}
+
+/* ------------------------------------------------------------- Matrix */
+
+export interface MatrixZelle {
+  basis: string;
+  quote: string;
+  /** Das kanonische Paar aus PAARE, aus dem die Zelle stammt. */
+  paar: string;
+  /** True, wenn die Zelle die Spiegelung des kanonischen Paares ist. */
+  gedreht: boolean;
+  /** Richtung, bereits auf basis/quote gedreht. */
+  richtung: -1 | 0 | 1;
+  /** Netto, bereits gedreht. −1…+1. */
+  netto: number;
+  stufe: Ampel;
+  grund: string;
+  satz: string;
+}
+
+/**
+ * Die 8×8-Matrix: Zeile = Basis, Spalte = Quote.
+ *
+ * Gerechnet wird weiter nur auf den 28 handelsüblichen Paaren; die untere
+ * Hälfte ist deren Spiegelung mit gedrehtem Vorzeichen. Das ist bewusst
+ * redundant: eine Zeile lesen heisst „wie steht EUR gegen alle", eine Spalte
+ * lesen heisst „wer steht gegen USD" — dafür ist ein Terminal da.
+ *
+ * Die Ampelstufe ist in beiden Hälften dieselbe. Sie muss es sein: ob ein Paar
+ * genug Substanz für ein Setup hat, kann nicht davon abhängen, wie herum man
+ * es notiert. Nur `richtung` und `netto` drehen.
+ */
+export function baueMatrix(paare: PaarUrteil[]): MatrixZelle[][] {
+  const nach = new Map(paare.map((u) => [u.paar, u]));
+
+  return G8.map((basis) => G8.map((quote) => {
+    if (basis === quote) {
+      return {
+        basis, quote, paar: "", gedreht: false, richtung: 0 as const,
+        netto: 0, stufe: "rot" as Ampel, grund: "", satz: "",
+      };
+    }
+    const direkt = nach.get(`${basis}${quote}`);
+    const u = direkt ?? nach.get(`${quote}${basis}`);
+    if (!u) {
+      return {
+        basis, quote, paar: `${basis}${quote}`, gedreht: false, richtung: 0 as const,
+        netto: 0, stufe: "rot" as Ampel,
+        grund: "Dieses Paar steht nicht in der Liste der 28.", satz: "",
+      };
+    }
+    const gedreht = !direkt;
+    const a = ampelFuer(u);
+    const dreh = gedreht ? -1 : 1;
+    return {
+      basis, quote, paar: u.paar, gedreht,
+      richtung: (u.richtung * dreh) as -1 | 0 | 1,
+      netto: u.netto * dreh,
+      stufe: a.stufe, grund: a.grund, satz: u.satz,
+    };
+  }));
+}
+
+/**
+ * Die Paare, bei denen sich das Hinschauen lohnt — stärkste zuerst.
+ *
+ * Nur Grün. Gelb steht bewusst nicht drin: eine Liste, in der alles auftaucht,
+ * ist keine Auswahl. Gelb sieht man in der Matrix, wenn man ohnehin dort ist.
+ */
+export function handelbare(paare: PaarUrteil[]): { u: PaarUrteil; a: AmpelUrteil }[] {
+  return paare
+    .map((u) => ({ u, a: ampelFuer(u) }))
+    .filter((x) => x.a.stufe === "gruen")
+    .sort((x, y) => Math.abs(y.u.netto) - Math.abs(x.u.netto));
 }

@@ -1,9 +1,11 @@
+import Link from "next/link";
 import { Badge, Bar, cx } from "@/components/ui";
 import { FRISCHE_LABEL, type Frische } from "@/lib/confluence/reihen";
 import {
-  URTEIL_LABEL, FAKTOR_ROLLE,
+  URTEIL_LABEL, FAKTOR_ROLLE, AMPEL_LABEL, G8,
   type FaktorUrteil, type PaarUrteil, type RegimeLage,
   type VetoUrteil, type Urteilswort, type WaehrungsBild,
+  type MatrixZelle, type Ampel, type AmpelUrteil,
 } from "@/lib/confluence/faktoren";
 
 /**
@@ -86,9 +88,18 @@ export function VetoZeile({ v, gefragt }: { v: VetoUrteil; gefragt: -1 | 0 | 1 }
         </span>
         <span className="text-sm font-medium text-ink">COT-Perzentil</span>
         {aktiv && <Badge tone="bad">Veto</Badge>}
+        {aktiv && v.quellen.map((q) => (
+          <Badge key={q} tone="warn">{q === "fonds" ? "Fonds" : "Real Money"}</Badge>
+        ))}
         <span className="ml-auto"><FrischeChip frische={v.frische} /></span>
       </div>
       <p className="mt-1 text-xs leading-relaxed text-ink-muted">{v.text}</p>
+      {(v.banken.basis !== null || v.banken.quote !== null) && (
+        <p className="mt-0.5 text-[11px] text-ink-faint">
+          Banken (Gegenseite, kein Veto): {v.banken.basis === null ? "·" : v.banken.basis.toFixed(0)}
+          {" / "}{v.banken.quote === null ? "·" : v.banken.quote.toFixed(0)}. Perzentil
+        </p>
+      )}
       <p className="mt-0.5 text-[11px] text-ink-faint">{FAKTOR_ROLLE.cot}</p>
     </li>
   );
@@ -237,6 +248,24 @@ export function PaarTabelle({ paare }: { paare: PaarUrteil[] }) {
 const z = (v: number | null, n = 2) => (v === null ? "·" : v.toFixed(n));
 
 /**
+ * Ein COT-Perzentil in der Tabelle.
+ *
+ * `veto` markiert die beiden Gruppen, die überhaupt ein Veto auslösen dürfen —
+ * Fonds und Real Money. Nur bei ihnen wird ein Extrem hervorgehoben. Die
+ * Banken-Zahl steht bewusst blass daneben: sie ist die Gegenposition der
+ * anderen beiden und würde als Warnfarbe dieselbe Aussage doppelt zeigen.
+ */
+function PerzentilWert({ rang, veto = false }: { rang: number | null; veto?: boolean }) {
+  if (rang === null) return <span className="text-ink-faint">·</span>;
+  const extrem = veto && (rang >= 85 || rang <= 15);
+  return (
+    <span className={extrem ? "text-accent" : veto ? "text-ink-soft" : "text-ink-faint"}>
+      {rang.toFixed(0)}
+    </span>
+  );
+}
+
+/**
  * Die Währungen mit ihren Rohwerten und ihrer Aktualität.
  *
  * Genau das, was auf der Seite fehlte: nicht nur „EUR ist stark", sondern
@@ -246,15 +275,22 @@ const z = (v: number | null, n = 2) => (v === null ? "·" : v.toFixed(n));
 export function WaehrungsTabelle({ waehrungen }: { waehrungen: WaehrungsBild[] }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[720px] border-collapse text-sm">
+      <table className="w-full min-w-[840px] border-collapse text-sm">
         <thead>
           <tr className="border-b border-line text-xs text-ink-muted">
             <th className="px-2 py-2 text-left font-normal">Währung</th>
             <th className="px-2 py-2 text-right font-normal">Leitzins</th>
             <th className="px-2 py-2 text-right font-normal">6 M</th>
+            <th className="px-2 py-2 text-right font-normal"
+                title="2-Jahres-Staatsanleihe und in Klammern der Abstand zum Leitzins — was der Markt an Zinsänderung einpreist.">
+              2 J
+            </th>
             <th className="px-2 py-2 text-right font-normal">Inflation</th>
             <th className="px-2 py-2 text-right font-normal">Real</th>
-            <th className="px-2 py-2 text-right font-normal">COT-Pz.</th>
+            <th className="px-2 py-2 text-right font-normal"
+                title="COT-Perzentil: Fonds (Leveraged Funds) · Real Money (Asset Manager) · Banken (Dealer). Nur die ersten beiden lösen ein Veto aus; die Banken sind deren Gegenpartei.">
+              COT F/RM/Bk
+            </th>
             <th className="px-2 py-2 text-right font-normal">Risiko</th>
             <th className="px-2 py-2 text-left font-normal">7 Paare</th>
             <th className="px-2 py-2 text-left font-normal">Stand</th>
@@ -270,15 +306,33 @@ export function WaehrungsTabelle({ waehrungen }: { waehrungen: WaehrungsBild[] }
                   : (w.leitzins6M ?? 0) < 0 ? "text-bad-bright" : "text-ink-faint")}>
                 {w.leitzins6M === null ? "·" : `${w.leitzins6M > 0 ? "+" : ""}${w.leitzins6M.toFixed(2)}`}
               </td>
+              <td className="num px-2 py-2 text-right text-ink-soft"
+                title={w.zweiJahr === null
+                  ? "Für diese Währung gibt es keine freie 2-Jahres-Quelle — es wird bewusst keine Zahl erfunden."
+                  : `2-Jahres-Rendite vom ${w.zweiJahrDatum ?? "?"}, Klammer = Abstand zum Leitzins.`}>
+                {w.zweiJahr === null ? "·" : w.zweiJahr.toFixed(2)}
+                {w.erwartung !== null && (
+                  <span className={cx("ml-1 text-xs",
+                    w.erwartung > 0 ? "text-good-bright"
+                      : w.erwartung < 0 ? "text-bad-bright" : "text-ink-faint")}>
+                    ({w.erwartung > 0 ? "+" : ""}{w.erwartung.toFixed(2)})
+                  </span>
+                )}
+              </td>
               <td className="num px-2 py-2 text-right text-ink-soft">{z(w.cpi)}</td>
               <td className={cx("num px-2 py-2 text-right",
                 (w.realzins ?? 0) > 0 ? "text-good-bright" : (w.realzins ?? 0) < 0 ? "text-bad-bright" : "text-ink-faint")}>
                 {z(w.realzins)}
               </td>
-              <td className={cx("num px-2 py-2 text-right",
-                (w.cotRang ?? 50) >= 85 || (w.cotRang ?? 50) <= 15 ? "text-accent" : "text-ink-soft")}
-                title={w.cotN > 0 ? `${w.cotN} Wochen Vergleichsbasis` : "keine Historie"}>
-                {w.cotRang === null ? "·" : w.cotRang.toFixed(0)}
+              <td className="num px-2 py-2 text-right"
+                title={`Fonds: ${w.cotN > 0 ? `${w.cotN} Wochen Vergleichsbasis` : "keine Historie"}`
+                  + ` · Real Money: ${w.realMoneyN > 0 ? `${w.realMoneyN} Wochen` : "keine Historie"}`
+                  + ` · Banken: ${w.bankenN > 0 ? `${w.bankenN} Wochen` : "keine Historie"} (nur Kontext, kein Veto)`}>
+                <PerzentilWert rang={w.cotRang} veto />
+                <span className="text-ink-faint">/</span>
+                <PerzentilWert rang={w.realMoneyRang} veto />
+                <span className="text-ink-faint">/</span>
+                <PerzentilWert rang={w.bankenRang} />
               </td>
               <td className="num px-2 py-2 text-right text-ink-muted">
                 {w.risikoBeta > 0 ? "+" : ""}{w.risikoBeta}
@@ -305,8 +359,12 @@ export function WaehrungsTabelle({ waehrungen }: { waehrungen: WaehrungsBild[] }
         <strong>7 Paare</strong> zählt, in wie vielen der sieben eigenen Paare die
         Lage für bzw. gegen diese Währung spricht. „Strittig" heisst: beides kommt
         vor — dann ist die Währung nicht neutral, sondern gegen manche stark und
-        gegen andere schwach. <strong>COT-Pz.</strong> ist der Perzentilrang der
-        Leveraged Funds über drei Jahre; ab 85 bzw. unter 15 steht das Veto.
+        gegen andere schwach. <strong>COT F/RM/Bk</strong> sind die Perzentilränge
+        über drei Jahre: Fonds, Real Money, Banken. Nur die ersten beiden lösen ab
+        85 bzw. unter 15 ein Veto aus — die Banken sind deren Gegenpartei und
+        stünden sonst doppelt im Urteil. <strong>2 J</strong> ist die
+        Staatsanleihenrendite, in Klammern ihr Abstand zum Leitzins: was der Markt
+        an Zinsänderung schon eingepreist hat.
       </p>
     </div>
   );
@@ -335,5 +393,180 @@ export function Luecken({ leer, cotQuelle }: {
         )}
       </ul>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------- Terminal */
+
+const AMPEL_PUNKT: Record<Ampel, string> = {
+  gruen: "bg-good-bright",
+  gelb: "bg-warn",
+  rot: "bg-ink-faint",
+};
+
+const AMPEL_FLAECHE: Record<Ampel, string> = {
+  gruen: "bg-good-tint",
+  gelb: "bg-warn-tint",
+  rot: "bg-sand/40",
+};
+
+/**
+ * Die Währungsleiste: acht Balken, stärkste oben.
+ *
+ * Der Score ist der Durchschnitt der sieben Netto-Werte einer Währung, auf sie
+ * gedreht — also nicht „in wie vielen Paaren liegt sie vorne", sondern „wie
+ * deutlich". Absichtlich als Balken und nicht als Note von 1 bis 10: eine Note
+ * suggeriert eine Genauigkeit, die vier Faktoren nicht hergeben.
+ */
+export function WaehrungsLeiste({ waehrungen }: { waehrungen: WaehrungsBild[] }) {
+  const groesster = Math.max(1, ...waehrungen.map((w) => Math.abs(w.score)));
+
+  return (
+    <ul className="space-y-1.5">
+      {waehrungen.map((w) => (
+        <li key={w.ccy} className="flex items-center gap-2.5">
+          <span className="w-10 shrink-0 text-sm font-medium text-ink">{w.ccy}</span>
+          <span className="relative h-4 flex-1 overflow-hidden rounded-full bg-sand/60">
+            <span className="absolute inset-y-0 left-1/2 w-px bg-line" />
+            <span
+              className={cx("absolute inset-y-0 rounded-full",
+                w.score >= 0 ? "bg-good-bright/70" : "bg-bad-bright/70")}
+              style={{
+                left: w.score >= 0 ? "50%" : `${50 - (Math.abs(w.score) / groesster) * 50}%`,
+                width: `${(Math.abs(w.score) / groesster) * 50}%`,
+              }} />
+          </span>
+          <span className={cx("num w-12 shrink-0 text-right text-xs",
+            w.score > 0 ? "text-good-bright" : w.score < 0 ? "text-bad-bright" : "text-ink-faint")}>
+            {w.score > 0 ? "+" : ""}{w.score.toFixed(0)}
+          </span>
+          <span className="w-16 shrink-0 text-right">
+            {w.strittig
+              ? <Badge tone="warn">strittig</Badge>
+              : <span className="num text-[11px] text-ink-faint">{w.dafuer}/{w.dagegen}</span>}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * Die Matrix: Zeile = Basis, Spalte = Quote.
+ *
+ * Eine Zeile lesen heisst „wie steht EUR gegen alle anderen", eine Spalte
+ * lesen heisst „wer steht gegen den USD". Die untere Hälfte ist die
+ * Spiegelung der oberen mit gedrehtem Vorzeichen — dieselbe Rechnung, nur
+ * andersherum notiert. Die Ampelfarbe ist in beiden Hälften gleich, weil die
+ * Frage „hat dieses Paar genug Substanz" nicht davon abhängen darf, wie herum
+ * man es schreibt.
+ */
+export function PaarMatrix({ matrix }: { matrix: MatrixZelle[][] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="border-collapse text-xs">
+        <thead>
+          <tr>
+            <th className="px-1.5 py-1 text-left text-[11px] font-normal text-ink-faint">
+              Basis ╲ Quote
+            </th>
+            {G8.map((q) => (
+              <th key={q} className="px-1.5 py-1 text-center text-[11px] font-normal text-ink-muted">
+                {q}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {matrix.map((zeile, i) => (
+            <tr key={G8[i]}>
+              <th className="px-1.5 py-1 text-left text-[11px] font-medium text-ink-muted">
+                {G8[i]}
+              </th>
+              {zeile.map((zelle) => (
+                <td key={zelle.quote} className="p-0.5">
+                  {zelle.basis === zelle.quote ? (
+                    <div className="h-9 w-14 rounded-lg bg-sand/30" />
+                  ) : (
+                    <Link
+                      href={`/trading/confluence?ansicht=rueckblick&paar=${zelle.paar}`
+                        + `&richtung=${zelle.richtung > 0 ? "long" : zelle.richtung < 0 ? "short" : ""}`}
+                      title={`${zelle.basis}${zelle.quote}`
+                        + `${zelle.gedreht ? ` (gerechnet als ${zelle.paar})` : ""} — `
+                        + `${AMPEL_LABEL[zelle.stufe]}. ${zelle.grund} ${zelle.satz}`}
+                      className={cx(
+                        "flex h-9 w-14 flex-col items-center justify-center rounded-lg",
+                        "transition duration-150 ease-tactile hover:ring-1 hover:ring-line active:scale-95",
+                        AMPEL_FLAECHE[zelle.stufe],
+                      )}>
+                      <span className="flex items-center gap-1 leading-none">
+                        <span className={cx("h-1.5 w-1.5 rounded-full", AMPEL_PUNKT[zelle.stufe])} />
+                        <Pfeil dir={zelle.richtung} />
+                      </span>
+                      <span className="num text-[10px] leading-tight text-ink-faint">
+                        {zelle.richtung === 0 ? "·" : (zelle.netto * 100).toFixed(0)}
+                      </span>
+                    </Link>
+                  )}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="mt-2.5 text-[11px] leading-relaxed text-ink-faint">
+        <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-good-bright align-middle" />
+        handelbar ·
+        <span className="mx-1 inline-block h-1.5 w-1.5 rounded-full bg-warn align-middle" />
+        nur mit gutem Chart ·
+        <span className="mx-1 inline-block h-1.5 w-1.5 rounded-full bg-ink-faint align-middle" />
+        nicht aus der Fundamentallage. Die Zahl ist das Netto ×100 in Richtung des
+        Pfeils. Grün heisst <strong>nicht</strong> „kaufen" — es heisst, dass die
+        Lage im Rücken steht, falls der Chart ein Setup hergibt.
+      </p>
+    </div>
+  );
+}
+
+/** Nur die grünen Paare — stärkste zuerst. */
+export function HandelbarListe({ handelbar }: {
+  handelbar: { u: PaarUrteil; a: AmpelUrteil }[];
+}) {
+  if (handelbar.length === 0) {
+    return (
+      <p className="py-4 text-sm leading-relaxed text-ink-muted">
+        Heute steht bei keinem der 28 Paare die Fundamentallage klar genug hinter
+        einer Richtung. Das ist kein Fehler und auch kein schlechter Tag — ein
+        Filter, der jeden Tag etwas durchlässt, filtert nicht.
+      </p>
+    );
+  }
+
+  return (
+    <ul className="space-y-1.5">
+      {handelbar.map(({ u, a }) => (
+        <li key={u.paar}>
+          <Link
+            href={`/trading/confluence?ansicht=rueckblick&paar=${u.paar}`
+              + `&richtung=${a.richtung > 0 ? "long" : "short"}`}
+            title={u.satz}
+            className="flex flex-wrap items-center gap-2.5 rounded-xl bg-sand/50 px-3 py-2 transition duration-150 ease-tactile hover:bg-sand active:scale-[0.99]">
+            <span className="text-sm font-medium text-ink">
+              {u.paar.slice(0, 3)}/{u.paar.slice(3)}
+            </span>
+            <Badge tone={a.richtung > 0 ? "good" : "bad"}>
+              {a.richtung > 0 ? "LONG" : "SHORT"}
+            </Badge>
+            <span className="num text-xs text-ink-muted">
+              {u.dafuer} dafür, {u.dagegen} dagegen
+            </span>
+            <span className="num ml-auto text-xs text-ink-soft">
+              {u.netto > 0 ? "+" : ""}{(u.netto * 100).toFixed(0)}
+            </span>
+            <FrischeChip frische={u.frische} />
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }

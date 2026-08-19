@@ -4,8 +4,9 @@ import { ladeFuerStichtag, ladeFuerSpanne, ladeLaborUrteil, type Ladebericht, ty
 import { alsInstrument } from "./rechnen";
 import { montagVon } from "./reihen";
 import {
-  baueRegime, bewertePaar, bewerteAlle, waehrungsBild, G8,
+  baueRegime, bewertePaar, bewerteAlle, waehrungsBild, baueMatrix, handelbare, G8,
   type PaarUrteil, type RegimeLage, type WaehrungsBild,
+  type MatrixZelle, type AmpelUrteil,
 } from "./faktoren";
 import {
   gruppiere, vergleiche, vetoBilanz, aufteilung,
@@ -24,7 +25,7 @@ import {
  * anderes als „Jetzt" am selben Tag, wäre die ganze Seite wertlos.
  */
 
-export type Ansicht = "jetzt" | "rueckblick" | "bilanz";
+export type Ansicht = "terminal" | "jetzt" | "rueckblick" | "bilanz";
 
 /* ------------------------------------------------------------- Jetzt */
 
@@ -33,6 +34,10 @@ export interface JetztBild {
   regime: RegimeLage;
   paare: PaarUrteil[];
   waehrungen: WaehrungsBild[];
+  /** 8×8, Zeile = Basis, Spalte = Quote. Für das Terminal. */
+  matrix: MatrixZelle[][];
+  /** Nur die grünen Paare, stärkste zuerst. */
+  handelbar: { u: PaarUrteil; a: AmpelUrteil }[];
   bericht: Ladebericht;
 }
 
@@ -40,10 +45,16 @@ export async function baueJetzt(stichtag: string): Promise<JetztBild> {
   const { daten, bericht } = await ladeFuerStichtag(stichtag);
   const regime = baueRegime(daten, stichtag);
   const paare = bewerteAlle(daten, stichtag, regime);
+  // Sortiert nach score, nicht nach saldo: der Score sagt, wie DEUTLICH eine
+  // Währung vorne liegt, der Saldo nur, in wie vielen Paaren. Bei acht
+  // Währungen entscheidet das regelmässig über die Reihenfolge.
   const waehrungen = G8.map((c) => waehrungsBild(daten, c, stichtag, paare))
-    .sort((a, b) => b.saldo - a.saldo);
+    .sort((a, b) => b.score - a.score);
 
-  return { stichtag, regime, paare, waehrungen, bericht };
+  return {
+    stichtag, regime, paare, waehrungen,
+    matrix: baueMatrix(paare), handelbar: handelbare(paare), bericht,
+  };
 }
 
 /* ------------------------------------------------------------- Rückblick */

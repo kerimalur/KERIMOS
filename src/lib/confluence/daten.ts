@@ -107,6 +107,8 @@ interface PreisZeile { instrument: string; date: string; close: number | null }
 interface TffZeile {
   contract_code: string; report_date: string;
   lev_money_long: number | null; lev_money_short: number | null;
+  dealer_long: number | null; dealer_short: number | null;
+  asset_mgr_long: number | null; asset_mgr_short: number | null;
   open_interest: number | null;
 }
 interface LegacyZeile {
@@ -158,7 +160,10 @@ async function ladeRoh(von: string, bis: string): Promise<Geladen> {
       .order("date", { ascending: true }).range(a, b)),
     holeAlle<TffZeile>((a, b) => db
       .from("cot_tff_reports")
-      .select("contract_code, report_date, lev_money_long, lev_money_short, open_interest")
+      // Ein einziges String-Literal, nicht zusammengesetzt: supabase-js leitet
+      // den Zeilentyp aus dem Literal ab. Eine "a" + "b"-Verkettung ist fuer
+      // den Compiler nur noch `string` und der Typ faellt auf Fehler zurueck.
+      .select("contract_code, report_date, lev_money_long, lev_money_short, dealer_long, dealer_short, asset_mgr_long, asset_mgr_short, open_interest")
       .in("contract_code", contracts)
       .gte("report_date", von).lte("report_date", bis)
       .order("report_date", { ascending: true }).range(a, b)),
@@ -178,6 +183,8 @@ async function ladeRoh(von: string, bis: string): Promise<Geladen> {
   const leitzins: Record<string, Punkt[]> = {};
   const cpi: Record<string, Punkt[]> = {};
   const cot: Record<string, Punkt[]> = {};
+  const cotBanken: Record<string, Punkt[]> = {};
+  const cotRealMoney: Record<string, Punkt[]> = {};
   const zwei: Record<string, Punkt[]> = {};
   const leitzinsVerzug: Record<string, number> = {};
 
@@ -204,9 +211,22 @@ async function ladeRoh(von: string, bis: string): Promise<Geladen> {
     // TFF trennt Hedgefonds von Asset Managern und ist für FX die schärfere
     // Quelle. Legacy nur als Ersatz - und niemals gemischt: zwei Definitionen
     // in einer Perzentil-Reihe ergäben einen Rang, den es nie gab.
+    const tffZeilen = tff.filter((z) => z.contract_code === code);
+
+    // Banken (Dealer) und Real Money (Asset Manager) gibt es NUR im TFF-Bericht.
+    // Der Legacy-Bericht kennt sie nicht — faellt TFF aus, bleiben sie leer und
+    // die Anzeige sagt das, statt eine Ersatzgruppe unterzuschieben.
+    cotBanken[ccy] = nettoReihe(tffZeilen.map((z) => ({
+      datum: z.report_date, lang: z.dealer_long, kurz: z.dealer_short, oi: z.open_interest,
+    })));
+    cotRealMoney[ccy] = nettoReihe(tffZeilen.map((z) => ({
+      datum: z.report_date, lang: z.asset_mgr_long, kurz: z.asset_mgr_short, oi: z.open_interest,
+    })));
+
     const ausTff = nettoReihe(
-      tff.filter((z) => z.contract_code === code)
-        .map((z) => ({ datum: z.report_date, lang: z.lev_money_long, kurz: z.lev_money_short, oi: z.open_interest })),
+      tffZeilen.map((z) => ({
+        datum: z.report_date, lang: z.lev_money_long, kurz: z.lev_money_short, oi: z.open_interest,
+      })),
     );
     if (ausTff.length >= 26) {
       cot[ccy] = ausTff;
@@ -231,7 +251,10 @@ async function ladeRoh(von: string, bis: string): Promise<Geladen> {
   if (kupfer.length === 0) bericht.leer.push("Kupfer");
 
   return {
-    daten: { leitzins, cpi, cot, zwei, leitzinsVerzug, vix, spx, gold, kupfer },
+    daten: {
+      leitzins, cpi, cot, cotBanken, cotRealMoney, zwei, leitzinsVerzug,
+      vix, spx, gold, kupfer,
+    },
     bericht,
   };
 }

@@ -12,7 +12,8 @@ import {
 import {
   werteFuer, baueRegime, verhaeltnisReihe, faktorZins, faktorReal,
   faktorErwartung, faktorRegime, baueVeto, bewertePaar, waehrungsBild, bewerteAlle,
-  RISIKO_BETA, SCHWELLE, VETO_GRENZE, LEERE_DATEN, PAARE,
+  ampelFuer, baueMatrix, handelbare,
+  RISIKO_BETA, SCHWELLE, VETO_GRENZE, LEERE_DATEN, PAARE, AMPEL_SCHWELLE, G8,
   type Rohdaten, type RegimeLage,
 } from "../../src/lib/confluence/faktoren";
 import {
@@ -156,6 +157,8 @@ function daten(vorgabe: {
   leitzins?: Record<string, [string, number][]>;
   cpi?: Record<string, [string, number][]>;
   cot?: Record<string, [string, number][]>;
+  cotBanken?: Record<string, [string, number][]>;
+  cotRealMoney?: Record<string, [string, number][]>;
   zwei?: Record<string, [string, number][]>;
 }): Rohdaten {
   const um = (o: Record<string, [string, number][]> = {}) =>
@@ -164,6 +167,7 @@ function daten(vorgabe: {
     ...LEERE_DATEN,
     leitzins: um(vorgabe.leitzins), cpi: um(vorgabe.cpi),
     cot: um(vorgabe.cot), zwei: um(vorgabe.zwei),
+    cotBanken: um(vorgabe.cotBanken), cotRealMoney: um(vorgabe.cotRealMoney),
   };
 }
 
@@ -249,6 +253,44 @@ check("beide am selben Extrem heben sich auf",
 check("ohne COT-Historie kein Veto", baueVeto(w(leer, "EUR"), w(leer, "USD")).gegen, 0);
 check("Veto-Grenzen sind symmetrisch", VETO_GRENZE.oben + VETO_GRENZE.unten, 100);
 
+/* ------------------------------------------------- Veto nach COT-Gruppen */
+// Der Kern der Trennung: Fonds und Real Money duerfen ein Veto ausloesen, die
+// Banken nicht. Ihre Netto-Position ist mechanisch das Spiegelbild der
+// anderen beiden — ein eigenes Veto waere dieselbe Zahl doppelt gezaehlt.
+const cotMitte = (): [string, number][] =>
+  Array.from({ length: 60 }, (_, i) => [plusTage("2025-01-06", i * 7), i === 59 ? 5 : i % 10] as [string, number]);
+
+const nurReal = daten({
+  cot: { EUR: cotMitte(), USD: cotMitte() },
+  cotRealMoney: { EUR: cotReihe(true), USD: cotReihe(false) },
+});
+const vetoReal = baueVeto(w(nurReal, "EUR"), w(nurReal, "USD"));
+check("Fonds neutral -> kein Fonds-Veto",
+  baueVeto(w(daten({ cot: { EUR: cotMitte(), USD: cotMitte() } }), "EUR"),
+           w(daten({ cot: { EUR: cotMitte(), USD: cotMitte() } }), "USD")).gegen, 0);
+check("Real Money allein loest Veto aus", vetoReal.gegen, 1);
+check("und nennt sich als Quelle", vetoReal.quellen, ["real-money"]);
+check("Real-Money-Raenge stehen im Urteil",
+  [vetoReal.realMoney.basis !== null, vetoReal.realMoney.quote !== null], [true, true]);
+
+const nurBanken = daten({
+  cot: { EUR: cotMitte(), USD: cotMitte() },
+  cotBanken: { EUR: cotReihe(true), USD: cotReihe(false) },
+});
+const vetoBanken = baueVeto(w(nurBanken, "EUR"), w(nurBanken, "USD"));
+check("Banken allein loesen KEIN Veto aus", vetoBanken.gegen, 0);
+check("Banken werden trotzdem ausgewiesen", vetoBanken.banken.basis !== null, true);
+
+const gegenlaeufig = daten({
+  cot: { EUR: cotReihe(true), USD: cotMitte() },
+  cotRealMoney: { EUR: cotReihe(false), USD: cotMitte() },
+});
+check("Fonds long, Real Money short -> hebt sich auf",
+  baueVeto(w(gegenlaeufig, "EUR"), w(gegenlaeufig, "USD")).gegen, 0);
+check("ohne TFF-Gruppen bleibt das Fonds-Veto allein bestehen", vetoLang.quellen, ["fonds"]);
+check("fehlende Gruppen sind kein Fehler",
+  [vetoLang.realMoney.basis, vetoLang.banken.basis], [null, null]);
+
 /* ------------------------------------------------------------- Paar-Urteil */
 const klar = daten({
   leitzins: { AUD: [["2026-01-01", 4.5]], JPY: [["2026-01-01", 0.5]] },
@@ -332,6 +374,76 @@ check("gegen die andere Richtung greift dasselbe Veto nicht",
     "AUDJPY", STICHTAG, NEUTRAL, -1,
   ).vetoAktiv, false);
 
+/* ------------------------------------------------------------- Ampel */
+// Die Ampel ist die einzige Zahl, die Kerim im Terminal wirklich liest —
+// deshalb wird hier die REIHENFOLGE der Pruefungen festgenagelt: was ein
+// Setup verbietet, muss vor dem stehen, was es empfiehlt.
+
+// `klar` traegt Daten vom 01.01. — am Stichtag 225 Tage alt und damit fuer
+// eine Monatsserie "veraltet". Fuer die Ampel braucht es deshalb eine eigene
+// Vorlage, sonst prueft man versehentlich den Frische-Zweig statt der Staerke.
+// 45 Tage ist genau die Kante: frueher darf der Wert nicht benutzt werden
+// (Publikationsverzug), spaeter gilt er als alt.
+const FRISCH_TAG = plusTage(STICHTAG, -45);
+const frischKlar = daten({
+  leitzins: { AUD: [[FRISCH_TAG, 4.5]], JPY: [[FRISCH_TAG, 0.5]] },
+  cpi: { AUD: [[FRISCH_TAG, 2.0]], JPY: [[FRISCH_TAG, 3.0]] },
+});
+const audJpyLang = bewertePaar(frischKlar, "AUDJPY", STICHTAG, NEUTRAL, 0);
+check("klares Paar ohne Veto ist gruen", ampelFuer(audJpyLang).stufe, "gruen");
+check("und die Ampel nennt die eigene Richtung", ampelFuer(audJpyLang).richtung, 1);
+check("dieselbe Lage mit alten Daten ist nur gelb",
+  ampelFuer(bewertePaar(klar, "AUDJPY", STICHTAG, NEUTRAL, 0)).stufe, "gelb");
+
+check("ohne Daten ist die Ampel rot",
+  ampelFuer(bewertePaar(leer, "EURUSD", STICHTAG, KEIN_REGIME, 0)).stufe, "rot");
+check("ohne Richtung ist die Ampel rot",
+  ampelFuer(bewertePaar(knapp, "EURUSD", STICHTAG, NEUTRAL, 0)).stufe, "rot");
+
+// Der wichtigste Fall: starke Richtung UND Veto genau dagegen. Das Veto muss
+// gewinnen, sonst waere es keins.
+const klarMitVeto = bewertePaar(
+  { ...frischKlar, cot: { AUD: r(...cotReihe(true)), JPY: r(...cotReihe(false)) } },
+  "AUDJPY", STICHTAG, NEUTRAL, 0,
+);
+check("Veto gegen die eigene Richtung macht rot", ampelFuer(klarMitVeto).stufe, "rot");
+check("und die Begruendung sagt warum",
+  ampelFuer(klarMitVeto).grund.includes("Veto"), true);
+check("Ampel-Schwelle ist bewusst nicht null", AMPEL_SCHWELLE.klar > 0, true);
+
+/* ------------------------------------------------------------- Matrix */
+const alleFuerMatrix = bewerteAlle(frischKlar, STICHTAG, NEUTRAL);
+const matrix = baueMatrix(alleFuerMatrix);
+check("Matrix ist 8x8", [matrix.length, matrix[0].length], [8, 8]);
+check("Diagonale bleibt leer",
+  G8.every((_, i) => matrix[i][i].paar === ""), true);
+
+const iAud = G8.indexOf("AUD");
+const iJpy = G8.indexOf("JPY");
+check("AUDJPY steht direkt in der Matrix", matrix[iAud][iJpy].gedreht, false);
+check("JPYAUD ist die Spiegelung", matrix[iJpy][iAud].gedreht, true);
+check("die Spiegelung dreht die Richtung",
+  matrix[iJpy][iAud].richtung, -matrix[iAud][iJpy].richtung);
+check("die Spiegelung dreht das Netto",
+  Math.round(matrix[iJpy][iAud].netto * 1000), -Math.round(matrix[iAud][iJpy].netto * 1000));
+// Der Punkt der Trennung: die Farbe darf NICHT davon abhaengen, wie herum das
+// Paar notiert ist. Nur Richtung und Netto drehen.
+check("die Ampelstufe dreht NICHT mit",
+  matrix[iJpy][iAud].stufe, matrix[iAud][iJpy].stufe);
+check("beide Haelften zeigen auf dasselbe kanonische Paar",
+  matrix[iJpy][iAud].paar, matrix[iAud][iJpy].paar);
+
+// Erst die Gegenprobe: eine leere Liste wuerde jede "every"-Pruefung darunter
+// stillschweigend bestehen.
+check("handelbar ist bei klarer Lage nicht leer", handelbare(alleFuerMatrix).length > 0, true);
+check("handelbar liefert nur gruene Paare",
+  handelbare(alleFuerMatrix).every((x) => x.a.stufe === "gruen"), true);
+check("handelbar ist nach Staerke sortiert",
+  handelbare(alleFuerMatrix).every((x, i, a) =>
+    i === 0 || Math.abs(a[i - 1].u.netto) >= Math.abs(x.u.netto)), true);
+check("ohne Daten ist nichts handelbar",
+  handelbare(bewerteAlle(leer, STICHTAG, KEIN_REGIME)).length, 0);
+
 /* ------------------------------------------------------------- Übersicht */
 check("alle 28 Paare", bewerteAlle(klar, STICHTAG, NEUTRAL).length, 28);
 check("Paarliste ohne Dubletten", new Set(PAARE).size, PAARE.length);
@@ -340,6 +452,22 @@ check("jedes Paar hat sechs Zeichen", PAARE.every((p) => p.length === 6), true);
 const alle = bewerteAlle(klar, STICHTAG, RISK_OFF);
 const jpyBild = waehrungsBild(klar, "JPY", STICHTAG, alle);
 const audBild = waehrungsBild(klar, "AUD", STICHTAG, alle);
+// Der Score wird gegen seine eigene Definition geprueft, nicht gegen ein
+// erwartetes Vorzeichen: was zaehlt, ist dass die Quote-Seite gedreht eingeht.
+// Ein Vorzeichentest waere vom Regime abhaengig und damit kein Beweis.
+const scoreVonHand = (ccy: string) =>
+  alle.filter((u) => u.basis === ccy || u.quote === ccy)
+    .reduce((s, u) => s + (u.basis === ccy ? u.netto : -u.netto), 0) / 7 * 100;
+check("Score ist der gedrehte Mittelwert der sieben Paare",
+  Math.round(audBild.score * 1000), Math.round(scoreVonHand("AUD") * 1000));
+check("und die Quote-Seite geht mit gedrehtem Vorzeichen ein",
+  Math.round(jpyBild.score * 1000), Math.round(scoreVonHand("JPY") * 1000));
+
+// Eine fehlende Quelle darf die Ampel nicht auf Gelb ziehen — sonst staenden
+// GBP-, CHF- und NZD-Paare dauerhaft dort, weil es fuer sie keine
+// 2-Jahres-Rendite gibt. Genau das war der Fehler beim ersten Wurf.
+check("fehlende 2J-Quelle allein macht nicht gelb",
+  ampelFuer(bewertePaar(frischKlar, "AUDJPY", STICHTAG, NEUTRAL, 0)).stufe, "gruen");
 check("JPY und AUD betrachten dieselben sieben Paare",
   [jpyBild.dafuer + jpyBild.dagegen + jpyBild.stumm,
    audBild.dafuer + audBild.dagegen + audBild.stumm], [7, 7]);
