@@ -4,6 +4,9 @@ import { tradingConfigured } from "@/lib/supabase/trading";
 import { heuteISO } from "@/lib/time";
 import { PAARE, ampelFuer } from "@/lib/confluence/faktoren";
 import { baueJetzt, baueRueckblick, baueBilanz, type Ansicht } from "@/lib/confluence/seite";
+import { baueMontyCot, baueSaisonZeile, MONTY_PAARE } from "@/lib/confluence/monty";
+import { FENSTER, MAX_JAHRE, MIN_JAHRE, type Fenster } from "@/lib/confluence/saison";
+import { CotStatistikTabelle, SaisonKopf, SaisonZeile, SaisonZeileLaedt } from "@/components/confluence/monty-teile";
 import {
   RegimeKarte, WaehrungsTabelle, PaarTabelle, UrteilKarte,
   FaktorZeile, VetoZeile, Luecken,
@@ -38,6 +41,7 @@ export const dynamic = "force-dynamic";
 
 const ANSICHTEN: { key: Ansicht; label: string; hinweis: string }[] = [
   { key: "terminal", label: "Terminal", hinweis: "Welche Paare kann ich heute überhaupt handeln?" },
+  { key: "monty", label: "Monty", hinweis: "Nur COT und Saisonalität — ohne Zins und Inflation." },
   { key: "jetzt", label: "Jetzt", hinweis: "Dieselbe Lage mit allen Rohwerten dahinter." },
   { key: "rueckblick", label: "Rückblick", hinweis: "Hättest du an dem Tag Rückenwind gehabt?" },
   { key: "bilanz", label: "Bilanz", hinweis: "Hat der Rückenwind bei deinen Trades gewirkt?" },
@@ -62,7 +66,7 @@ export default async function ConfluencePage({ searchParams }: { searchParams: P
   }
 
   const p = await searchParams;
-  const ansicht = (["terminal", "jetzt", "rueckblick", "bilanz"] as const)
+  const ansicht = (["terminal", "monty", "jetzt", "rueckblick", "bilanz"] as const)
     .find((a) => a === einer(p.ansicht)) ?? "terminal";
 
   return (
@@ -92,9 +96,10 @@ export default async function ConfluencePage({ searchParams }: { searchParams: P
 
       <Suspense key={ansicht + JSON.stringify(p)} fallback={<Laedt />}>
         {ansicht === "terminal" ? <AnsichtTerminal />
-          : ansicht === "jetzt" ? <AnsichtJetzt />
-            : ansicht === "rueckblick" ? <AnsichtRueckblick p={p} />
-              : <AnsichtBilanz />}
+          : ansicht === "monty" ? <AnsichtMonty p={p} />
+            : ansicht === "jetzt" ? <AnsichtJetzt />
+              : ansicht === "rueckblick" ? <AnsichtRueckblick p={p} />
+                : <AnsichtBilanz />}
       </Suspense>
     </div>
   );
@@ -174,6 +179,101 @@ async function AnsichtTerminal() {
       <Luecken leer={bericht.leer} cotQuelle={bericht.cotQuelle} />
     </>
   );
+}
+
+/* ------------------------------------------------------------- Monty */
+
+/**
+ * Monty: nur das, was Kerim tatsächlich benutzt.
+ *
+ * Commercials gegen Retail und Saisonalität — kein Zins, keine Inflation, kein
+ * Risiko-Regime. Die Seite beantwortet zwei Fragen: wo stehen die grossen
+ * Halter gerade gegen die Kleinen, und was hat dieser Kalendermonat in der
+ * Vergangenheit getan.
+ */
+async function AnsichtMonty({ p }: { p: Record<string, string | string[] | undefined> }) {
+  const heute = heuteISO();
+  const fenster: Fenster = FENSTER.find((f) => String(f) === einer(p.jahre)) ?? 20;
+  const cot = await baueMontyCot(heute);
+
+  return (
+    <>
+      <Card>
+        <CardTitle>Commercials gegen Retail — Stand {heute}</CardTitle>
+        <CotStatistikTabelle zeilen={cot.waehrungen} />
+        <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+          <strong>Gestreckt</strong> heisst: Commercials und Nicht-Meldepflichtige stehen
+          gleichzeitig an entgegengesetzten Rändern ihrer eigenen drei Jahre. Die Richtung
+          folgt den Commercials. Die Spalte daneben sagt, wie oft das in den letzten drei
+          Jahren überhaupt vorkam — steht dort ein hoher Anteil, ist die Streckung kein
+          Extrem, sondern der Normalzustand.
+        </p>
+        <p className="mt-2 rounded-xl bg-warn-tint px-3 py-2.5 text-[11px] leading-relaxed text-ink-soft">
+          <strong>Warum nicht einfach „die zeigen auseinander":</strong> im COT gilt netto
+          <em> Commercials ≈ −(Grossspekulanten + Retail)</em>. Sie stehen fast immer gegen
+          Retail, weil jemand die Gegenseite halten muss. Ein Filter auf das blosse
+          Vorzeichen hätte in neun von zehn Wochen zugestimmt — das ist Buchhaltung, kein
+          Signal. „Retail" sind hier ausserdem die Kleinspekulanten am{" "}
+          <strong>Termin</strong>markt, nicht CFD-Retail; ein Proxy, dafür mit Jahrzehnten
+          Historie.
+        </p>
+      </Card>
+
+      <Card>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <CardTitle className="mb-0">Saisonalität — alle 28 Paare</CardTitle>
+          <span className="ml-auto flex flex-wrap items-center gap-1.5">
+            {FENSTER.map((f) => (
+              <Link key={f} href={`/trading/confluence?ansicht=monty&jahre=${f}`}
+                className={cx("num rounded-lg px-2.5 py-1 text-xs transition duration-150 ease-tactile",
+                  fenster === f ? "bg-sand text-ink" : "text-ink-muted hover:text-ink")}>
+                {f} Jahre
+              </Link>
+            ))}
+          </span>
+        </div>
+
+        <div className="max-h-[36rem] overflow-auto">
+          <table className="w-full min-w-[860px] border-collapse text-sm">
+            <SaisonKopf />
+            <tbody>
+              {MONTY_PAARE.map((paar) => (
+                <Suspense key={paar} fallback={<SaisonZeileLaedt paar={paar} />}>
+                  {/* Jede Zeile laedt ihre eigenen Kurse: 28 Paare mal rund 5000
+                      Tageskerzen waeren in einem Zug 140 000 Zeilen. So fuellt sich
+                      die Tabelle Paar fuer Paar, statt in den Timeout zu laufen.
+                      Nach dem ersten Aufruf sind die Kurse 24 h gecacht. */}
+                  <SaisonZeilenLader paar={paar} fenster={fenster} heute={heute} />
+                </Suspense>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+          Die Zahl ist der <strong>Median</strong> der Monatsrenditen in Prozent, nicht
+          der Durchschnitt: ein einziges Ausreisserjahr verschiebt den Durchschnitt, den
+          Median nicht. Farbig ist ein Monat nur, wenn er <strong>belegt</strong> ist -
+          das Wilson-Intervall seiner Trefferquote darf die 50 % nicht enthalten. Sieben
+          von zehn positiven Jahren sehen deutlich aus und sind es nicht.
+        </p>
+        <p className="mt-2 text-[11px] leading-relaxed text-ink-faint">
+          Mindestens {MIN_JAHRE} bewegte Jahre je Monat, sonst bleibt das Feld blass.
+          Jahre ganz ohne Bewegung zaehlen in keine Richtung - kein Ergebnis ist kein
+          Verlust. Weiter als {MAX_JAHRE} Jahre zurueck geht es nicht: OANDA liefert
+          hoechstens 5000 Tageskerzen je Instrument.
+        </p>
+      </Card>
+    </>
+  );
+}
+
+/** Eine Zeile der Saison-Matrix - eigene Komponente, damit Suspense greift. */
+async function SaisonZeilenLader({ paar, fenster, heute }: {
+  paar: string; fenster: Fenster; heute: string;
+}) {
+  const bild = await baueSaisonZeile(paar, fenster, heute);
+  return <SaisonZeile bild={bild} />;
 }
 
 /* ------------------------------------------------------------- Jetzt */

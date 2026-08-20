@@ -25,7 +25,7 @@ import {
  * anderes als „Jetzt" am selben Tag, wäre die ganze Seite wertlos.
  */
 
-export type Ansicht = "terminal" | "jetzt" | "rueckblick" | "bilanz";
+export type Ansicht = "terminal" | "monty" | "jetzt" | "rueckblick" | "bilanz";
 
 /* ------------------------------------------------------------- Jetzt */
 

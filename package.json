@@ -13,7 +13,8 @@
     "check:morgen": "npx -y tsx tools/checks/morgen.mts",
     "check:cot": "npx -y tsx tools/checks/cot.mts",
     "check:saison": "npx -y tsx tools/checks/saison.mts",
-    "check:auswertung": "npx -y tsx tools/checks/auswertung.mts"
+    "check:auswertung": "npx -y tsx tools/checks/auswertung.mts",
+    "check:monty": "npx -y tsx tools/checks/monty.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
