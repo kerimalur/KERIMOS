@@ -294,7 +294,13 @@ export const VORLAUF_TAGE = 1250;
 
 const gecacht = unstable_cache(
   (von: string, bis: string) => ladeRoh(von, bis),
-  ["confluence-roh-v1"],
+  // Schluesselname beim JEDEM Formwechsel hochzaehlen. unstable_cache legt das
+  // zurueckgegebene Objekt ab, nicht die Abfrage — kommen Felder dazu (v2:
+  // cotKomm und cotRetail), liefert ein warmer Eintrag aus der Zeit davor
+  // stillschweigend die alte Form weiter. Genau daran lag die leere
+  // Monty-Tabelle am 20.08.: die Rechnung stimmte, die Daten waren aus dem
+  // Cache von vorher.
+  ["confluence-roh-v2"],
   // Die Quellen sind täglich bis wöchentlich. Häufiger zu fragen bringt
   // nichts ausser Last auf einer Datenbank, die der Screener ohnehin braucht.
   { revalidate: 1800, tags: ["confluence"] },
