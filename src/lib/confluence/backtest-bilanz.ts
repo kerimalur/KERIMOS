@@ -2,7 +2,11 @@ import "server-only";
 import { ladeFuerSpanne, type Ladebericht } from "./daten";
 import { baueRegime, bewertePaar, FAKTOR_LABEL, type RegimeLage, type FaktorKey } from "./faktoren";
 import { gruppiere, vergleiche, vetoBilanz, aufteilung, type Gruppe, type Vergleich, type VetoBilanz, type Aufteilung } from "./bilanz";
-import { ergebnisKreuz, faktorBilanz, auffaellige, type TiefenTrade, type KreuzZeile, type FaktorZeile, type Auffaellig } from "./tiefe";
+import {
+  ergebnisKreuz, faktorBilanz, auffaellige, jahresVerteilung, zeitBefund,
+  type TiefenTrade, type KreuzZeile, type FaktorZeile, type Auffaellig,
+  type JahresZeile, type ZeitBefund,
+} from "./tiefe";
 import { berechneR, RESULT_LABEL, type BacktestResult, type NativeBacktestTrade } from "@/lib/backtest-types";
 
 /**
@@ -46,6 +50,8 @@ export interface BacktestFundamentalBild {
   veto: VetoBilanz;
   verteilung: Aufteilung[];
   kreuz: KreuzZeile[];
+  jahre: JahresZeile[];
+  zeit: ZeitBefund;
   faktoren: FaktorZeile[];
   auffaellig: Auffaellig[];
   trades: TiefenTrade[];
@@ -67,7 +73,12 @@ const LEER: BacktestFundamentalBild = {
     ohneVeto: { n: 0, treffer: 0, quote: null, unten: null, oben: null },
     satz: "Noch keine Trades.",
   },
-  verteilung: [], kreuz: [], faktoren: [], auffaellig: [], trades: [],
+  verteilung: [], kreuz: [],
+  jahre: [], zeit: {
+    anteilFrueh: null, anteilSpaet: null, trennDatum: null, verdaechtig: false,
+    satz: "Noch keine Trades.",
+  },
+  faktoren: [], auffaellig: [], trades: [],
   bericht: null, paare: [],
 };
 
@@ -127,6 +138,8 @@ export async function baueBacktestFundamental(
     veto: vetoBilanz(trades),
     verteilung: aufteilung(trades),
     kreuz: ergebnisKreuz(trades, KREUZ_ERGEBNISSE),
+    jahre: jahresVerteilung(trades),
+    zeit: zeitBefund(trades),
     faktoren: faktorBilanz(trades, FAKTOR_KEYS),
     auffaellig: auffaellige(trades, "sl", "full_tp"),
     trades: trades.sort((a, b) => b.datum.localeCompare(a.datum)),

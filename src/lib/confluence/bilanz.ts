@@ -151,7 +151,8 @@ export function vergleiche(gruppen: Gruppe[]): Vergleich {
   if (mit.n < MIN_JE_SEITE || gegen.n < MIN_JE_SEITE) {
     return {
       mit, gegen, abstand, abstandR, befund: "zu-wenig",
-      satz: `Noch zu wenig Material: ${mit.n} Trades mit Rückenwind, ${gegen.n} dagegen. `
+      satz: `Noch zu wenig Material: ${mit.n} gewertete Trades mit Rückenwind, ${gegen.n} dagegen `
+        + `(Break-even zählt zur Gruppe, aber nicht in die Quote). `
         + `Unter ${MIN_JE_SEITE} je Seite ist jede Differenz Zufall — weiter sammeln.`,
     };
   }
@@ -168,7 +169,7 @@ export function vergleiche(gruppen: Gruppe[]): Vergleich {
       satz: `${(mit.quote! * 100).toFixed(1)} % gegen ${(gegen.quote! * 100).toFixed(1)} % — `
         + `die Intervalle überlappen. Das ist **kein Nachweis**, auch wenn die `
         + `Differenz von ${abstand! > 0 ? "+" : ""}${abstand!.toFixed(1)} Punkten gross aussieht. `
-        + `Bei ${mit.n} gegen ${gegen.n} Trades braucht es mehr Abstand.`,
+        + `Bei ${mit.n} gegen ${gegen.n} gewerteten Trades braucht es mehr Abstand.`,
     };
   }
 

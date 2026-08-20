@@ -2,7 +2,10 @@ import Link from "next/link";
 import { Badge, Card, CardTitle, cx } from "@/components/ui";
 import { Intervall, GruppenTabelle, BefundKarte, VetoKarte } from "@/components/confluence/bilanz-teile";
 import { LAGER_LABEL } from "@/lib/confluence/bilanz";
-import type { KreuzZeile, FaktorZeile, Auffaellig, FaktorBefund } from "@/lib/confluence/tiefe";
+import { LAGER_ORDNUNG } from "@/lib/confluence/tiefe";
+import type {
+  KreuzZeile, FaktorZeile, Auffaellig, FaktorBefund, JahresZeile, ZeitBefund,
+} from "@/lib/confluence/tiefe";
 import type { BacktestFundamentalBild } from "@/lib/confluence/backtest-bilanz";
 
 /**
@@ -51,7 +54,9 @@ export function BacktestFundamental({ bild, ergebnisLabel }: {
           {bild.uebersprungen > 0 && ` · ${bild.uebersprungen} ohne Ergebnis übersprungen`}
           {bild.paare.length > 0 && ` · ${bild.paare.join(", ")}`}.
           Jeder Trade wurde mit dem Stand <strong>seines</strong> Handelstages bewertet,
-          inklusive Veröffentlichungsverzug.
+          inklusive Veröffentlichungsverzug. Der Vergleich oben zählt nur
+          <strong> gewertete</strong> Trades — Break-even gehört zur Gruppe, aber nicht in
+          eine Trefferquote. Deshalb stehen dort kleinere Zahlen als in der Tabelle.
         </p>
         <p className="mt-2 rounded-xl bg-warn-tint px-3 py-2.5 text-[11px] leading-relaxed text-ink-soft">
           <strong>Was diese Zahlen nicht sind:</strong> ein Out-of-Sample-Test. Du hast
@@ -69,6 +74,23 @@ export function BacktestFundamental({ bild, ergebnisLabel }: {
           Eine Trefferquote kann gleich bleiben, während sich die <strong>Art</strong> der
           Gewinne verschiebt. Wenn mit Rückenwind gleich oft gewonnen wird, aber öfter
           voll durchläuft statt am Break-even zu enden, steht das nur in dieser Tabelle.
+        </p>
+      </Card>
+
+      <Card>
+        <CardTitle>Verteilt über die Jahre</CardTitle>
+        <JahresTabelle jahre={bild.jahre} />
+        <p className={cx("mt-3 rounded-xl px-3 py-2.5 text-[11px] leading-relaxed",
+          bild.zeit.verdaechtig ? "bg-bad-tint text-ink-soft" : "bg-sand/50 text-ink-muted")}>
+          {bild.zeit.verdaechtig && <strong>Achtung: </strong>}
+          {bild.zeit.satz}
+        </p>
+        <p className="mt-2 text-[11px] leading-relaxed text-ink-faint">
+          Warum das hier steht: „kein Urteil möglich" entsteht, wenn dem Modell die Daten
+          fehlen — und Daten fehlen vor allem früh, weil die Kursreihen für das
+          Risiko-Regime nicht so weit zurückreichen wie deine ältesten Trades. Häufen sich
+          die urteilslosen Trades am Anfang, trennt die Tabelle ganz oben nicht nach
+          Fundamentallage, sondern nach Jahr.
         </p>
       </Card>
 
@@ -164,6 +186,55 @@ function KreuzTabelle({ kreuz, labels }: { kreuz: KreuzZeile[]; labels: string[]
               <td className={cx("num px-2 py-2 text-right",
                 z.gesamtR > 0 ? "text-good-bright" : z.gesamtR < 0 ? "text-bad-bright" : "text-ink-faint")}>
                 {z.gesamtR > 0 ? "+" : ""}{z.gesamtR.toFixed(2)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------- Jahre */
+
+function JahresTabelle({ jahre }: { jahre: JahresZeile[] }) {
+  if (jahre.length === 0) return null;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[620px] border-collapse text-sm">
+        <thead>
+          <tr className="border-b border-line text-xs text-ink-muted">
+            <th className="px-2 py-2 text-left font-normal">Jahr</th>
+            <th className="px-2 py-2 text-right font-normal">Trades</th>
+            {LAGER_ORDNUNG.map((l) => (
+              <th key={l} className="px-2 py-2 text-right font-normal">{LAGER_LABEL[l]}</th>
+            ))}
+            <th className="px-2 py-2 text-right font-normal">Trefferquote</th>
+            <th className="px-2 py-2 text-right font-normal">Ø R</th>
+          </tr>
+        </thead>
+        <tbody>
+          {jahre.map((z) => (
+            <tr key={z.jahr} className="border-b border-line/50 last:border-b-0">
+              <td className="num px-2 py-2 text-ink">{z.jahr}</td>
+              <td className="num px-2 py-2 text-right text-ink-soft">{z.n}</td>
+              {z.proLager.map((n, i) => (
+                <td key={i} className={cx("num px-2 py-2 text-right",
+                  n === 0 ? "text-ink-faint" : "text-ink-soft")}>
+                  {n}
+                  {n > 0 && z.n > 0 && (
+                    <span className="ml-1 text-[11px] text-ink-faint">
+                      {((n / z.n) * 100).toFixed(0)}%
+                    </span>
+                  )}
+                </td>
+              ))}
+              <td className="px-2 py-2 text-right"><Intervall q={z.quote} /></td>
+              <td className={cx("num px-2 py-2 text-right",
+                (z.erwartung ?? 0) > 0 ? "text-good-bright"
+                  : (z.erwartung ?? 0) < 0 ? "text-bad-bright" : "text-ink-faint")}>
+                {z.erwartung === null ? "·" : `${z.erwartung > 0 ? "+" : ""}${z.erwartung.toFixed(2)}`}
               </td>
             </tr>
           ))}

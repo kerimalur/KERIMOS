@@ -172,6 +172,100 @@ export function faktorBilanz(trades: TiefenTrade[], keys: FaktorKey[]): FaktorZe
   });
 }
 
+/* ------------------------------------------------------------- Zeitachse */
+
+export const LAGER_ORDNUNG: Lager[] = ["rueckenwind", "uneinig", "gegenwind", "ohne"];
+
+export interface JahresZeile {
+  jahr: string;
+  n: number;
+  /** Anzahl je Lager, in der Reihenfolge von LAGER_ORDNUNG. */
+  proLager: number[];
+  quote: Quote;
+  erwartung: number | null;
+}
+
+/** Wie sich Trades und Lager ueber die Jahre verteilen. */
+export function jahresVerteilung(trades: TiefenTrade[]): JahresZeile[] {
+  const jahre = [...new Set(trades.map((t) => t.datum.slice(0, 4)))].sort();
+
+  return jahre.map((jahr) => {
+    const eigene = trades.filter((t) => t.datum.startsWith(jahr));
+    const gewertet = eigene.filter((t) => t.gewonnen !== null);
+    return {
+      jahr,
+      n: eigene.length,
+      proLager: LAGER_ORDNUNG.map(
+        (l) => eigene.filter((t) => lagerVon(t.urteil) === l).length),
+      quote: wilson(gewertet.filter((t) => t.gewonnen === true).length, gewertet.length),
+      erwartung: eigene.length > 0
+        ? eigene.reduce((s, t) => s + t.r, 0) / eigene.length : null,
+    };
+  });
+}
+
+export interface ZeitBefund {
+  /** Anteil "kein Urteil" in der ersten Haelfte des Zeitraums, 0…1. */
+  anteilFrueh: number | null;
+  anteilSpaet: number | null;
+  trennDatum: string | null;
+  verdaechtig: boolean;
+  satz: string;
+}
+
+/** Ab wie vielen Prozentpunkten Unterschied die Aufteilung verdaechtig ist. */
+export const ZEIT_GRENZE = 0.25;
+
+/**
+ * Ist die Lager-Aufteilung in Wahrheit eine Zeitachse?
+ *
+ * Die Gruppe "kein Urteil moeglich" entsteht, wenn dem Modell die Daten
+ * fehlen — und Daten fehlen vor allem FRUEH: die Kursreihen fuer das
+ * Risiko-Regime reichen nicht so weit zurueck wie die aeltesten Trades.
+ * Haeufen sich die urteilslosen Trades in der ersten Haelfte, dann trennt die
+ * Tabelle oben nicht nach Fundamentallage, sondern nach Jahr. Und wenn sich
+ * die eigene Erfassung ueber die Jahre veraendert hat, erklaert das den
+ * Unterschied zwischen den Lagern vollstaendig, ohne dass ein einziger
+ * Zinssatz daran beteiligt waere.
+ *
+ * Bewusst nur ein Verdacht und kein Urteil: der Test sagt, dass zwei
+ * Erklaerungen im Spiel sind, nicht welche stimmt.
+ */
+export function zeitBefund(trades: TiefenTrade[]): ZeitBefund {
+  const sortiert = [...trades].sort((a, b) => a.datum.localeCompare(b.datum));
+  if (sortiert.length < 8) {
+    return {
+      anteilFrueh: null, anteilSpaet: null, trennDatum: null, verdaechtig: false,
+      satz: "Zu wenige Trades fuer einen Zeitvergleich.",
+    };
+  }
+
+  const mitte = Math.floor(sortiert.length / 2);
+  const frueh = sortiert.slice(0, mitte);
+  const spaet = sortiert.slice(mitte);
+  const anteil = (l: TiefenTrade[]) =>
+    l.filter((t) => lagerVon(t.urteil) === "ohne").length / l.length;
+
+  const a = anteil(frueh);
+  const b = anteil(spaet);
+  const verdaechtig = a - b >= ZEIT_GRENZE;
+  const p = (v: number) => `${(v * 100).toFixed(0)} %`;
+
+  return {
+    anteilFrueh: a,
+    anteilSpaet: b,
+    trennDatum: spaet[0].datum,
+    verdaechtig,
+    satz: verdaechtig
+      ? `In der ersten Haelfte (bis ${frueh[frueh.length - 1].datum}) haben ${p(a)} der `
+        + `Trades kein Urteil, danach nur noch ${p(b)}. Die Aufteilung folgt damit auch `
+        + `der Datenlage und nicht nur der Fundamentallage — der Vergleich oben `
+        + `vermischt beides.`
+      : `"Kein Urteil" verteilt sich gleichmaessig ueber die Zeit (${p(a)} frueh, `
+        + `${p(b)} spaet). Die Aufteilung ist also keine verkappte Zeitachse.`,
+  };
+}
+
 /* ------------------------------------------------- Kandidaten fürs Anschauen */
 
 export interface Auffaellig {

@@ -9,7 +9,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "check:meal-swap": "node tools/checks/meal-swap.mjs",
-    "check:essen-bonus": "npx -y tsx tools/checks/essen-bonus.mts"
+    "check:essen-bonus": "npx -y tsx tools/checks/essen-bonus.mts",
+    "check:morgen": "npx -y tsx tools/checks/morgen.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

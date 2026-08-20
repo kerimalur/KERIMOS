@@ -22,7 +22,8 @@ import {
 } from "../../src/lib/confluence/bilanz";
 import { nettoReihe } from "../../src/lib/confluence/rechnen";
 import {
-  ergebnisKreuz, faktorBilanz, auffaellige, type TiefenTrade,
+  ergebnisKreuz, faktorBilanz, auffaellige, jahresVerteilung, zeitBefund,
+  LAGER_ORDNUNG, ZEIT_GRENZE, type TiefenTrade,
 } from "../../src/lib/confluence/tiefe";
 
 let fails = 0;
@@ -673,6 +674,48 @@ check("erwartungsgemaesse Trades stehen nicht drin",
   kandidaten.every((g) => g.trades.every((t) => t.link !== "https://tv/3")), true);
 check("leere Gruppen fallen weg",
   auffaellige([tt({ urteil: "neutral", ergebnis: "breakeven" })], "sl", "full_tp").length, 0);
+
+/* ------------------------------------------------------------- Zeitachse */
+// Der Test, der die Auswertung vor ihrem eigenen naheliegendsten Trugschluss
+// schuetzt: wenn "kein Urteil" nur heisst "aus einem Jahr, fuer das die Daten
+// fehlen", vergleicht die Tabelle ganz oben Jahre und keine Fundamentallagen.
+
+const amTag = (datum: string, p: Partial<TiefenTrade> = {}) => tt({ datum, ...p });
+
+const jahre = jahresVerteilung([
+  amTag("2021-03-01"), amTag("2021-07-01", { urteil: "gegenwind" }),
+  amTag("2023-05-05", { urteil: "neutral" }),
+]);
+check("ein Eintrag je Jahr", jahre.map((z) => z.jahr), ["2021", "2023"]);
+check("Jahre sind aufsteigend sortiert",
+  jahre.map((z) => z.jahr).join() === [...jahre.map((z) => z.jahr)].sort().join(), true);
+check("Lager werden je Jahr gezaehlt", jahre[0].proLager,
+  LAGER_ORDNUNG.map((l) => (l === "rueckenwind" || l === "gegenwind" ? 1 : 0)));
+check("Summe je Jahr stimmt",
+  jahre.map((z) => z.proLager.reduce((a, b) => a + b, 0)), jahre.map((z) => z.n));
+
+// Alle urteilslosen Trades liegen frueh -> die Aufteilung ist eine Zeitachse.
+const verkappt = zeitBefund([
+  ...Array.from({ length: 6 }, (_, i) => amTag(`2021-0${i + 1}-01`, { urteil: "zuwenig" })),
+  ...Array.from({ length: 6 }, (_, i) => amTag(`2026-0${i + 1}-01`, { urteil: "rueckenwind" })),
+]);
+check("gehaeufte Urteilslosigkeit wird gemeldet", verkappt.verdaechtig, true);
+check("und der Satz warnt", verkappt.satz.includes("Datenlage"), true);
+check("Trenndatum liegt in der zweiten Haelfte", verkappt.trennDatum, "2026-01-01");
+
+// Gleichmaessig verteilt -> kein Verdacht. Ohne diese Gegenprobe koennte der
+// Test oben auch bestehen, weil die Funktion IMMER warnt.
+const sauber = zeitBefund([
+  ...Array.from({ length: 6 }, (_, i) => amTag(`2021-0${i + 1}-01`, { urteil: i < 3 ? "zuwenig" : "rueckenwind" })),
+  ...Array.from({ length: 6 }, (_, i) => amTag(`2026-0${i + 1}-01`, { urteil: i < 3 ? "zuwenig" : "rueckenwind" })),
+]);
+check("gleichmaessige Verteilung ist kein Verdacht", sauber.verdaechtig, false);
+check("und der Satz sagt das auch", sauber.satz.includes("keine verkappte Zeitachse"), true);
+
+check("zu wenige Trades ergeben keinen Zeitbefund",
+  zeitBefund([amTag("2021-01-01")]).verdaechtig, false);
+check("Zeit-Grenze ist ein echter Schwellenwert", ZEIT_GRENZE > 0 && ZEIT_GRENZE < 1, true);
+check("ohne Trades keine Jahreszeilen", jahresVerteilung([]).length, 0);
 
 console.log(fails === 0 ? "\nAlle Kontrollwerte gruen." : `\n${fails} Kontrollwert(e) FAIL.`);
 process.exitCode = fails === 0 ? 0 : 1;

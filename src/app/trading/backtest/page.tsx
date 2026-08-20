@@ -7,6 +7,7 @@ import {
 import { tradingConfigured } from "@/lib/supabase/trading";
 import {
   computeNativeBacktestStats, computeBreakdown, computeInsights, computeEquityKurve,
+  R_FAKTOR_STANDARD,
   BREAKDOWN_DIMENSIONS,
   type BreakdownDimension, type BreakdownRow, type ChecklistPunkt,
 } from "@/lib/backtest-types";
@@ -326,6 +327,22 @@ function AuswertungsAnsicht({
             tone={stats.gesamtR > 0 ? "good" : stats.gesamtR < 0 ? "bad" : "neutral"}
             value={`${stats.gesamtR > 0 ? "+" : ""}${stats.gesamtR.toFixed(2)}`} />
         </div>
+        <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+          <strong>Woher das R kommt:</strong> es wird aus Ergebnis und geplantem RR
+          gerechnet, nicht am Chart abgelesen — Full TP ergibt {R_FAKTOR_STANDARD.full_tp} × RR,
+          Teil-TP-dann-BE {R_FAKTOR_STANDARD.teil_tp_be} × RR, ein Stop kostet immer genau 1 R.
+          Das hat zwei Folgen, die man beim Lesen kennen muss.
+        </p>
+        <p className="mt-1.5 text-[11px] leading-relaxed text-ink-faint">
+          Erstens sind <strong>Trefferquote und Ø R nicht unabhängig</strong>: beide kommen aus
+          denselben Ergebnis-Zählungen. Wenn zwei Gruppen sich in der Trefferquote
+          unterscheiden, ist ein Unterschied im Ø R keine zweite Bestätigung, sondern
+          dieselbe Zahl von der anderen Seite — der einzige zusätzliche Einfluss ist das
+          geplante RR. Zweitens ist ein Stop mit genau −1 R{" "}
+          <strong>systematisch zu günstig</strong>: Spread, Slippage und Kurslücken kosten in
+          Wirklichkeit etwas mehr, und zwar immer in dieselbe Richtung. Profit Factor und
+          Expectancy sind deshalb eher eine Obergrenze als eine Messung.
+        </p>
       </Card>
 
       <Card>
