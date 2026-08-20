@@ -14,7 +14,9 @@
     "check:cot": "npx -y tsx tools/checks/cot.mts",
     "check:saison": "npx -y tsx tools/checks/saison.mts",
     "check:auswertung": "npx -y tsx tools/checks/auswertung.mts",
-    "check:monty": "npx -y tsx tools/checks/monty.mts"
+    "check:monty": "npx -y tsx tools/checks/monty.mts",
+    "check:pine": "npx -y tsx tools/checks/pine.mts",
+    "check:vorwaerts": "npx -y tsx tools/checks/vorwaerts.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

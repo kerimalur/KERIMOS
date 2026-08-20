@@ -201,6 +201,18 @@ async function AnsichtMonty({ p }: { p: Record<string, string | string[] | undef
       <Card>
         <CardTitle>Commercials gegen Retail — Stand {heute}</CardTitle>
         <CotStatistikTabelle zeilen={cot.waehrungen} />
+        {Object.values(cot.gruppen).every((g) => g.komm === 0) && (
+          <p className="mt-3 rounded-xl bg-bad-tint px-3 py-2.5 text-[11px] leading-relaxed text-ink-soft">
+            <strong>Keine Legacy-COT-Zeilen geladen.</strong> Die Tabelle ist nicht
+            deshalb leer, weil nichts gestreckt ist, sondern weil Commercials und
+            Nicht-Meldepflichtige gar keine Wochenwerte haben. Mögliche Ursachen, in
+            dieser Reihenfolge: ein alter Eintrag im Seiten-Cache (löst sich nach 30
+            Minuten von selbst), oder in <code>cot_reports</code> stehen die Spalten
+            <code> comm_long</code> / <code>nonrept_long</code> nur als NULL, weil der
+            Screener sie erst später mitgeschrieben hat. Dann hilft nur ein voller
+            COT-Backfill.
+          </p>
+        )}
         <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
           <strong>Gestreckt</strong> heisst: Commercials und Nicht-Meldepflichtige stehen
           gleichzeitig an entgegengesetzten Rändern ihrer eigenen drei Jahre. Die Richtung

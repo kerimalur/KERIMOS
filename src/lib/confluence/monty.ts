@@ -23,10 +23,16 @@ export interface MontyCot {
   waehrungen: CotStatistik[];
   /** Wie viele der acht Währungen gerade gestreckt sind. */
   gestreckt: number;
+  /**
+   * Wochenwerte je Währung, direkt aus dem Ladebericht. Steht hier überall 0,
+   * ist eine leere Tabelle keine Anzeigefrage, sondern eine Datenlücke — und
+   * genau das soll man sehen können, ohne im Code zu suchen.
+   */
+  gruppen: Record<string, { komm: number; retail: number }>;
 }
 
 export async function baueMontyCot(stichtag: string): Promise<MontyCot> {
-  const { daten } = await ladeFuerStichtag(stichtag);
+  const { daten, bericht } = await ladeFuerStichtag(stichtag);
   const waehrungen = G8.map((c) => cotStatistik(daten, c, stichtag))
     // Gestreckte zuerst — das ist das, wonach man auf dieser Seite sucht.
     .sort((a, b) => Math.abs(b.jetzt.divergenz) - Math.abs(a.jetzt.divergenz)
@@ -36,6 +42,7 @@ export async function baueMontyCot(stichtag: string): Promise<MontyCot> {
     stichtag,
     waehrungen,
     gestreckt: waehrungen.filter((w) => w.jetzt.divergenz !== 0).length,
+    gruppen: bericht.cotGruppen ?? {},
   };
 }
 

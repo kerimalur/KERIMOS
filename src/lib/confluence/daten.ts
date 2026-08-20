@@ -127,6 +127,13 @@ export interface Ladebericht {
   zinsQuelle: Record<string, "bis-taeglich" | "oecd-monatlich" | "keine">;
   /** Serien, die gar nichts geliefert haben. */
   leer: string[];
+  /**
+   * Wie viele Wochenwerte Commercials und Nicht-Meldepflichtige je Waehrung
+   * hatten. Steht dort ueberall 0, fehlen die Legacy-Zeilen — und dann ist
+   * eine leere Monty-Tabelle kein Anzeigefehler, sondern eine Datenluecke.
+   * Ohne diese Zahl raet man beim Suchen.
+   */
+  cotGruppen: Record<string, { komm: number; retail: number }>;
   von: string;
   bis: string;
 }
@@ -138,7 +145,7 @@ export interface Geladen {
 
 async function ladeRoh(von: string, bis: string): Promise<Geladen> {
   const db = createTradingClient();
-  const bericht: Ladebericht = { cotQuelle: {}, zinsQuelle: {}, leer: [], von, bis };
+  const bericht: Ladebericht = { cotQuelle: {}, zinsQuelle: {}, cotGruppen: {}, leer: [], von, bis };
   if (!db) {
     bericht.leer.push("Trading-Datenbank nicht verbunden");
     return { daten: LEERE_DATEN, bericht };
@@ -229,6 +236,10 @@ async function ladeRoh(von: string, bis: string): Promise<Geladen> {
     cotRealMoney[ccy] = nettoReihe(tffZeilen.map((z) => ({
       datum: z.report_date, lang: z.asset_mgr_long, kurz: z.asset_mgr_short, oi: z.open_interest,
     })));
+
+    bericht.cotGruppen[ccy] = {
+      komm: cotKomm[ccy].length, retail: cotRetail[ccy].length,
+    };
 
     const ausTff = nettoReihe(
       tffZeilen.map((z) => ({

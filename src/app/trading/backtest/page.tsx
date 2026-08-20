@@ -23,6 +23,7 @@ import { BacktestTradeListe } from "@/components/backtest-trade-liste";
 import { Card, CardTitle, Stat, Badge, Empty, Input, Button, cx } from "@/components/ui";
 import { BacktestFundamental } from "@/components/backtest-fundamental";
 import { RVerteilung, DrawdownFlaeche } from "@/components/backtest-bilder";
+import { BacktestExport } from "@/components/backtest-export";
 import { baueBacktestFundamental, KREUZ_LABEL } from "@/lib/confluence/backtest-bilanz";
 import { dimensionenAus, DIM_ALLE, DIM_LABEL, type DimKey } from "@/lib/confluence/auswertung";
 import { FENSTER, type Fenster } from "@/lib/confluence/saison";
@@ -279,6 +280,7 @@ const TEILE = [
   { key: "fundamental", label: "Fundamental" },
   { key: "verluste", label: "Verluste" },
   { key: "trades", label: "Alle Trades" },
+  { key: "export", label: "Export" },
 ] as const;
 
 type TeilKey = (typeof TEILE)[number]["key"];
@@ -526,6 +528,18 @@ function AuswertungsAnsicht({
             immer viele — sondern <strong>welche hat anteilig mehr</strong>, als ihre Grösse
             erwarten liesse.
           </p>
+        </Card>
+      ) : teil === "export" ? (
+        <Card>
+          <CardTitle>Trades nach TradingView</CardTitle>
+          <BacktestExport paar={session.pair}
+            trades={trades.map((t) => ({
+              datum: t.occurred_on.slice(0, 10),
+              paar: t.pair,
+              richtung: (t.direction === "short" ? -1 : 1) as -1 | 1,
+              ergebnis: t.result,
+              r: t.r_multiple ?? 0,
+            }))} />
         </Card>
       ) : (
         <>
