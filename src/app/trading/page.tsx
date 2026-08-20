@@ -5,6 +5,7 @@ import {
 } from "@/lib/supabase/trading";
 import { addWatchlistPair, removeWatchlistPair } from "@/lib/trading-actions";
 import { Card, CardTitle, Badge, Empty, Input, Select, Label, Button } from "@/components/ui";
+import { TradingViewWatchlist } from "@/components/tradingview-watchlist";
 import { dateLabel } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -178,6 +179,17 @@ export default async function TradingPage() {
           </div>
           <Button type="submit" variant="ghost">Linie speichern</Button>
         </form>
+      </Card>
+
+      <Card>
+        <CardTitle>Markt im Blick</CardTitle>
+        <TradingViewWatchlist />
+        <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+          Live-Kurse aller 28 Paare direkt von TradingView. Das Widget kennt deine
+          GVA-Linien und Setup-Zustände <strong>nicht</strong> — was im Radar auf
+          „läuft noch" steht, siehst du weiter im Cockpit. Hier steht der Markt
+          daneben, nicht statt dessen.
+        </p>
       </Card>
 
       <Card>

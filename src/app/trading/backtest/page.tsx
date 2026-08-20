@@ -7,7 +7,7 @@ import {
 import { tradingConfigured } from "@/lib/supabase/trading";
 import {
   computeNativeBacktestStats, computeBreakdown, computeInsights, computeEquityKurve,
-  R_FAKTOR_STANDARD,
+  rVerteilung, drawdownKurve, maxDrawdown, serien, R_FAKTOR_STANDARD,
   BREAKDOWN_DIMENSIONS,
   type BreakdownDimension, type BreakdownRow, type ChecklistPunkt,
 } from "@/lib/backtest-types";
@@ -22,7 +22,10 @@ import { BacktestTradeForm } from "@/components/backtest-trade-form";
 import { BacktestTradeListe } from "@/components/backtest-trade-liste";
 import { Card, CardTitle, Stat, Badge, Empty, Input, Button, cx } from "@/components/ui";
 import { BacktestFundamental } from "@/components/backtest-fundamental";
+import { RVerteilung, DrawdownFlaeche } from "@/components/backtest-bilder";
 import { baueBacktestFundamental, KREUZ_LABEL } from "@/lib/confluence/backtest-bilanz";
+import { dimensionenAus, DIM_ALLE, DIM_LABEL, type DimKey } from "@/lib/confluence/auswertung";
+import { FENSTER, type Fenster } from "@/lib/confluence/saison";
 
 export const dynamic = "force-dynamic";
 
@@ -197,7 +200,7 @@ export default async function BacktestPage({
         </Card>
       ) : ansicht === "auswerten" ? (
         <AuswertungsAnsicht session={currentSession} trades={trades} stats={stats}
-          kategorien={kategorien} />
+          kategorien={kategorien} sp={sp} />
       ) : (
         <EintragenAnsicht session={currentSession} trades={trades}
           kategorien={kategorien} checkliste={checkliste} />
@@ -261,11 +264,24 @@ function EintragenAnsicht({
  * lädt. Läuft still leer, wenn die Trading-Datenbank nicht verbunden ist —
  * das Backtest-Journal selbst hängt nicht daran.
  */
-async function FundamentalBlock({ trades }: { trades: Trade[] }) {
+async function FundamentalBlock({ trades, dims, saisonFenster }: {
+  trades: Trade[]; dims: DimKey[]; saisonFenster: Fenster;
+}) {
   if (!tradingConfigured()) return null;
-  const bild = await baueBacktestFundamental(trades);
+  const bild = await baueBacktestFundamental(trades, { dims, saisonFenster });
   return <BacktestFundamental bild={bild} ergebnisLabel={KREUZ_LABEL} />;
 }
+
+/* ------------------------------------------------------------ Abschnitte */
+
+const TEILE = [
+  { key: "zahlen", label: "Zahlen & Kurven" },
+  { key: "fundamental", label: "Fundamental" },
+  { key: "verluste", label: "Verluste" },
+  { key: "trades", label: "Alle Trades" },
+] as const;
+
+type TeilKey = (typeof TEILE)[number]["key"];
 
 /* ----------------------------------------------------------------- Auswerten */
 
@@ -274,7 +290,7 @@ async function FundamentalBlock({ trades }: { trades: Trade[] }) {
  * abgeleiteten Hinweise. Kein Eingabefeld - hier wird gelesen, nicht erfasst.
  */
 function AuswertungsAnsicht({
-  session, trades, stats, kategorien,
+  session, trades: alleTrades, kategorien, sp,
 }: {
   session: Session;
   trades: Trade[];
@@ -283,7 +299,36 @@ function AuswertungsAnsicht({
     gvaTyp: Kategorie | null; confluence: Kategorie | null;
     anmerkung: Kategorie | null; skipGrund: Kategorie | null;
   };
+  sp: Record<string, string | undefined>;
 }) {
+  const teil: TeilKey = (TEILE.find((t) => t.key === sp.teil)?.key ?? "zahlen");
+  const dims = dimensionenAus(sp.dim ?? null);
+  const saisonFenster: Fenster =
+    FENSTER.find((f) => String(f) === sp.saisonjahre) ?? 20;
+
+  // Jahresfilter: gilt für ALLE Abschnitte, damit man nicht in einem Teil ein
+  // Jahr wählt und im nächsten unbemerkt wieder alle sieht.
+  const jahre = [...new Set(alleTrades.map((t) => t.occurred_on.slice(0, 4)))].sort();
+  const jahr = jahre.includes(sp.jahr ?? "") ? sp.jahr! : null;
+  const trades = jahr ? alleTrades.filter((t) => t.occurred_on.startsWith(jahr)) : alleTrades;
+  const stats = computeNativeBacktestStats(trades);
+
+  /** Adresse mit geänderten Parametern — der Rest bleibt stehen. */
+  const link = (aenderung: Record<string, string | null>) => {
+    const p = new URLSearchParams({ session: session.id, ansicht: "auswerten" });
+    for (const [k, v] of Object.entries({ teil, jahr, dim: sp.dim ?? null, saisonjahre: sp.saisonjahre ?? null, ...aenderung })) {
+      if (v !== null && v !== undefined && v !== "") p.set(k, String(v));
+    }
+    return `/trading/backtest?${p.toString()}`;
+  };
+
+  const dimUm = (k: DimKey) => {
+    const neu = dims.includes(k) ? dims.filter((d) => d !== k) : [...dims, k];
+    // Leere Auswahl wird als leerer String übergeben, damit sie NICHT als
+    // "nichts gewählt, nimm den Standard" durchgeht.
+    return link({ dim: neu.length > 0 ? neu.join(",") : "-", teil: "fundamental" });
+  };
+
   const breakdownData = Object.fromEntries(
     BREAKDOWN_DIMENSIONS.map((d) => [d, computeBreakdown(trades, d)]),
   ) as Record<BreakdownDimension, BreakdownRow[]>;
@@ -294,6 +339,9 @@ function AuswertungsAnsicht({
   ) as Record<BreakdownDimension, BreakdownRow[]>;
   const insights = computeInsights(trades, stats);
   const equity = computeEquityKurve(trades);
+  const dd = drawdownKurve(trades);
+  const tiefe = maxDrawdown(dd);
+  const serie = serien(trades);
 
   return (
     <>
@@ -301,6 +349,7 @@ function AuswertungsAnsicht({
         <span className="text-sm text-ink-muted">
           Auswertung <span className="font-medium text-ink">{session.pair}</span>
           {session.status === "abgeschlossen" && " · abgeschlossen"}
+          {jahr && <span className="text-ink-faint"> · nur {jahr}</span>}
         </span>
         {session.status === "aktiv" && (
           <Link href={`/trading/backtest?session=${session.id}&ansicht=eintragen`}
@@ -310,75 +359,186 @@ function AuswertungsAnsicht({
         )}
       </div>
 
-      <Card>
-        <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
-          <Stat label="Trades" value={stats.total} sub={`${stats.skips} davon Skip`} />
-          <Stat label="Gewertet" value={stats.gewertet} />
-          <Stat label="Winrate"
-            value={stats.winrate === null ? "—" : `${stats.winrate.toFixed(0)} %`} />
-          <Stat label="Profit Factor"
-            tone={stats.profitFactor !== null && stats.profitFactor >= 1.5 ? "good" : "neutral"}
-            value={stats.profitFactor === null ? "—" : stats.profitFactor.toFixed(2)} />
-          <Stat label="Expectancy"
-            tone={stats.expectancy !== null && stats.expectancy > 0 ? "good" : "neutral"}
-            value={stats.expectancy === null ? "—" : `${stats.expectancy.toFixed(2)} R`}
-            sub="Ø pro Trade" />
-          <Stat label="Gesamt R"
-            tone={stats.gesamtR > 0 ? "good" : stats.gesamtR < 0 ? "bad" : "neutral"}
-            value={`${stats.gesamtR > 0 ? "+" : ""}${stats.gesamtR.toFixed(2)}`} />
+      {/* Abschnitte statt eine lange Rolle: was man gerade nicht ansieht,
+          soll auch nicht scrollen. */}
+      <nav className="flex flex-wrap gap-1.5">
+        {TEILE.map((t) => (
+          <Link key={t.key} href={link({ teil: t.key })}
+            className={cx(
+              "rounded-xl px-3.5 py-1.5 text-sm transition duration-150 ease-tactile active:scale-95",
+              teil === t.key
+                ? "bg-accent font-medium text-ink-on shadow-glow-accent"
+                : "border border-line bg-sand text-ink-muted hover:text-ink")}>
+            {t.label}
+          </Link>
+        ))}
+      </nav>
+
+      {jahre.length > 1 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] text-ink-faint">Zeitraum</span>
+          <Link href={link({ jahr: null })}
+            className={cx("rounded-lg px-2.5 py-1 text-xs transition duration-150 ease-tactile",
+              jahr === null ? "bg-sand text-ink" : "text-ink-muted hover:text-ink")}>
+            alle
+          </Link>
+          {jahre.map((j) => (
+            <Link key={j} href={link({ jahr: j })}
+              className={cx("num rounded-lg px-2.5 py-1 text-xs transition duration-150 ease-tactile",
+                jahr === j ? "bg-sand text-ink" : "text-ink-muted hover:text-ink")}>
+              {j}
+            </Link>
+          ))}
         </div>
-        <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
-          <strong>Woher das R kommt:</strong> es wird aus Ergebnis und geplantem RR
-          gerechnet, nicht am Chart abgelesen — Full TP ergibt {R_FAKTOR_STANDARD.full_tp} × RR,
-          Teil-TP-dann-BE {R_FAKTOR_STANDARD.teil_tp_be} × RR, ein Stop kostet immer genau 1 R.
-          Das hat zwei Folgen, die man beim Lesen kennen muss.
-        </p>
-        <p className="mt-1.5 text-[11px] leading-relaxed text-ink-faint">
-          Erstens sind <strong>Trefferquote und Ø R nicht unabhängig</strong>: beide kommen aus
-          denselben Ergebnis-Zählungen. Wenn zwei Gruppen sich in der Trefferquote
-          unterscheiden, ist ein Unterschied im Ø R keine zweite Bestätigung, sondern
-          dieselbe Zahl von der anderen Seite — der einzige zusätzliche Einfluss ist das
-          geplante RR. Zweitens ist ein Stop mit genau −1 R{" "}
-          <strong>systematisch zu günstig</strong>: Spread, Slippage und Kurslücken kosten in
-          Wirklichkeit etwas mehr, und zwar immer in dieselbe Richtung. Profit Factor und
-          Expectancy sind deshalb eher eine Obergrenze als eine Messung.
-        </p>
-      </Card>
+      )}
 
-      <Card>
-        <CardTitle>R-Kurve</CardTitle>
-        <BacktestEquity punkte={equity} />
-      </Card>
+      {trades.length === 0 ? (
+        <Card><Empty>Für {jahr} gibt es in dieser Session keine Trades.</Empty></Card>
+      ) : teil === "zahlen" ? (
+        <>
+          <Card>
+            <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
+              <Stat label="Trades" value={stats.total} sub={`${stats.skips} davon Skip`} />
+              <Stat label="Gewertet" value={stats.gewertet} />
+              <Stat label="Winrate"
+                value={stats.winrate === null ? "—" : `${stats.winrate.toFixed(0)} %`} />
+              <Stat label="Profit Factor"
+                tone={stats.profitFactor !== null && stats.profitFactor >= 1.5 ? "good" : "neutral"}
+                value={stats.profitFactor === null ? "—" : stats.profitFactor.toFixed(2)} />
+              <Stat label="Expectancy"
+                tone={stats.expectancy !== null && stats.expectancy > 0 ? "good" : "neutral"}
+                value={stats.expectancy === null ? "—" : `${stats.expectancy.toFixed(2)} R`}
+                sub="Ø pro Trade" />
+              <Stat label="Gesamt R"
+                tone={stats.gesamtR > 0 ? "good" : stats.gesamtR < 0 ? "bad" : "neutral"}
+                value={`${stats.gesamtR > 0 ? "+" : ""}${stats.gesamtR.toFixed(2)}`} />
+            </div>
+            <div className="mt-4 grid gap-4 sm:grid-cols-3">
+              <Stat label="Grösster Rückschlag" tone={tiefe.tiefe > 0 ? "bad" : "neutral"}
+                value={`−${tiefe.tiefe.toFixed(2)} R`}
+                sub={tiefe.datum ? `Tiefpunkt ${tiefe.datum}` : "kein Rückschlag"} />
+              <Stat label="Längste Gewinnserie" value={serie.laengsteGewinne} sub="in Folge" />
+              <Stat label="Längste Verlustserie" value={serie.laengsteVerluste} sub="in Folge" />
+            </div>
+            <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+              <strong>Woher das R kommt:</strong> es wird aus Ergebnis und geplantem RR
+              gerechnet, nicht am Chart abgelesen — Full TP ergibt {R_FAKTOR_STANDARD.full_tp} × RR,
+              Teil-TP-dann-BE {R_FAKTOR_STANDARD.teil_tp_be} × RR, ein Stop kostet immer genau 1 R.
+              Das hat zwei Folgen, die man beim Lesen kennen muss.
+            </p>
+            <p className="mt-1.5 text-[11px] leading-relaxed text-ink-faint">
+              Erstens sind <strong>Trefferquote und Ø R nicht unabhängig</strong>: beide kommen aus
+              denselben Ergebnis-Zählungen. Ein Unterschied im Ø R ist keine zweite Bestätigung,
+              sondern dieselbe Zahl von der anderen Seite. Zweitens ist ein Stop mit genau −1 R{" "}
+              <strong>systematisch zu günstig</strong> — Spread, Slippage und Kurslücken kosten
+              in Wirklichkeit mehr, und zwar immer in dieselbe Richtung.
+            </p>
+          </Card>
 
-      <Card>
-        <CardTitle>Was die Zahlen sagen</CardTitle>
-        <BacktestInsights insights={insights} />
-      </Card>
-
-      <Card>
-        <CardTitle>Aufschlüsselung</CardTitle>
-        <BacktestBreakdown data={breakdownData} slData={slBreakdown} />
-      </Card>
-
-      {/* Eigener Suspense-Rahmen: die Fundamentaldaten kommen aus einer
-          zweiten Datenbank und brauchen für mehrere Jahre spürbar Zeit. Ohne
-          die Grenze hier würde die ganze Auswertung darauf warten, obwohl
-          Kennzahlen, R-Kurve und Aufschlüsselung längst da sind. */}
-      <Suspense fallback={
-        <Card>
-          <CardTitle>Fundamentale Lage</CardTitle>
-          <div className="py-6 text-center text-sm text-ink-muted">
-            Zinsen, Inflation, COT und Marktdaten für {trades.length} Handelstage …
+          <div className="grid gap-5 lg:grid-cols-2">
+            <Card>
+              <CardTitle>R-Kurve</CardTitle>
+              <BacktestEquity punkte={equity} />
+              <p className="mt-2 text-[11px] text-ink-faint">
+                Wohin du gekommen bist — kumuliert über alle gewerteten Trades.
+              </p>
+            </Card>
+            <Card>
+              <CardTitle>Rückschlag</CardTitle>
+              <DrawdownFlaeche punkte={dd} />
+              <p className="mt-2 text-[11px] leading-relaxed text-ink-faint">
+                Abstand zum eigenen Höchststand. Eine Summe von +30 R nützt nichts,
+                wenn man dafür zwischendurch zweistellig im Minus sass.
+              </p>
+            </Card>
           </div>
-        </Card>
-      }>
-        <FundamentalBlock trades={trades} />
-      </Suspense>
 
-      <Card>
-        <CardTitle>Alle Trades ({trades.length})</CardTitle>
-        <BacktestTradeListe trades={trades} kategorien={kategorien} />
-      </Card>
+          <Card>
+            <CardTitle>Wie die Summe zustande kam</CardTitle>
+            <RVerteilung balken={rVerteilung(trades)} />
+            <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+              Zwei Backtests mit identischer Endsumme können völlig verschieden aussehen —
+              einer aus vielen kleinen Gewinnen, einer aus drei Ausreissern. Nur das Zweite
+              ist zerbrechlich, und nur hier sieht man es.
+            </p>
+          </Card>
+
+          <Card>
+            <CardTitle>Was die Zahlen sagen</CardTitle>
+            <BacktestInsights insights={insights} />
+          </Card>
+        </>
+      ) : teil === "fundamental" ? (
+        <>
+          <Card>
+            <CardTitle>Was soll ausgewertet werden?</CardTitle>
+            <div className="flex flex-wrap gap-1.5">
+              {DIM_ALLE.map((k) => (
+                <Link key={k} href={dimUm(k)}
+                  className={cx(
+                    "rounded-xl border px-3 py-1.5 text-xs transition duration-150 ease-tactile active:scale-95",
+                    dims.includes(k)
+                      ? "border-accent/60 bg-accent-tint text-ink"
+                      : "border-line bg-sand text-ink-muted hover:text-ink")}>
+                  {dims.includes(k) ? "✓ " : ""}{DIM_LABEL[k]}
+                </Link>
+              ))}
+            </div>
+            {dims.includes("saison") && (
+              <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] text-ink-faint">Saison-Fenster</span>
+                {FENSTER.map((f) => (
+                  <Link key={f} href={link({ saisonjahre: String(f) })}
+                    className={cx("num rounded-lg px-2.5 py-1 text-xs transition duration-150 ease-tactile",
+                      saisonFenster === f ? "bg-sand text-ink" : "text-ink-muted hover:text-ink")}>
+                    {f} J
+                  </Link>
+                ))}
+              </div>
+            )}
+            <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+              Veto und Confluence-Score sind bewusst aus. Wer alles gleichzeitig einschaltet,
+              findet garantiert irgendwo einen Ausschlag — vier Dimensionen über vier
+              Ergebnisklassen sind sechzehn Zahlen, und ein paar davon sind immer auffällig.
+              Die Kurse fürs Saison-Fenster reichen rund 20 Jahre zurück; deshalb gibt es
+              hier kein 25-Jahre-Fenster.
+            </p>
+          </Card>
+
+          <Suspense key={`${dims.join()}-${saisonFenster}-${jahr}`} fallback={
+            <Card>
+              <CardTitle>Fundamentale Auswertung</CardTitle>
+              <div className="py-6 text-center text-sm text-ink-muted">
+                Zinsen, COT, Kurse für {trades.length} Handelstage …
+              </div>
+            </Card>
+          }>
+            <FundamentalBlock trades={trades} dims={dims} saisonFenster={saisonFenster} />
+          </Suspense>
+        </>
+      ) : teil === "verluste" ? (
+        <Card>
+          <CardTitle>Woran die Verluste hingen</CardTitle>
+          <BacktestBreakdown data={slBreakdown} slData={slBreakdown} />
+          <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+            Dieselben Gruppen wie in der Aufschlüsselung, aber nur über die Stopouts.
+            Die Frage lautet nicht „welche Gruppe hat viele SL" — grosse Gruppen haben
+            immer viele — sondern <strong>welche hat anteilig mehr</strong>, als ihre Grösse
+            erwarten liesse.
+          </p>
+        </Card>
+      ) : (
+        <>
+          <Card>
+            <CardTitle>Aufschlüsselung</CardTitle>
+            <BacktestBreakdown data={breakdownData} slData={slBreakdown} />
+          </Card>
+          <Card>
+            <CardTitle>Alle Trades ({trades.length})</CardTitle>
+            <BacktestTradeListe trades={trades} kategorien={kategorien} />
+          </Card>
+        </>
+      )}
     </>
   );
 }

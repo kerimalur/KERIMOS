@@ -1,8 +1,14 @@
 import "server-only";
 import { ladeFuerSpanne, type Ladebericht } from "./daten";
-import { baueRegime, bewertePaar, FAKTOR_LABEL, type RegimeLage, type FaktorKey } from "./faktoren";
+import { baueRegime, bewertePaar, FAKTOR_LABEL, type RegimeLage, type FaktorKey, type PaarUrteil } from "./faktoren";
 import { gruppiere, vergleiche, vetoBilanz, aufteilung, type Gruppe, type Vergleich, type VetoBilanz, type Aufteilung } from "./bilanz";
 import { cotBildFuer, cotPaarUrteil } from "./cot-divergenz";
+import { ladeKurse } from "./daten";
+import { saisonZum, type Fenster } from "./saison";
+import {
+  nachErgebnis, nachDimension, DIM_STANDARD,
+  type DimKey, type DimStand, type ErgebnisAuswertung, type DimErfolg,
+} from "./auswertung";
 import {
   ergebnisKreuz, faktorBilanz, auffaellige, jahresVerteilung, zeitBefund,
   vetoSicht, cotSicht,
@@ -54,6 +60,13 @@ export interface BacktestFundamentalBild {
   kreuz: KreuzZeile[];
   /** Dieselben Trades, zweimal gelesen — zum Vergleichen. */
   sichten: SichtVergleich[];
+  /** Vom Ergebnis her: was hatten die Full TPs gemeinsam, was die SLs? */
+  ergebnisDims: ErgebnisAuswertung;
+  /** Die Gegenrichtung: trennt eine Dimension die Trefferquote? */
+  dimErfolg: DimErfolg[];
+  /** Welche Dimensionen gerade ausgewertet werden. */
+  dims: DimKey[];
+  saisonFenster: Fenster;
   jahre: JahresZeile[];
   zeit: ZeitBefund;
   faktoren: FaktorZeile[];
@@ -78,6 +91,8 @@ const LEER: BacktestFundamentalBild = {
     satz: "Noch keine Trades.",
   },
   verteilung: [], kreuz: [], sichten: [],
+  ergebnisDims: { grundraten: [], zeilen: [], gesamt: 0 },
+  dimErfolg: [], dims: [], saisonFenster: 20,
   jahre: [], zeit: {
     anteilFrueh: null, anteilSpaet: null, trennDatum: null, verdaechtig: false,
     satz: "Noch keine Trades.",
@@ -86,9 +101,19 @@ const LEER: BacktestFundamentalBild = {
   bericht: null, paare: [],
 };
 
+export interface FundamentalOptionen {
+  /** Welche Dimensionen ausgewertet werden. Standard: COT und Saison. */
+  dims?: DimKey[];
+  /** Fenster für die Saisonalität in Jahren. */
+  saisonFenster?: Fenster;
+}
+
 export async function baueBacktestFundamental(
   alle: NativeBacktestTrade[],
+  opt: FundamentalOptionen = {},
 ): Promise<BacktestFundamentalBild> {
+  const dims = opt.dims ?? DIM_STANDARD;
+  const saisonFenster: Fenster = opt.saisonFenster ?? 20;
   // Skips haben kein Ergebnis, das sich einer Lage zuordnen liesse. Ein Paar
   // ohne sechs Buchstaben (Tippfehler beim Erfassen) fällt hier heraus, statt
   // still als "keine Daten" durchzulaufen und die Gruppe "ohne Urteil"
@@ -105,6 +130,16 @@ export async function baueBacktestFundamental(
   const bis = tage[tage.length - 1];
 
   const { daten, bericht } = await ladeFuerSpanne(von, bis);
+
+  // Kurse nur für die Paare holen, die überhaupt vorkommen — und nur, wenn
+  // Saisonalität ausgewertet wird. Bei einer Session ist das ein Paar; über
+  // alle Sessions könnten es 28 werden, deshalb ist die Auswahl eng gefasst.
+  const paare = [...new Set(brauchbar.map(
+    (t) => t.pair.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 6)))];
+  const kurse = new Map<string, Awaited<ReturnType<typeof ladeKurse>>>();
+  if (dims.includes("saison")) {
+    for (const p of paare) kurse.set(p, await ladeKurse(p));
+  }
 
   // Das Regime hängt nur am Datum, nicht am Paar — einmal je Tag reicht.
   const regimeJeTag = new Map<string, RegimeLage>();
@@ -130,8 +165,41 @@ export async function baueBacktestFundamental(
       faktoren: u.faktoren.map((f) => ({ key: f.key, dir: f.dir })),
       link: t.tradingview_link ?? t.screenshot_url ?? null,
       cot: cotStandFuer(u.basis, u.quote, tag, richtung),
+      dims: dimStaende(u, tag, richtung),
     };
   });
+
+  function dimStaende(u: PaarUrteil, tag: string, richtung: -1 | 1): DimStand[] {
+    const werte: Partial<Record<DimKey, -1 | 0 | 1>> = {};
+
+    if (dims.includes("cot")) {
+      const b = cotBildFuer(daten, u.basis, tag);
+      const q = cotBildFuer(daten, u.quote, tag);
+      werte.cot = (cotPaarUrteil(b, q).dir * richtung) as -1 | 0 | 1;
+    }
+
+    if (dims.includes("saison")) {
+      // saisonZum benutzt ausschliesslich Jahre VOR dem Stichtag — sonst
+      // wüsste der Rückblick, wie der Monat ausging, den er beurteilt.
+      const m = saisonZum(kurse.get(u.paar) ?? [], tag, saisonFenster);
+      werte.saison = ((m?.richtung ?? 0) * richtung) as -1 | 0 | 1;
+    }
+
+    if (dims.includes("qscore")) {
+      // Netto ist schon auf das Paar bezogen; hier nur noch auf den Trade
+      // drehen. Die Schwelle hält kleine Ausschläge draussen.
+      const netto = u.netto * richtung;
+      werte.qscore = netto >= 0.1 ? 1 : netto <= -0.1 ? -1 : 0;
+    }
+
+    if (dims.includes("veto")) {
+      // Gedreht: „dafür" heisst, es stand KEIN Veto im Weg. Ein Veto gegen
+      // die Gegenrichtung ist keine Zustimmung, deshalb nur zwei Zustände.
+      werte.veto = u.veto.gegen === richtung ? -1 : u.veto.gegen === 0 ? 0 : 1;
+    }
+
+    return dims.map((key) => ({ key, wert: werte[key] ?? 0 }));
+  }
 
   function cotStandFuer(
     basis: string, quote: string, tag: string, richtung: -1 | 1,
@@ -159,6 +227,12 @@ export async function baueBacktestFundamental(
     verteilung: aufteilung(trades),
     kreuz: ergebnisKreuz(trades, KREUZ_ERGEBNISSE),
     sichten: [vetoSicht(trades), cotSicht(trades)],
+    ergebnisDims: nachErgebnis(
+      trades, dims,
+      KREUZ_ERGEBNISSE.map((k) => ({ key: k, label: RESULT_LABEL[k] })),
+    ),
+    dimErfolg: nachDimension(trades, dims),
+    dims, saisonFenster,
     jahre: jahresVerteilung(trades),
     zeit: zeitBefund(trades),
     faktoren: faktorBilanz(trades, FAKTOR_KEYS),

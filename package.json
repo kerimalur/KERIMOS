@@ -12,7 +12,8 @@
     "check:essen-bonus": "npx -y tsx tools/checks/essen-bonus.mts",
     "check:morgen": "npx -y tsx tools/checks/morgen.mts",
     "check:cot": "npx -y tsx tools/checks/cot.mts",
-    "check:saison": "npx -y tsx tools/checks/saison.mts"
+    "check:saison": "npx -y tsx tools/checks/saison.mts",
+    "check:auswertung": "npx -y tsx tools/checks/auswertung.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

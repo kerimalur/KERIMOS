@@ -1,5 +1,6 @@
 import { wilson, lagerVon, MIN_JE_SEITE, type Quote, type TradeUrteil, type Lager } from "./bilanz";
 import { FAKTOR_LABEL, type FaktorKey } from "./faktoren";
+import type { DimStand } from "./auswertung";
 
 /**
  * Die tiefere Auswertung: nicht nur OB der Filter trägt, sondern WO und DURCH WEN.
@@ -40,6 +41,12 @@ export interface TiefenTrade extends TradeUrteil {
   link: string | null;
   /** COT-Lage am Handelstag. Null, wenn keine Historie da war. */
   cot: CotStand | null;
+  /**
+   * Wie die wählbaren Dimensionen zum Trade standen — je +1 dafür, −1
+   * dagegen, 0 ohne Aussage, immer schon auf die gehandelte Richtung gedreht.
+   * Optional, damit ältere Aufrufer und die Kontrollwerte gültig bleiben.
+   */
+  dims?: DimStand[];
 }
 
 /* ------------------------------------------------- Lager × Ergebnis */

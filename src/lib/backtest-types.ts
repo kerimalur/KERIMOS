@@ -520,3 +520,131 @@ export function computeEquityKurve(trades: NativeBacktestTrade[]): EquityPunkt[]
     return { index: i + 1, datum: t.occurred_on, kumR: Math.round(kum * 100) / 100 };
   });
 }
+
+/* ------------------------------------------------------- Weitere Bilder */
+
+export interface HistogrammBalken {
+  /** Untergrenze des Fachs in R, inklusive. */
+  von: number;
+  /** Obergrenze, exklusiv — ausser beim letzten Fach. */
+  bis: number;
+  label: string;
+  n: number;
+}
+
+/**
+ * Verteilung der R-Ergebnisse.
+ *
+ * Warum das neben der R-Kurve steht: die Kurve zeigt, WO du hingekommen bist,
+ * die Verteilung, WIE. Zwei Backtests mit identischer Endsumme können völlig
+ * verschieden aussehen — einer aus vielen kleinen Gewinnen, einer aus drei
+ * Ausreissern. Nur das Zweite ist zerbrechlich, und nur hier sieht man es.
+ *
+ * Feste Fächer statt automatischer Breite: so bleiben zwei Sessions
+ * vergleichbar, und die −1 (der glatte Stop) bekommt ein eigenes Fach statt
+ * mit den Teilverlusten zusammenzufallen.
+ */
+export function rVerteilung(trades: NativeBacktestTrade[]): HistogrammBalken[] {
+  const kanten = [-Infinity, -1.5, -0.999, -0.001, 0.001, 1, 2, 3, 4, Infinity];
+  const beschriftung = [
+    "< −1.5", "−1.5…−1", "−1 (Stop)", "Verlust < 1R", "0 (BE)",
+    "0…1", "1…2", "2…3", "3…4", "> 4",
+  ];
+
+  const faecher: HistogrammBalken[] = [];
+  for (let i = 0; i < kanten.length - 1; i++) {
+    faecher.push({
+      von: kanten[i], bis: kanten[i + 1],
+      label: beschriftung[i] ?? `${kanten[i]}…${kanten[i + 1]}`,
+      n: 0,
+    });
+  }
+  // Ein eigenes Fach genau für 0 (Break-even) — sonst landet es bei "0…1"
+  // und sieht aus wie ein kleiner Gewinn.
+  const be: HistogrammBalken = { von: 0, bis: 0, label: "0 (BE)", n: 0 };
+
+  for (const t of trades) {
+    if (t.result === "skip") continue;
+    const r = t.r_multiple ?? 0;
+    if (r === 0) { be.n++; continue; }
+    const i = faecher.findIndex((f) => r >= f.von && r < f.bis);
+    if (i >= 0) faecher[i].n++;
+  }
+
+  const ohneBe = faecher.filter((f) => f.label !== "0 (BE)");
+  const trenn = ohneBe.findIndex((f) => f.von >= 0);
+  return [
+    ...ohneBe.slice(0, trenn < 0 ? ohneBe.length : trenn),
+    be,
+    ...(trenn < 0 ? [] : ohneBe.slice(trenn)),
+  ].filter((f) => f.n > 0 || Math.abs(f.von) <= 4);
+}
+
+export interface DrawdownPunkt {
+  index: number;
+  datum: string;
+  /** Abstand zum bisherigen Höchststand in R — immer ≤ 0. */
+  unterWasser: number;
+}
+
+/**
+ * Wie weit die Kurve unter ihrem eigenen Höchststand lag.
+ *
+ * Die Zahl, die eine Strategie handelbar oder unhandelbar macht: eine Summe
+ * von +30 R nützt nichts, wenn man dafür zwischendurch 12 R im Minus sass.
+ * Gemessen in R, nicht in Prozent — die Positionsgrösse gehört nicht in eine
+ * Setup-Auswertung.
+ */
+export function drawdownKurve(trades: NativeBacktestTrade[]): DrawdownPunkt[] {
+  const chrono = [...trades]
+    .filter((t) => t.result !== "skip")
+    .sort((a, b) => a.occurred_on.localeCompare(b.occurred_on));
+
+  let kum = 0, hoch = 0;
+  return chrono.map((t, i) => {
+    kum += t.r_multiple ?? 0;
+    hoch = Math.max(hoch, kum);
+    return {
+      index: i + 1,
+      datum: t.occurred_on,
+      unterWasser: Math.round((kum - hoch) * 100) / 100,
+    };
+  });
+}
+
+/** Grösster Rückschlag in R (positiv angegeben) und wo er lag. */
+export function maxDrawdown(punkte: DrawdownPunkt[]): { tiefe: number; datum: string | null } {
+  let tiefe = 0, datum: string | null = null;
+  for (const p of punkte) {
+    if (p.unterWasser < tiefe) { tiefe = p.unterWasser; datum = p.datum; }
+  }
+  return { tiefe: Math.abs(tiefe), datum };
+}
+
+export interface SerieBild {
+  /** Längste Kette gewonnener bzw. verlorener Trades in Folge. */
+  laengsteGewinne: number;
+  laengsteVerluste: number;
+}
+
+/**
+ * Die längsten Serien.
+ *
+ * Nicht als Kuriosum, sondern als Erwartungsmanagement: wer weiss, dass sechs
+ * Verluste in Folge in dieser Stichprobe vorkamen, hört beim siebten nicht
+ * auf, den Plan zu handeln. Break-even unterbricht keine Serie — es ist kein
+ * Ergebnis, sondern ein ausgebliebenes.
+ */
+export function serien(trades: NativeBacktestTrade[]): SerieBild {
+  const chrono = [...trades]
+    .filter((t) => t.result !== "skip")
+    .sort((a, b) => a.occurred_on.localeCompare(b.occurred_on));
+
+  let g = 0, v = 0, maxG = 0, maxV = 0;
+  for (const t of chrono) {
+    const r = t.r_multiple ?? 0;
+    if (r > 0) { g++; v = 0; maxG = Math.max(maxG, g); }
+    else if (r < 0) { v++; g = 0; maxV = Math.max(maxV, v); }
+  }
+  return { laengsteGewinne: maxG, laengsteVerluste: maxV };
+}

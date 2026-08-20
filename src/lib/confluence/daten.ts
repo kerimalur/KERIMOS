@@ -2,9 +2,10 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 import { createTradingClient } from "@/lib/supabase/trading";
 import { plusTage, VERZUG } from "./reihen";
-import { nettoReihe, zuReihe } from "./rechnen";
+import { nettoReihe, zuReihe, alsInstrument } from "./rechnen";
 import { G8, LEERE_DATEN, type Rohdaten } from "./faktoren";
 import type { Punkt } from "./reihen";
+import type { Kurspunkt } from "./saison";
 
 /**
  * Die Rohdaten für die Confluence-Seite — direkt aus der Trading-Datenbank.
@@ -307,6 +308,44 @@ export function ladeFuerStichtag(stichtag: string): Promise<Geladen> {
 /** Daten für eine ganze Spanne (Ansicht „Bilanz" über alle Trades). */
 export function ladeFuerSpanne(von: string, bis: string): Promise<Geladen> {
   return gecacht(plusTage(von, -VORLAUF_TAGE), bis);
+}
+
+/* ------------------------------------------------------------- Kurse */
+
+/**
+ * Tagesschlüsse eines Paares — für die Saisonalität.
+ *
+ * Bewusst je Paar einzeln und 24 Stunden gecacht: `price_daily` hält rund
+ * 5000 Tageskerzen je Instrument, alle 28 Paare auf einmal wären 140 000
+ * Zeilen und damit 140 Roundtrips in einem einzigen Seitenaufruf. Einzeln
+ * geladen kostet ein Paar fünf Anfragen, und die Saisonalität ändert sich
+ * ohnehin höchstens einmal im Monat.
+ *
+ * `instrument` in OANDA-Schreibweise ("GBP_AUD") — so steht es in der Tabelle.
+ */
+const kurseGecacht = unstable_cache(
+  async (instrument: string): Promise<Kurspunkt[]> => {
+    const db = createTradingClient();
+    if (!db) return [];
+    const zeilen = await holeAlle<{ date: string; close: number | null }>(
+      (a, b) => db
+        .from("price_daily")
+        .select("date, close")
+        .eq("instrument", instrument)
+        .order("date", { ascending: true })
+        .range(a, b),
+    );
+    return zeilen
+      .filter((z) => z.close !== null && Number.isFinite(Number(z.close)))
+      .map((z) => ({ datum: z.date.slice(0, 10), schluss: Number(z.close) }));
+  },
+  ["kurse-v1"],
+  { revalidate: 86_400, tags: ["kurse"] },
+);
+
+/** Tagesschlüsse zu einem Paar ("GBPAUD" oder "GBP/AUD"). */
+export function ladeKurse(paar: string): Promise<Kurspunkt[]> {
+  return kurseGecacht(alsInstrument(paar));
 }
 
 /* ------------------------------------------- Zweitmeinung aus dem Labor */

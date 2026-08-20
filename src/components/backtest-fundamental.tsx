@@ -9,6 +9,8 @@ import type {
   SichtVergleich, TiefenTrade,
 } from "@/lib/confluence/tiefe";
 import type { BacktestFundamentalBild } from "@/lib/confluence/backtest-bilanz";
+import { DIM_LABEL, DIM_ERKLAERUNG } from "@/lib/confluence/auswertung";
+import type { ErgebnisAuswertung, DimErfolg } from "@/lib/confluence/auswertung";
 
 /**
  * Die Fundamental-Auswertung des Backtests, als Block im Analyse-Modus.
@@ -114,6 +116,36 @@ export function BacktestFundamental({ bild, ergebnisLabel }: {
       </Card>
 
       <Card>
+        <CardTitle>Was die Ergebnisse gemeinsam hatten</CardTitle>
+        <ErgebnisDimTabelle a={bild.ergebnisDims} />
+        <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+          Gelesen wird von links nach rechts: nimm alle Full TPs — bei wie vielen stand
+          die Dimension dafür? Die <strong>Grundrate</strong> oben ist derselbe Anteil über
+          <em> alle</em> Trades.
+        </p>
+        <p className="mt-2 rounded-xl bg-warn-tint px-3 py-2.5 text-[11px] leading-relaxed text-ink-soft">
+          <strong>Die Abweichung ist das Ergebnis, nicht der Anteil.</strong> „62 % der Full
+          TPs liefen mit den Commercials" klingt nach einem Befund und ist keiner, solange
+          über alle Trades ebenfalls 62 % dafür standen. Fett markiert ist eine Abweichung
+          nur dann, wenn die Grundrate ausserhalb des Intervalls dieser Ergebnisklasse
+          liegt — bei zwölf Full TPs passiert das fast nie, und das ist die richtige
+          Antwort auf zwölf Trades.
+        </p>
+      </Card>
+
+      <Card>
+        <CardTitle>Trennt eine Dimension die Trefferquote?</CardTitle>
+        <DimErfolgListe zeilen={bild.dimErfolg} />
+        <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+          Die Gegenrichtung zur Tabelle darüber: nicht „was hatten die Gewinner gemeinsam",
+          sondern „wenn die Dimension dafür stand, ging es dann besser aus". Beide Fragen
+          zusammen sind aussagekräftiger als jede für sich — die eine kann auffällig sein,
+          während die andere nichts zeigt.
+        </p>
+      </Card>
+
+      {bild.dims.includes("veto") && (
+      <Card>
         <CardTitle>COT — zwei Lesarten derselben Daten</CardTitle>
         <div className="grid gap-4 lg:grid-cols-2">
           {bild.sichten.map((s) => <SichtKarte key={s.titel} s={s} />)}
@@ -133,6 +165,8 @@ export function BacktestFundamental({ bild, ergebnisLabel }: {
         </p>
       </Card>
 
+      )}
+
       <Card>
         <CardTitle>Alle Trades mit der COT-Lage des Tages</CardTitle>
         <TradeCotTabelle trades={bild.trades} />
@@ -145,10 +179,12 @@ export function BacktestFundamental({ bild, ergebnisLabel }: {
         </p>
       </Card>
 
-      <Card>
-        <CardTitle>Das COT-Veto im Detail</CardTitle>
-        <VetoKarte v={bild.veto} />
-      </Card>
+      {bild.dims.includes("veto") && (
+        <Card>
+          <CardTitle>Das COT-Veto im Detail</CardTitle>
+          <VetoKarte v={bild.veto} />
+        </Card>
+      )}
 
       {bild.auffaellig.length > 0 && (
         <Card>
@@ -226,6 +262,112 @@ function KreuzTabelle({ kreuz, labels }: { kreuz: KreuzZeile[]; labels: string[]
         </tbody>
       </table>
     </div>
+  );
+}
+
+/* -------------------------------------------------- Ergebnis x Dimension */
+
+function ErgebnisDimTabelle({ a }: { a: ErgebnisAuswertung }) {
+  if (a.grundraten.length === 0) {
+    return (
+      <p className="py-4 text-sm leading-relaxed text-ink-muted">
+        Keine Dimension gewählt. Oben eine oder mehrere anklicken — dann steht hier,
+        was die Full TPs und die Stopouts jeweils gemeinsam hatten.
+      </p>
+    );
+  }
+
+  const pz = (v: number | null) => (v === null ? "·" : `${(v * 100).toFixed(0)} %`);
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[560px] border-collapse text-sm">
+        <thead>
+          <tr className="border-b border-line text-xs text-ink-muted">
+            <th className="px-2 py-2 text-left font-normal">Ergebnis</th>
+            <th className="px-2 py-2 text-right font-normal">n</th>
+            {a.grundraten.map((g) => (
+              <th key={g.key} className="px-2 py-2 text-right font-normal"
+                title={DIM_ERKLAERUNG[g.key]}>
+                {DIM_LABEL[g.key]}
+              </th>
+            ))}
+          </tr>
+          <tr className="border-b border-line/60 text-[11px] text-ink-faint">
+            <td className="px-2 py-1.5">Grundrate über alle</td>
+            <td className="num px-2 py-1.5 text-right">{a.gesamt}</td>
+            {a.grundraten.map((g) => (
+              <td key={g.key} className="num px-2 py-1.5 text-right">
+                {pz(g.anteil)}
+                <span className="ml-1">({g.dafuer}/{g.dafuer + g.dagegen})</span>
+              </td>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {a.zeilen.map((z) => (
+            <tr key={z.ergebnis} className="border-b border-line/50 last:border-b-0">
+              <td className="px-2 py-2 text-ink">{z.label}</td>
+              <td className="num px-2 py-2 text-right text-ink-soft">{z.n}</td>
+              {z.dims.map((d) => (
+                <td key={d.key} className="num px-2 py-2 text-right">
+                  <span className={d.auffaellig ? "font-semibold text-ink" : "text-ink-soft"}>
+                    {pz(d.anteil)}
+                  </span>
+                  {d.abweichung !== null && (
+                    <span className={cx("ml-1.5 text-[11px]",
+                      d.auffaellig
+                        ? (d.abweichung > 0 ? "text-good-bright" : "text-bad-bright")
+                        : "text-ink-faint")}>
+                      {d.abweichung > 0 ? "+" : ""}{d.abweichung.toFixed(0)}
+                    </span>
+                  )}
+                  {d.stumm > 0 && (
+                    <span className="ml-1 text-[11px] text-ink-faint" title="ohne Aussage">
+                      ·{d.stumm}
+                    </span>
+                  )}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function DimErfolgListe({ zeilen }: { zeilen: DimErfolg[] }) {
+  if (zeilen.length === 0) return null;
+
+  return (
+    <ul className="space-y-2">
+      {zeilen.map((z) => (
+        <li key={z.key} className="rounded-xl bg-sand/40 px-3 py-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium text-ink">{z.label}</span>
+            <span className="num ml-auto text-[11px] text-ink-faint">
+              {z.dafuer.n} / {z.dagegen.n}
+              {z.stumm.n > 0 && ` · ${z.stumm.n} stumm`}
+            </span>
+          </div>
+          <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
+            {([["dafür", z.dafuer], ["dagegen", z.dagegen]] as const).map(([label, t]) => (
+              <div key={label} className="flex items-center gap-2">
+                <span className="w-14 shrink-0 text-[11px] text-ink-muted">{label}</span>
+                <Intervall q={t.quote} />
+                {t.erwartung !== null && (
+                  <span className="num text-[11px] text-ink-faint">
+                    {t.erwartung > 0 ? "+" : ""}{t.erwartung.toFixed(2)} R
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+          <p className="mt-1.5 text-[11px] leading-relaxed text-ink-muted">{z.satz}</p>
+        </li>
+      ))}
+    </ul>
   );
 }
 
