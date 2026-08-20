@@ -114,6 +114,8 @@ interface TffZeile {
 interface LegacyZeile {
   contract_code: string; report_date: string;
   noncomm_long: number | null; noncomm_short: number | null;
+  comm_long: number | null; comm_short: number | null;
+  nonrept_long: number | null; nonrept_short: number | null;
   open_interest: number | null;
 }
 
@@ -169,7 +171,9 @@ async function ladeRoh(von: string, bis: string): Promise<Geladen> {
       .order("report_date", { ascending: true }).range(a, b)),
     holeAlle<LegacyZeile>((a, b) => db
       .from("cot_reports")
-      .select("contract_code, report_date, noncomm_long, noncomm_short, open_interest")
+      // Ein String-Literal, nicht zusammengesetzt — sonst verliert supabase-js
+      // den Zeilentyp (siehe Kommentar bei cot_tff_reports).
+      .select("contract_code, report_date, noncomm_long, noncomm_short, comm_long, comm_short, nonrept_long, nonrept_short, open_interest")
       .in("contract_code", contracts)
       .gte("report_date", von).lte("report_date", bis)
       .order("report_date", { ascending: true }).range(a, b)),
@@ -185,6 +189,8 @@ async function ladeRoh(von: string, bis: string): Promise<Geladen> {
   const cot: Record<string, Punkt[]> = {};
   const cotBanken: Record<string, Punkt[]> = {};
   const cotRealMoney: Record<string, Punkt[]> = {};
+  const cotKomm: Record<string, Punkt[]> = {};
+  const cotRetail: Record<string, Punkt[]> = {};
   const zwei: Record<string, Punkt[]> = {};
   const leitzinsVerzug: Record<string, number> = {};
 
@@ -233,9 +239,23 @@ async function ladeRoh(von: string, bis: string): Promise<Geladen> {
       bericht.cotQuelle[ccy] = "tff";
       continue;
     }
+    // Commercials und Nicht-Meldepflichtige kommen IMMER aus dem Legacy-Bericht,
+    // unabhaengig davon, welche Quelle das Fonds-Perzentil oben gewonnen hat:
+    // der TFF-Bericht kennt diese beiden Gruppen gar nicht. Sie sind die
+    // Grundlage der Commercials-gegen-Retail-Auswertung im Backtest und in
+    // Monty — und die einzigen COT-Gruppen mit Historie bis in die Achtziger.
+    const legacyZeilen = legacy.filter((z) => z.contract_code === code);
+    cotKomm[ccy] = nettoReihe(legacyZeilen.map((z) => ({
+      datum: z.report_date, lang: z.comm_long, kurz: z.comm_short, oi: z.open_interest,
+    })));
+    cotRetail[ccy] = nettoReihe(legacyZeilen.map((z) => ({
+      datum: z.report_date, lang: z.nonrept_long, kurz: z.nonrept_short, oi: z.open_interest,
+    })));
+
     const ausLegacy = nettoReihe(
-      legacy.filter((z) => z.contract_code === code)
-        .map((z) => ({ datum: z.report_date, lang: z.noncomm_long, kurz: z.noncomm_short, oi: z.open_interest })),
+      legacyZeilen.map((z) => ({
+        datum: z.report_date, lang: z.noncomm_long, kurz: z.noncomm_short, oi: z.open_interest,
+      })),
     );
     cot[ccy] = ausLegacy;
     bericht.cotQuelle[ccy] = ausLegacy.length >= 26 ? "legacy" : "keine";
@@ -252,7 +272,8 @@ async function ladeRoh(von: string, bis: string): Promise<Geladen> {
 
   return {
     daten: {
-      leitzins, cpi, cot, cotBanken, cotRealMoney, zwei, leitzinsVerzug,
+      leitzins, cpi, cot, cotBanken, cotRealMoney, cotKomm, cotRetail,
+      zwei, leitzinsVerzug,
       vix, spx, gold, kupfer,
     },
     bericht,

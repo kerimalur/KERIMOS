@@ -23,7 +23,7 @@ import {
 import { nettoReihe } from "../../src/lib/confluence/rechnen";
 import {
   ergebnisKreuz, faktorBilanz, auffaellige, jahresVerteilung, zeitBefund,
-  LAGER_ORDNUNG, ZEIT_GRENZE, type TiefenTrade,
+  vetoSicht, cotSicht, LAGER_ORDNUNG, ZEIT_GRENZE, type TiefenTrade,
 } from "../../src/lib/confluence/tiefe";
 
 let fails = 0;
@@ -590,7 +590,7 @@ check("Anteile summieren sich auf 1",
 // (bei einem Short spricht dir = -1 FUER den Trade).
 
 const tt = (p: Partial<TiefenTrade>): TiefenTrade => ({
-  ...tu({}), ergebnis: "full_tp", faktoren: [], link: null, ...p,
+  ...tu({}), ergebnis: "full_tp", faktoren: [], link: null, cot: null, ...p,
 });
 
 const ERGEBNISSE = ["full_tp", "teil_tp_be", "breakeven", "sl"];
@@ -674,6 +674,35 @@ check("erwartungsgemaesse Trades stehen nicht drin",
   kandidaten.every((g) => g.trades.every((t) => t.link !== "https://tv/3")), true);
 check("leere Gruppen fallen weg",
   auffaellige([tt({ urteil: "neutral", ergebnis: "breakeven" })], "sl", "full_tp").length, 0);
+
+/* ------------------------------------------------- Zwei COT-Lesarten */
+// Beide Lesarten muessen dieselben Trades vollstaendig aufteilen — sonst
+// vergleicht man am Ende zwei verschieden grosse Stichproben und haelt den
+// Unterschied fuer einen Befund.
+
+const cotTrade = (div: -1 | 0 | 1, rest: Partial<TiefenTrade> = {}) =>
+  tt({ cot: { kommBasis: 80, kommQuote: 20, retailBasis: 20, retailQuote: 80, div }, ...rest });
+
+const gemischt = [
+  ...Array.from({ length: 4 }, () => cotTrade(1, { r: 1, gewonnen: true })),
+  ...Array.from({ length: 3 }, () => cotTrade(-1, { r: -1, gewonnen: false })),
+  ...Array.from({ length: 5 }, () => cotTrade(0)),
+  tt({ cot: null }),
+];
+const cotS = cotSicht(gemischt);
+check("COT-Sicht hat drei Gruppen", cotS.gruppen.map((g) => g.n), [4, 3, 6]);
+check("und teilt alle Trades auf",
+  cotS.gruppen.reduce((s, g) => s + g.n, 0), gemischt.length);
+// Trades ganz ohne COT-Historie gehoeren zu "keine Streckung", nicht ins Nichts.
+check("Trades ohne COT zaehlen als still", cotS.gruppen[2].n, 6);
+
+const vetoS = vetoSicht([
+  ...Array.from({ length: 3 }, () => tt({ vetoAktiv: true })),
+  ...Array.from({ length: 9 }, () => tt({ vetoAktiv: false })),
+]);
+check("Veto-Sicht hat zwei Gruppen", vetoS.gruppen.map((g) => g.n), [3, 9]);
+check("kleine Stichproben werden als solche benannt",
+  vetoS.satz.includes("sagt"), true);
 
 /* ------------------------------------------------------------- Zeitachse */
 // Der Test, der die Auswertung vor ihrem eigenen naheliegendsten Trugschluss

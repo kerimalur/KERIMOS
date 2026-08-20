@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { Badge, Card, CardTitle, cx } from "@/components/ui";
 import { Intervall, GruppenTabelle, BefundKarte, VetoKarte } from "@/components/confluence/bilanz-teile";
+import { Pfeil } from "@/components/confluence/teile";
 import { LAGER_LABEL } from "@/lib/confluence/bilanz";
 import { LAGER_ORDNUNG } from "@/lib/confluence/tiefe";
 import type {
   KreuzZeile, FaktorZeile, Auffaellig, FaktorBefund, JahresZeile, ZeitBefund,
+  SichtVergleich, TiefenTrade,
 } from "@/lib/confluence/tiefe";
 import type { BacktestFundamentalBild } from "@/lib/confluence/backtest-bilanz";
 
@@ -112,7 +114,39 @@ export function BacktestFundamental({ bild, ergebnisLabel }: {
       </Card>
 
       <Card>
-        <CardTitle>Das COT-Veto</CardTitle>
+        <CardTitle>COT — zwei Lesarten derselben Daten</CardTitle>
+        <div className="grid gap-4 lg:grid-cols-2">
+          {bild.sichten.map((s) => <SichtKarte key={s.titel} s={s} />)}
+        </div>
+        <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+          Links das Veto aus Fonds und Real Money, rechts Commercials gegen
+          Nicht-Meldepflichtige. Beide lesen denselben COT-Bericht, nur andere
+          Gruppen — deshalb lassen sie sich gegeneinander halten.
+        </p>
+        <p className="mt-2 text-[11px] leading-relaxed text-ink-faint">
+          <strong>Warum „keine Streckung" so gross ist:</strong> Commercials stehen
+          im COT fast immer gegen Retail — netto gilt
+          <em> Commercials ≈ −(Grossspekulanten + Retail)</em>, jemand muss die
+          Gegenseite halten. Ein blosses Auseinanderzeigen ist deshalb kein Signal,
+          sondern Buchhaltung. Gezählt wird nur, wenn <strong>beide gleichzeitig</strong>
+          {" "}am Rand ihrer eigenen drei Jahre stehen — und das ist selten.
+        </p>
+      </Card>
+
+      <Card>
+        <CardTitle>Alle Trades mit der COT-Lage des Tages</CardTitle>
+        <TradeCotTabelle trades={bild.trades} />
+        <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+          Perzentilränge über drei Jahre, je Währung getrennt: <strong>K</strong> =
+          Commercials, <strong>R</strong> = Nicht-Meldepflichtige, Basis / Quote.
+          Ein Pfeil steht nur, wenn beide gestreckt waren. Saisonalität kommt in
+          dieser Tabelle dazu, sobald die Monty-Seite sie rechnet — vorher würde
+          hier eine leere Spalte stehen.
+        </p>
+      </Card>
+
+      <Card>
+        <CardTitle>Das COT-Veto im Detail</CardTitle>
         <VetoKarte v={bild.veto} />
       </Card>
 
@@ -186,6 +220,89 @@ function KreuzTabelle({ kreuz, labels }: { kreuz: KreuzZeile[]; labels: string[]
               <td className={cx("num px-2 py-2 text-right",
                 z.gesamtR > 0 ? "text-good-bright" : z.gesamtR < 0 ? "text-bad-bright" : "text-ink-faint")}>
                 {z.gesamtR > 0 ? "+" : ""}{z.gesamtR.toFixed(2)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------- Sichten */
+
+function SichtKarte({ s }: { s: SichtVergleich }) {
+  return (
+    <div className="rounded-xl bg-sand/40 px-3 py-3">
+      <div className="text-sm font-medium text-ink">{s.titel}</div>
+      <p className="mt-1 text-[11px] leading-relaxed text-ink-muted">{s.erklaerung}</p>
+      <ul className="mt-2.5 space-y-1.5">
+        {s.gruppen.map((g) => (
+          <li key={g.label} className="flex flex-wrap items-center gap-2">
+            <span className="w-44 shrink-0 text-xs text-ink-soft">{g.label}</span>
+            <span className="num text-xs text-ink-muted">{g.n}</span>
+            <Intervall q={g.quote} />
+            <span className={cx("num ml-auto text-xs",
+              (g.erwartung ?? 0) > 0 ? "text-good-bright"
+                : (g.erwartung ?? 0) < 0 ? "text-bad-bright" : "text-ink-faint")}>
+              {g.erwartung === null ? "·" : `${g.erwartung > 0 ? "+" : ""}${g.erwartung.toFixed(2)} R`}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-[11px] leading-relaxed text-ink-muted">{s.satz}</p>
+    </div>
+  );
+}
+
+/* --------------------------------------------------------- Trade-Tabelle */
+
+const rang = (v: number | null) => (v === null ? "·" : v.toFixed(0));
+
+function TradeCotTabelle({ trades }: { trades: TiefenTrade[] }) {
+  if (trades.length === 0) return null;
+
+  return (
+    <div className="max-h-[28rem] overflow-auto">
+      <table className="w-full min-w-[640px] border-collapse text-sm">
+        <thead className="sticky top-0 bg-card">
+          <tr className="border-b border-line text-xs text-ink-muted">
+            <th className="px-2 py-2 text-left font-normal">Datum</th>
+            <th className="px-2 py-2 text-left font-normal">Paar</th>
+            <th className="px-2 py-2 text-left font-normal">Richtung</th>
+            <th className="px-2 py-2 text-left font-normal">Ergebnis</th>
+            <th className="px-2 py-2 text-right font-normal">R</th>
+            <th className="px-2 py-2 text-right font-normal" title="Commercials, Basis / Quote">K</th>
+            <th className="px-2 py-2 text-right font-normal" title="Nicht-Meldepflichtige (Retail), Basis / Quote">R&nbsp;(Retail)</th>
+            <th className="px-2 py-2 text-center font-normal">Divergenz</th>
+          </tr>
+        </thead>
+        <tbody>
+          {trades.map((t) => (
+            <tr key={t.id} className="border-b border-line/50 last:border-b-0">
+              <td className="num px-2 py-1.5 text-ink-soft">{t.datum}</td>
+              <td className="px-2 py-1.5 text-ink">{t.paar}</td>
+              <td className={cx("px-2 py-1.5 text-xs",
+                t.richtung > 0 ? "text-good-bright" : "text-bad-bright")}>
+                {t.richtung > 0 ? "Long" : "Short"}
+              </td>
+              <td className="px-2 py-1.5 text-xs text-ink-muted">{t.ergebnis}</td>
+              <td className={cx("num px-2 py-1.5 text-right",
+                t.r > 0 ? "text-good-bright" : t.r < 0 ? "text-bad-bright" : "text-ink-faint")}>
+                {t.r > 0 ? "+" : ""}{t.r.toFixed(2)}
+              </td>
+              <td className="num px-2 py-1.5 text-right text-ink-soft">
+                {rang(t.cot?.kommBasis ?? null)}<span className="text-ink-faint"> / </span>
+                {rang(t.cot?.kommQuote ?? null)}
+              </td>
+              <td className="num px-2 py-1.5 text-right text-ink-soft">
+                {rang(t.cot?.retailBasis ?? null)}<span className="text-ink-faint"> / </span>
+                {rang(t.cot?.retailQuote ?? null)}
+              </td>
+              <td className="px-2 py-1.5 text-center">
+                {t.cot && t.cot.div !== 0
+                  ? <Pfeil dir={t.cot.div} />
+                  : <span className="text-ink-faint">–</span>}
               </td>
             </tr>
           ))}

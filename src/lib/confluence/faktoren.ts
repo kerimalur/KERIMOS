@@ -89,6 +89,17 @@ export interface Rohdaten {
    */
   cotRealMoney?: Partial<Record<string, Punkt[]>>;
   /**
+   * COT: Netto-Position der Commercials als Anteil des Open Interest.
+   *
+   * Wird auf der Confluence-Seite bewusst NICHT benutzt — dort bleibt das
+   * Veto aus Fonds und Real Money. Diese beiden Reihen sind für den Backtest
+   * und die Monty-Seite da, wo Commercials gegen Retail ausgewertet werden.
+   * Zwei Lesarten derselben Daten, damit sie sich vergleichen lassen.
+   */
+  cotKomm?: Partial<Record<string, Punkt[]>>;
+  /** COT: Netto-Position der Nicht-Meldepflichtigen (Retail-Proxy). */
+  cotRetail?: Partial<Record<string, Punkt[]>>;
+  /**
    * 2-Jahres-Staatsanleihenrendite in % je Währung — die Zinserwartung.
    * Optional: nicht jede Währung hat eine Quelle, und die Kontrollwerte
    * bauen ihre Vorlagen ohne dieses Feld.

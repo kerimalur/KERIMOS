@@ -19,6 +19,18 @@ import { FAKTOR_LABEL, type FaktorKey } from "./faktoren";
  * Rein rechnerisch, keine Datenbank. Prüfbar in `tools/checks/confluence.mts`.
  */
 
+/** Wie die COT-Lage am Handelstag stand — beide Lesarten nebeneinander. */
+export interface CotStand {
+  /** Perzentilrang der Commercials, Basis- und Quote-Währung. */
+  kommBasis: number | null;
+  kommQuote: number | null;
+  /** Perzentilrang der Nicht-Meldepflichtigen (Retail-Proxy). */
+  retailBasis: number | null;
+  retailQuote: number | null;
+  /** +1 = die Divergenz stützte den Trade, −1 = sie sprach dagegen, 0 = still. */
+  div: -1 | 0 | 1;
+}
+
 export interface TiefenTrade extends TradeUrteil {
   /** Ausgang in der Sprache des Backtest-Journals: "full_tp", "sl", … */
   ergebnis: string;
@@ -26,6 +38,8 @@ export interface TiefenTrade extends TradeUrteil {
   faktoren: { key: FaktorKey; dir: -1 | 0 | 1 }[];
   /** TradingView-Link, damit die Screenshot-Runde daran andocken kann. */
   link: string | null;
+  /** COT-Lage am Handelstag. Null, wenn keine Historie da war. */
+  cot: CotStand | null;
 }
 
 /* ------------------------------------------------- Lager × Ergebnis */
@@ -263,6 +277,83 @@ export function zeitBefund(trades: TiefenTrade[]): ZeitBefund {
         + `vermischt beides.`
       : `"Kein Urteil" verteilt sich gleichmaessig ueber die Zeit (${p(a)} frueh, `
         + `${p(b)} spaet). Die Aufteilung ist also keine verkappte Zeitachse.`,
+  };
+}
+
+/* ----------------------------------------------------- Zwei COT-Lesarten */
+
+export interface SichtGruppe {
+  label: string;
+  n: number;
+  quote: Quote;
+  erwartung: number | null;
+}
+
+export interface SichtVergleich {
+  titel: string;
+  erklaerung: string;
+  gruppen: SichtGruppe[];
+  satz: string;
+}
+
+function gruppeAus(label: string, liste: TiefenTrade[]): SichtGruppe {
+  const gewertet = liste.filter((t) => t.gewonnen !== null);
+  return {
+    label,
+    n: liste.length,
+    quote: wilson(gewertet.filter((t) => t.gewonnen === true).length, gewertet.length),
+    erwartung: liste.length > 0
+      ? liste.reduce((s, t) => s + t.r, 0) / liste.length : null,
+  };
+}
+
+/**
+ * Trennt eine Lesart überhaupt? Derselbe strenge Massstab wie überall:
+ * getrennte Wilson-Intervalle oder gar nichts.
+ */
+function urteilUeber(a: SichtGruppe, b: SichtGruppe, was: string): string {
+  if (a.quote.n < MIN_JE_SEITE || b.quote.n < MIN_JE_SEITE) {
+    return `${a.n} gegen ${b.n} Trades — unter ${MIN_JE_SEITE} je Seite sagt ${was} nichts.`;
+  }
+  const getrennt = a.quote.unten! > b.quote.oben! || b.quote.unten! > a.quote.oben!;
+  const zahlen = `${(a.quote.quote! * 100).toFixed(1)} % gegen ${(b.quote.quote! * 100).toFixed(1)} %`;
+  return getrennt
+    ? `${zahlen}, Intervalle getrennt — ${was} trennt in dieser Stichprobe.`
+    : `${zahlen} — die Intervalle überlappen. Kein Nachweis für ${was}.`;
+}
+
+/** Lesart 1: das bestehende Veto aus Fonds und Real Money. */
+export function vetoSicht(trades: TiefenTrade[]): SichtVergleich {
+  const mit = gruppeAus("Veto stand dagegen", trades.filter((t) => t.vetoAktiv));
+  const ohne = gruppeAus("kein Veto", trades.filter((t) => !t.vetoAktiv));
+  return {
+    titel: "Veto (Fonds & Real Money)",
+    erklaerung: "Stand die Positionierung der schnellen Gelder bei Einstieg schon "
+      + "überfüllt in genau deiner Richtung?",
+    gruppen: [mit, ohne],
+    satz: urteilUeber(ohne, mit, "das Veto"),
+  };
+}
+
+/**
+ * Lesart 2: Commercials gegen Retail.
+ *
+ * Drei Gruppen statt zwei, weil „keine Aussage" hier der Normalfall ist —
+ * beide Seiten müssen gleichzeitig gestreckt sein. Diese Gruppe gehört
+ * sichtbar dazu, sonst liest man die Trefferquote der beiden anderen als
+ * Aussage über alle Trades.
+ */
+export function cotSicht(trades: TiefenTrade[]): SichtVergleich {
+  const mit = gruppeAus("Divergenz stützte", trades.filter((t) => t.cot?.div === 1));
+  const gegen = gruppeAus("Divergenz sprach dagegen", trades.filter((t) => t.cot?.div === -1));
+  const still = gruppeAus("keine Streckung", trades.filter((t) => !t.cot || t.cot.div === 0));
+  return {
+    titel: "Commercials gegen Retail",
+    erklaerung: "Standen Commercials und Nicht-Meldepflichtige gleichzeitig an "
+      + "entgegengesetzten Rändern ihrer eigenen Dreijahres-Historie — und zwar "
+      + "so, dass es für deine Richtung sprach?",
+    gruppen: [mit, gegen, still],
+    satz: urteilUeber(mit, gegen, "die Divergenz"),
   };
 }
 

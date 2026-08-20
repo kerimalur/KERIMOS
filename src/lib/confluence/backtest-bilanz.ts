@@ -2,10 +2,12 @@ import "server-only";
 import { ladeFuerSpanne, type Ladebericht } from "./daten";
 import { baueRegime, bewertePaar, FAKTOR_LABEL, type RegimeLage, type FaktorKey } from "./faktoren";
 import { gruppiere, vergleiche, vetoBilanz, aufteilung, type Gruppe, type Vergleich, type VetoBilanz, type Aufteilung } from "./bilanz";
+import { cotBildFuer, cotPaarUrteil } from "./cot-divergenz";
 import {
   ergebnisKreuz, faktorBilanz, auffaellige, jahresVerteilung, zeitBefund,
+  vetoSicht, cotSicht,
   type TiefenTrade, type KreuzZeile, type FaktorZeile, type Auffaellig,
-  type JahresZeile, type ZeitBefund,
+  type JahresZeile, type ZeitBefund, type SichtVergleich,
 } from "./tiefe";
 import { berechneR, RESULT_LABEL, type BacktestResult, type NativeBacktestTrade } from "@/lib/backtest-types";
 
@@ -50,6 +52,8 @@ export interface BacktestFundamentalBild {
   veto: VetoBilanz;
   verteilung: Aufteilung[];
   kreuz: KreuzZeile[];
+  /** Dieselben Trades, zweimal gelesen — zum Vergleichen. */
+  sichten: SichtVergleich[];
   jahre: JahresZeile[];
   zeit: ZeitBefund;
   faktoren: FaktorZeile[];
@@ -73,7 +77,7 @@ const LEER: BacktestFundamentalBild = {
     ohneVeto: { n: 0, treffer: 0, quote: null, unten: null, oben: null },
     satz: "Noch keine Trades.",
   },
-  verteilung: [], kreuz: [],
+  verteilung: [], kreuz: [], sichten: [],
   jahre: [], zeit: {
     anteilFrueh: null, anteilSpaet: null, trennDatum: null, verdaechtig: false,
     satz: "Noch keine Trades.",
@@ -125,8 +129,24 @@ export async function baueBacktestFundamental(
       ergebnis: t.result,
       faktoren: u.faktoren.map((f) => ({ key: f.key, dir: f.dir })),
       link: t.tradingview_link ?? t.screenshot_url ?? null,
+      cot: cotStandFuer(u.basis, u.quote, tag, richtung),
     };
   });
+
+  function cotStandFuer(
+    basis: string, quote: string, tag: string, richtung: -1 | 1,
+  ) {
+    const b = cotBildFuer(daten, basis, tag);
+    const q = cotBildFuer(daten, quote, tag);
+    if (b.kommRang === null && q.kommRang === null) return null;
+    const paar = cotPaarUrteil(b, q);
+    return {
+      kommBasis: b.kommRang, kommQuote: q.kommRang,
+      retailBasis: b.retailRang, retailQuote: q.retailRang,
+      // Auf den TRADE gedreht: bei einem Short spricht dir = −1 dafür.
+      div: (paar.dir * richtung) as -1 | 0 | 1,
+    };
+  }
 
   const gruppen = gruppiere(trades);
 
@@ -138,6 +158,7 @@ export async function baueBacktestFundamental(
     veto: vetoBilanz(trades),
     verteilung: aufteilung(trades),
     kreuz: ergebnisKreuz(trades, KREUZ_ERGEBNISSE),
+    sichten: [vetoSicht(trades), cotSicht(trades)],
     jahre: jahresVerteilung(trades),
     zeit: zeitBefund(trades),
     faktoren: faktorBilanz(trades, FAKTOR_KEYS),
