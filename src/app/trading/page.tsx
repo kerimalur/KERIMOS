@@ -190,6 +190,13 @@ export default async function TradingPage() {
           „läuft noch" steht, siehst du weiter im Cockpit. Hier steht der Markt
           daneben, nicht statt dessen.
         </p>
+        <p className="mt-2 text-[11px] leading-relaxed text-ink-faint">
+          Eine <strong>Anmeldung ist nicht möglich</strong>: die frei einbettbaren
+          TradingView-Widgets sind anonym und kennen keinen Benutzer, deshalb lässt
+          sich deine persönliche Watchlist von tradingview.com hier nicht spiegeln.
+          Die Liste ist stattdessen fest hinterlegt — dieselben 28 Paare wie im
+          Screener, nach Basiswährung gruppiert.
+        </p>
       </Card>
 
       <Card>

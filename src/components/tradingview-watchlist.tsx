@@ -14,6 +14,19 @@ import { useEffect, useRef } from "react";
  * „läuft noch" steht, gehört deshalb weiter ins Cockpit — dieses Widget ist
  * der Marktüberblick daneben, nicht der Ersatz dafür.
  *
+ * ─── Warum es KEINE Anmeldung gibt ───
+ *
+ * Die frei einbettbaren TradingView-Widgets sind anonym. Sie kennen keinen
+ * Benutzer, und es gibt keinen Parameter, keinen Schlüssel und keine
+ * Anmeldemaske, mit der man sie an ein Konto koppeln könnte — deshalb lässt
+ * sich die persönliche Watchlist von tradingview.com hier nicht anzeigen.
+ * tradingview.com selbst in einen Rahmen zu laden geht auch nicht: die Seite
+ * verbietet das per `X-Frame-Options`, und eine Anmeldesitzung würde ohnehin
+ * nicht mitwandern.
+ *
+ * Die Liste unten ist deshalb fest verdrahtet — dieselben 28 Paare, dieselbe
+ * Gruppierung wie im Screener. Wer sie ändern will, ändert sie hier.
+ *
  * Client-Komponente, weil TradingView ein Script in den DOM hängt. Bewusst
  * ohne next/script: das Widget verlangt das Script INNERHALB seines
  * Containers, und `next/script` platziert es woanders.
@@ -55,6 +68,9 @@ export function TradingViewWatchlist({
     script.src = "https://s3.tradingview.com/external-embedding/embed-widget-market-quotes.js";
     script.async = true;
     script.type = "text/javascript";
+    // `isTransparent` schlägt bei diesem Widget den `colorTheme` — mit beiden
+    // gleichzeitig kam die helle Tabelle heraus, die auf der dunklen Seite
+    // wehtat. Also durchsichtig aus und die Kartenfarbe fest gesetzt.
     script.innerHTML = JSON.stringify({
       width: "100%",
       height: hoehe,
@@ -64,10 +80,10 @@ export function TradingViewWatchlist({
         symbols: g.symbols.map((s) => ({ name: s, displayName: s.replace("OANDA:", "") })),
       })),
       showSymbolLogo: false,
-      isTransparent: true,
+      isTransparent: false,
       colorTheme: "dark",
       locale: "de_DE",
-      backgroundColor: "rgba(0,0,0,0)",
+      backgroundColor: "#1E1811",
     });
     el.appendChild(script);
 
@@ -76,8 +92,11 @@ export function TradingViewWatchlist({
 
   return (
     <div>
-      <div ref={behaelter} className="tradingview-widget-container"
-        style={{ minHeight: hoehe }} />
+      {/* Der Rahmen kaschiert die Kanten des fremden Widgets: es bringt seine
+          eigenen Ecken und Linien mit, die sonst über der Karte schweben. */}
+      <div ref={behaelter}
+        className="tradingview-widget-container overflow-hidden rounded-xl border border-line"
+        style={{ minHeight: hoehe, backgroundColor: "#1E1811" }} />
       <noscript>
         <p className="text-xs text-ink-faint">
           Das Kurs-Widget braucht JavaScript.
