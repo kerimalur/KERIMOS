@@ -16,7 +16,9 @@
     "check:auswertung": "npx -y tsx tools/checks/auswertung.mts",
     "check:monty": "npx -y tsx tools/checks/monty.mts",
     "check:pine": "npx -y tsx tools/checks/pine.mts",
-    "check:vorwaerts": "npx -y tsx tools/checks/vorwaerts.mts"
+    "check:vorwaerts": "npx -y tsx tools/checks/vorwaerts.mts",
+    "check:cot-gruppen": "npx -y tsx tools/checks/cot-gruppen.mts",
+    "check:beobachtung": "npx -y tsx tools/checks/beobachtung.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

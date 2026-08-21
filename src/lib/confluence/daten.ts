@@ -2,7 +2,8 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 import { createTradingClient } from "@/lib/supabase/trading";
 import { plusTage, VERZUG } from "./reihen";
-import { nettoReihe, zuReihe, alsInstrument } from "./rechnen";
+import { zuReihe, alsInstrument } from "./rechnen";
+import { cotGruppenFuer, type TffZeile, type LegacyZeile } from "./cot-gruppen";
 import { G8, LEERE_DATEN, type Rohdaten } from "./faktoren";
 import type { Punkt } from "./reihen";
 import type { Kurspunkt } from "./saison";
@@ -105,20 +106,6 @@ async function holeAlle<T>(
 
 interface FredZeile { series_id: string; date: string; value: number | null }
 interface PreisZeile { instrument: string; date: string; close: number | null }
-interface TffZeile {
-  contract_code: string; report_date: string;
-  lev_money_long: number | null; lev_money_short: number | null;
-  dealer_long: number | null; dealer_short: number | null;
-  asset_mgr_long: number | null; asset_mgr_short: number | null;
-  open_interest: number | null;
-}
-interface LegacyZeile {
-  contract_code: string; report_date: string;
-  noncomm_long: number | null; noncomm_short: number | null;
-  comm_long: number | null; comm_short: number | null;
-  nonrept_long: number | null; nonrept_short: number | null;
-  open_interest: number | null;
-}
 
 export interface Ladebericht {
   /** Woher das COT-Perzentil je Währung kommt. */
@@ -222,55 +209,23 @@ async function ladeRoh(von: string, bis: string): Promise<Geladen> {
     if (cpi[ccy].length === 0) bericht.leer.push(`${ccy} CPI (${CPI_SERIE[ccy]})`);
 
     const code = COT_CONTRACT[ccy];
-    // TFF trennt Hedgefonds von Asset Managern und ist für FX die schärfere
-    // Quelle. Legacy nur als Ersatz - und niemals gemischt: zwei Definitionen
-    // in einer Perzentil-Reihe ergäben einen Rang, den es nie gab.
-    const tffZeilen = tff.filter((z) => z.contract_code === code);
-
-    // Banken (Dealer) und Real Money (Asset Manager) gibt es NUR im TFF-Bericht.
-    // Der Legacy-Bericht kennt sie nicht — faellt TFF aus, bleiben sie leer und
-    // die Anzeige sagt das, statt eine Ersatzgruppe unterzuschieben.
-    cotBanken[ccy] = nettoReihe(tffZeilen.map((z) => ({
-      datum: z.report_date, lang: z.dealer_long, kurz: z.dealer_short, oi: z.open_interest,
-    })));
-    cotRealMoney[ccy] = nettoReihe(tffZeilen.map((z) => ({
-      datum: z.report_date, lang: z.asset_mgr_long, kurz: z.asset_mgr_short, oi: z.open_interest,
-    })));
-
-    bericht.cotGruppen[ccy] = {
-      komm: cotKomm[ccy].length, retail: cotRetail[ccy].length,
-    };
-
-    const ausTff = nettoReihe(
-      tffZeilen.map((z) => ({
-        datum: z.report_date, lang: z.lev_money_long, kurz: z.lev_money_short, oi: z.open_interest,
-      })),
+    // Zuordnung und Quellenwahl stecken in cot-gruppen.ts — dort sind sie
+    // pruefbar (tools/checks/cot-gruppen.mts). In dieser Schleife stand die
+    // Zuordnung frueher hinter einem `continue`; der griff bei jeder G8-
+    // Waehrung, und cotKomm/cotRetail blieben deshalb immer leer. Monty sah
+    // wie ein Anzeigefehler aus, obwohl cot_reports lueckenlos ab 2006
+    // gefuellt ist (13.345 Zeilen, geprueft am 21.08.2026).
+    const g = cotGruppenFuer(
+      tff.filter((z) => z.contract_code === code),
+      legacy.filter((z) => z.contract_code === code),
     );
-    if (ausTff.length >= 26) {
-      cot[ccy] = ausTff;
-      bericht.cotQuelle[ccy] = "tff";
-      continue;
-    }
-    // Commercials und Nicht-Meldepflichtige kommen IMMER aus dem Legacy-Bericht,
-    // unabhaengig davon, welche Quelle das Fonds-Perzentil oben gewonnen hat:
-    // der TFF-Bericht kennt diese beiden Gruppen gar nicht. Sie sind die
-    // Grundlage der Commercials-gegen-Retail-Auswertung im Backtest und in
-    // Monty — und die einzigen COT-Gruppen mit Historie bis in die Achtziger.
-    const legacyZeilen = legacy.filter((z) => z.contract_code === code);
-    cotKomm[ccy] = nettoReihe(legacyZeilen.map((z) => ({
-      datum: z.report_date, lang: z.comm_long, kurz: z.comm_short, oi: z.open_interest,
-    })));
-    cotRetail[ccy] = nettoReihe(legacyZeilen.map((z) => ({
-      datum: z.report_date, lang: z.nonrept_long, kurz: z.nonrept_short, oi: z.open_interest,
-    })));
-
-    const ausLegacy = nettoReihe(
-      legacyZeilen.map((z) => ({
-        datum: z.report_date, lang: z.noncomm_long, kurz: z.noncomm_short, oi: z.open_interest,
-      })),
-    );
-    cot[ccy] = ausLegacy;
-    bericht.cotQuelle[ccy] = ausLegacy.length >= 26 ? "legacy" : "keine";
+    cotBanken[ccy] = g.banken;
+    cotRealMoney[ccy] = g.realMoney;
+    cotKomm[ccy] = g.komm;
+    cotRetail[ccy] = g.retail;
+    cot[ccy] = g.fonds;
+    bericht.cotQuelle[ccy] = g.quelle;
+    bericht.cotGruppen[ccy] = { komm: g.komm.length, retail: g.retail.length };
   }
 
   const vix = nachSerie(VIX_SERIE);
@@ -311,7 +266,7 @@ const gecacht = unstable_cache(
   // stillschweigend die alte Form weiter. Genau daran lag die leere
   // Monty-Tabelle am 20.08.: die Rechnung stimmte, die Daten waren aus dem
   // Cache von vorher.
-  ["confluence-roh-v2"],
+  ["confluence-roh-v3"],
   // Die Quellen sind täglich bis wöchentlich. Häufiger zu fragen bringt
   // nichts ausser Last auf einer Datenbank, die der Screener ohnehin braucht.
   { revalidate: 1800, tags: ["confluence"] },

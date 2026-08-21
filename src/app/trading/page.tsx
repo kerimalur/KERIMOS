@@ -5,7 +5,9 @@ import {
 } from "@/lib/supabase/trading";
 import { addWatchlistPair, removeWatchlistPair } from "@/lib/trading-actions";
 import { Card, CardTitle, Badge, Empty, Input, Select, Label, Button } from "@/components/ui";
-import { TradingViewWatchlist } from "@/components/tradingview-watchlist";
+import { BeobachtungKarte } from "@/components/beobachtung-karte";
+import { KopierFeld } from "@/components/alarm/kopierfeld";
+import { WATCHLIST_MIGRATION_SQL } from "@/lib/trading/watchlist-migration";
 import { dateLabel } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -181,23 +183,25 @@ export default async function TradingPage() {
         </form>
       </Card>
 
-      <Card>
-        <CardTitle>Markt im Blick</CardTitle>
-        <TradingViewWatchlist />
-        <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
-          Live-Kurse aller 28 Paare direkt von TradingView. Das Widget kennt deine
-          GVA-Linien und Setup-Zustände <strong>nicht</strong> — was im Radar auf
-          „läuft noch" steht, siehst du weiter im Cockpit. Hier steht der Markt
-          daneben, nicht statt dessen.
-        </p>
+      <BeobachtungKarte />
+
+      <details className="rounded-xl border border-line/60 bg-sand/40 px-4 py-3">
+        <summary className="cursor-pointer text-sm font-medium text-ink">
+          Mehrere Linien je Pair — einmalige Migration
+        </summary>
         <p className="mt-2 text-[11px] leading-relaxed text-ink-faint">
-          Eine <strong>Anmeldung ist nicht möglich</strong>: die frei einbettbaren
-          TradingView-Widgets sind anonym und kennen keinen Benutzer, deshalb lässt
-          sich deine persönliche Watchlist von tradingview.com hier nicht spiegeln.
-          Die Liste ist stattdessen fest hinterlegt — dieselben 28 Paare wie im
-          Screener, nach Basiswährung gruppiert.
+          Bis 21.08.2026 liess die Datenbank nur <strong>eine</strong> Zeile je
+          Paar zu. Eine zweite Linie fuer dasselbe Paar hat die erste
+          stillschweigend ueberschrieben. Der Code legt jetzt mehrere an — die
+          Bedingung in der Datenbank muss aber einmal von Hand weg, sonst
+          kommt beim Speichern ein Fehler. SQL kopieren, im Supabase-SQL-Editor
+          des Trading-Projekts ausfuehren, fertig. Laeuft die Migration ein
+          zweites Mal, tut sie nichts.
         </p>
-      </Card>
+        <div className="mt-3">
+          <KopierFeld text={WATCHLIST_MIGRATION_SQL} />
+        </div>
+      </details>
 
       <Card>
         <CardTitle>So ist es gedacht</CardTitle>
