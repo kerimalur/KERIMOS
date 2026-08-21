@@ -1,5 +1,6 @@
 import "server-only";
-import { ladeFuerStichtag, ladeKurse } from "./daten";
+import { ladeCotLang, ladeFuerStichtag, ladeKurse, KALIBRIER_JAHRE } from "./daten";
+import { kalibriere, raengeReihe, type Kalibrierung } from "./kalibrierung";
 import { G8, PAARE } from "./faktoren";
 import { cotStatistik, type CotStatistik } from "./monty-cot";
 import { saisonBild, type Fenster, type SaisonBild } from "./saison";
@@ -56,3 +57,31 @@ export async function baueSaisonZeile(
   const kurse = await ladeKurse(paar);
   return saisonBild(paar, kurse, fenster, heute);
 }
+
+
+/**
+ * Die Schwellen-Kalibrierung eines Paares.
+ *
+ * Getrennt vom Rest der Seite geladen und hinter einer eigenen Suspense-Grenze
+ * gerendert: sie rechnet über zwanzig Jahre COT-Historie und braucht die
+ * Kursreihe des Paares dazu. Das dauert, und solange es dauert, soll der Rest
+ * von Monty schon dastehen.
+ *
+ * Die Ränge werden je Währung EINMAL gerechnet — nicht je Schwelle. Der Rang
+ * einer Woche hängt nur von der eigenen Historie ab, nicht davon, wo die
+ * Grenze liegt.
+ */
+export async function baueKalibrierung(
+  paar: string, stichtag: string,
+): Promise<Kalibrierung> {
+  const [cot, kurse] = await Promise.all([ladeCotLang(stichtag), ladeKurse(paar)]);
+  const basis = paar.slice(0, 3);
+  const quote = paar.slice(3, 6);
+  return kalibriere(
+    paar, kurse,
+    raengeReihe(cot, basis),
+    raengeReihe(cot, quote),
+  );
+}
+
+export { KALIBRIER_JAHRE };

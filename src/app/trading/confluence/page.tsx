@@ -4,7 +4,8 @@ import { tradingConfigured } from "@/lib/supabase/trading";
 import { heuteISO } from "@/lib/time";
 import { PAARE, ampelFuer } from "@/lib/confluence/faktoren";
 import { baueJetzt, baueRueckblick, baueBilanz, type Ansicht } from "@/lib/confluence/seite";
-import { baueMontyCot, baueSaisonZeile, MONTY_PAARE } from "@/lib/confluence/monty";
+import { baueKalibrierung, baueMontyCot, baueSaisonZeile, KALIBRIER_JAHRE, MONTY_PAARE } from "@/lib/confluence/monty";
+import { SchwellenTabelle, SchwellenTabelleLaedt } from "@/components/confluence/kalibrier-teile";
 import { FENSTER, MAX_JAHRE, MIN_JAHRE, type Fenster } from "@/lib/confluence/saison";
 import { CotStatistikTabelle, SaisonKopf, SaisonZeile, SaisonZeileLaedt } from "@/components/confluence/monty-teile";
 import {
@@ -194,6 +195,8 @@ async function AnsichtTerminal() {
 async function AnsichtMonty({ p }: { p: Record<string, string | string[] | undefined> }) {
   const heute = heuteISO();
   const fenster: Fenster = FENSTER.find((f) => String(f) === einer(p.jahre)) ?? 20;
+  // Nicht alle 28 Paare zur Auswahl: jedes kostet zwanzig Jahre Rechnung.
+  const kalPaar: string = KALIBRIER_PAARE.find((x) => x === einer(p.kal)) ?? KALIBRIER_PAARE[0];
   const cot = await baueMontyCot(heute);
 
   return (
@@ -228,6 +231,35 @@ async function AnsichtMonty({ p }: { p: Record<string, string | string[] | undef
           Signal. „Retail" sind hier ausserdem die Kleinspekulanten am{" "}
           <strong>Termin</strong>markt, nicht CFD-Retail; ein Proxy, dafür mit Jahrzehnten
           Historie.
+        </p>
+      </Card>
+
+      <Card>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <CardTitle className="mb-0">Wie streng soll die Grenze sein?</CardTitle>
+          <span className="ml-auto flex flex-wrap items-center gap-1.5">
+            {KALIBRIER_PAARE.map((x) => (
+              <Link key={x} href={`/trading/confluence?ansicht=monty&jahre=${fenster}&kal=${x}`}
+                className={cx("num rounded-lg px-2.5 py-1 text-xs transition duration-150 ease-tactile",
+                  kalPaar === x ? "bg-sand text-ink" : "text-ink-muted hover:text-ink")}>
+                {x}
+              </Link>
+            ))}
+          </span>
+        </div>
+
+        <Suspense fallback={<SchwellenTabelleLaedt paar={kalPaar} />}>
+          {/* Eigene Suspense-Grenze: hier werden zwanzig Jahre COT-Historie
+              gerechnet. Der Rest von Monty soll derweil schon dastehen. */}
+          <KalibrierLader paar={kalPaar} heute={heute} />
+        </Suspense>
+
+        <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+          <code>COT_GRENZE</code> steht auf 75/25, und diese Zahl war bisher eine
+          Überlegung, keine Messung. Hier steht daneben, was die anderen Schwellen
+          über {KALIBRIER_JAHRE} Jahre gebracht hätten. Geändert wird dadurch
+          nichts — die Tabelle ist die Grundlage für die Entscheidung, nicht die
+          Entscheidung.
         </p>
       </Card>
 
@@ -535,4 +567,21 @@ async function AnsichtBilanz() {
       {b.bericht && <Luecken leer={b.bericht.leer} cotQuelle={b.bericht.cotQuelle} />}
     </>
   );
+}
+
+
+/**
+ * Welche Paare zur Kalibrierung angeboten werden.
+ *
+ * Nicht alle 28: jedes kostet zwanzig Jahre COT-Historie und eine volle
+ * Kursreihe. Diese sieben decken alle acht Währungen genau einmal ab — mehr
+ * bringt keine neue Information, nur Rechenzeit.
+ */
+const KALIBRIER_PAARE = [
+  "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD",
+] as const;
+
+async function KalibrierLader({ paar, heute }: { paar: string; heute: string }) {
+  const bild = await baueKalibrierung(paar, heute);
+  return <SchwellenTabelle bild={bild} />;
 }

@@ -2,7 +2,7 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 import { createTradingClient } from "@/lib/supabase/trading";
 import { plusTage, VERZUG } from "./reihen";
-import { zuReihe, alsInstrument } from "./rechnen";
+import { nettoReihe, zuReihe, alsInstrument } from "./rechnen";
 import { cotGruppenFuer, type TffZeile, type LegacyZeile } from "./cot-gruppen";
 import { G8, LEERE_DATEN, type Rohdaten } from "./faktoren";
 import type { Punkt } from "./reihen";
@@ -280,6 +280,64 @@ export function ladeFuerStichtag(stichtag: string): Promise<Geladen> {
 /** Daten für eine ganze Spanne (Ansicht „Bilanz" über alle Trades). */
 export function ladeFuerSpanne(von: string, bis: string): Promise<Geladen> {
   return gecacht(plusTage(von, -VORLAUF_TAGE), bis);
+}
+
+/* --------------------------------------------- COT über die volle Historie */
+
+/**
+ * Nur die Legacy-COT-Reihen, dafür über zwanzig Jahre.
+ *
+ * `ladeFuerStichtag` holt 1250 Tage — genug für ein Perzentil, viel zu wenig,
+ * um eine Schwelle zu kalibrieren. Dieselbe Abfrage über zwanzig Jahre zu
+ * fahren wäre aber teuer: sie bringt FRED, Preise und TFF mit, und davon
+ * braucht die Kalibrierung nichts. Deshalb diese schmale Variante — eine
+ * Tabelle, sechs Spalten.
+ *
+ * 24 Stunden gecacht: der COT-Bericht kommt einmal die Woche.
+ */
+export interface CotLang {
+  cotKomm: Record<string, Punkt[]>;
+  cotRetail: Record<string, Punkt[]>;
+}
+
+const cotLangGecacht = unstable_cache(
+  async (von: string, bis: string): Promise<CotLang> => {
+    const db = createTradingClient();
+    const leer: CotLang = { cotKomm: {}, cotRetail: {} };
+    if (!db) return leer;
+
+    const contracts = Object.values(COT_CONTRACT);
+    const zeilen = await holeAlle<LegacyZeile>((a, b) => db
+      .from("cot_reports")
+      // Ein String-Literal, nicht zusammengesetzt — sonst verliert supabase-js
+      // den Zeilentyp.
+      .select("contract_code, report_date, noncomm_long, noncomm_short, comm_long, comm_short, nonrept_long, nonrept_short, open_interest")
+      .in("contract_code", contracts)
+      .gte("report_date", von).lte("report_date", bis)
+      .order("report_date", { ascending: true }).range(a, b));
+
+    const raus: CotLang = { cotKomm: {}, cotRetail: {} };
+    for (const ccy of G8) {
+      const code = COT_CONTRACT[ccy];
+      const meine = zeilen.filter((z) => z.contract_code === code);
+      raus.cotKomm[ccy] = nettoReihe(meine.map((z) => ({
+        datum: z.report_date, lang: z.comm_long, kurz: z.comm_short, oi: z.open_interest,
+      })));
+      raus.cotRetail[ccy] = nettoReihe(meine.map((z) => ({
+        datum: z.report_date, lang: z.nonrept_long, kurz: z.nonrept_short, oi: z.open_interest,
+      })));
+    }
+    return raus;
+  },
+  ["confluence-cot-lang-v1"],
+  { revalidate: 86_400, tags: ["confluence"] },
+);
+
+/** Wie weit die Kalibrierung zurückschaut. Zwanzig Jahre, wie die Kurse. */
+export const KALIBRIER_JAHRE = 20;
+
+export function ladeCotLang(bis: string): Promise<CotLang> {
+  return cotLangGecacht(plusTage(bis, -365 * KALIBRIER_JAHRE), bis);
 }
 
 /* ------------------------------------------------------------- Kurse */
