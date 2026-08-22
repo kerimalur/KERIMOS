@@ -11,6 +11,7 @@ import {
 import {
   PaarUebersicht, PaarUebersichtLaedt, SchwellenTabelle, SchwellenTabelleLaedt,
 } from "@/components/confluence/kalibrier-teile";
+import { VARIANTEN, type Variante } from "@/lib/confluence/kalibrierung";
 import { FENSTER, MAX_JAHRE, MIN_JAHRE, type Fenster } from "@/lib/confluence/saison";
 import { CotStatistikTabelle, SaisonKopf, SaisonZeile, SaisonZeileLaedt } from "@/components/confluence/monty-teile";
 import {
@@ -202,6 +203,8 @@ async function AnsichtMonty({ p }: { p: Record<string, string | string[] | undef
   const fenster: Fenster = FENSTER.find((f) => String(f) === einer(p.jahre)) ?? 20;
   // Nicht alle 28 Paare zur Auswahl: jedes kostet zwanzig Jahre Rechnung.
   const kalPaar: string = KALIBRIER_PAARE.find((x) => x === einer(p.kal)) ?? KALIBRIER_PAARE[0];
+  const variante: Variante =
+    VARIANTEN.find((v) => v.key === einer(p.var))?.key ?? "beide";
   const cot = await baueMontyCot(heute);
 
   return (
@@ -240,10 +243,33 @@ async function AnsichtMonty({ p }: { p: Record<string, string | string[] | undef
       </Card>
 
       <Card>
-        <CardTitle>Trägt der Faktor überhaupt? — alle sieben Paare</CardTitle>
-        <Suspense fallback={<PaarUebersichtLaedt />}>
-          <GesamtLader heute={heute} />
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <CardTitle className="mb-0">Trägt der Faktor überhaupt?</CardTitle>
+          <span className="ml-auto flex flex-wrap items-center gap-1.5">
+            {VARIANTEN.map((v) => (
+              <Link key={v.key} title={v.hilfe}
+                href={`/trading/confluence?ansicht=monty&jahre=${fenster}&kal=${kalPaar}&var=${v.key}`}
+                className={cx("rounded-lg px-2.5 py-1 text-xs transition duration-150 ease-tactile",
+                  variante === v.key ? "bg-sand text-ink" : "text-ink-muted hover:text-ink")}>
+                {v.label}
+              </Link>
+            ))}
+          </span>
+        </div>
+
+        <Suspense key={variante} fallback={<PaarUebersichtLaedt />}>
+          <GesamtLader heute={heute} variante={variante} />
         </Suspense>
+
+        <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+          Dein Pine-Indikator nimmt für USDJPY <strong>eine</strong> Währung —
+          oben rechts steht „Quelle: USD", CFTC 098662, der Dollar-Index. Diese
+          Rechnung nahm bisher <strong>beide</strong> Beine und zog sie
+          voneinander ab. Das sind zwei verschiedene Signale, und sie können
+          sich gegenseitig auslöschen: stehen USD und JPY gleichzeitig gestreckt
+          short, ist die Differenz null und es entsteht gar kein Signal —
+          obwohl der Indikator eines zeigt. „nur Basiswährung" rechnet wie er.
+        </p>
       </Card>
 
       <Card>
@@ -251,7 +277,7 @@ async function AnsichtMonty({ p }: { p: Record<string, string | string[] | undef
           <CardTitle className="mb-0">Wie streng soll die Grenze sein?</CardTitle>
           <span className="ml-auto flex flex-wrap items-center gap-1.5">
             {KALIBRIER_PAARE.map((x) => (
-              <Link key={x} href={`/trading/confluence?ansicht=monty&jahre=${fenster}&kal=${x}`}
+              <Link key={x} href={`/trading/confluence?ansicht=monty&jahre=${fenster}&kal=${x}&var=${variante}`}
                 className={cx("num rounded-lg px-2.5 py-1 text-xs transition duration-150 ease-tactile",
                   kalPaar === x ? "bg-sand text-ink" : "text-ink-muted hover:text-ink")}>
                 {x}
@@ -260,10 +286,10 @@ async function AnsichtMonty({ p }: { p: Record<string, string | string[] | undef
           </span>
         </div>
 
-        <Suspense fallback={<SchwellenTabelleLaedt paar={kalPaar} />}>
+        <Suspense key={`${kalPaar}-${variante}`} fallback={<SchwellenTabelleLaedt paar={kalPaar} />}>
           {/* Eigene Suspense-Grenze: hier werden zwanzig Jahre COT-Historie
               gerechnet. Der Rest von Monty soll derweil schon dastehen. */}
-          <KalibrierLader paar={kalPaar} heute={heute} />
+          <KalibrierLader paar={kalPaar} heute={heute} variante={variante} />
         </Suspense>
 
         <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
@@ -582,12 +608,14 @@ async function AnsichtBilanz() {
 }
 
 
-async function KalibrierLader({ paar, heute }: { paar: string; heute: string }) {
-  const bild = await baueKalibrierung(paar, heute);
+async function KalibrierLader(
+  { paar, heute, variante }: { paar: string; heute: string; variante: Variante },
+) {
+  const bild = await baueKalibrierung(paar, heute, variante);
   return <SchwellenTabelle bild={bild} />;
 }
 
-async function GesamtLader({ heute }: { heute: string }) {
-  const bild = await baueGesamtbild(heute);
+async function GesamtLader({ heute, variante }: { heute: string; variante: Variante }) {
+  const bild = await baueGesamtbild(heute, variante);
   return <PaarUebersicht bild={bild} />;
 }

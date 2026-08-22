@@ -1,7 +1,8 @@
 import "server-only";
 import { ladeCotLang, ladeFuerStichtag, ladeKurse, KALIBRIER_JAHRE } from "./daten";
 import {
-  gesamtbild, kalibriere, raengeReihe, type Gesamtbild, type Kalibrierung,
+  gesamtbild, kalibriere, raengeReihe,
+  type Gesamtbild, type Kalibrierung, type Variante,
 } from "./kalibrierung";
 import { G8, PAARE } from "./faktoren";
 import { cotStatistik, type CotStatistik } from "./monty-cot";
@@ -74,15 +75,15 @@ export async function baueSaisonZeile(
  * Grenze liegt.
  */
 export async function baueKalibrierung(
-  paar: string, stichtag: string,
+  paar: string, stichtag: string, variante: Variante = "beide",
 ): Promise<Kalibrierung> {
   const [cot, kurse] = await Promise.all([ladeCotLang(stichtag), ladeKurse(paar)]);
-  const basis = paar.slice(0, 3);
-  const quote = paar.slice(3, 6);
   return kalibriere(
     paar, kurse,
-    raengeReihe(cot, basis),
-    raengeReihe(cot, quote),
+    raengeReihe(cot, paar.slice(0, 3)),
+    raengeReihe(cot, paar.slice(3, 6)),
+    undefined,
+    variante,
   );
 }
 
@@ -105,7 +106,9 @@ export const KALIBRIER_PAARE = [
  * Die COT-Ränge werden je Währung EINMAL gerechnet und dann über alle Paare
  * wiederverwendet — sonst wäre dieselbe Arbeit siebenmal fällig.
  */
-export async function baueGesamtbild(stichtag: string): Promise<Gesamtbild> {
+export async function baueGesamtbild(
+  stichtag: string, variante: Variante = "beide",
+): Promise<Gesamtbild> {
   const cot = await ladeCotLang(stichtag);
 
   const waehrungen = [...new Set(
@@ -120,6 +123,8 @@ export async function baueGesamtbild(stichtag: string): Promise<Gesamtbild> {
       paar, kurse,
       raenge.get(paar.slice(0, 3)) ?? [],
       raenge.get(paar.slice(3, 6)) ?? [],
+      undefined,
+      variante,
     ));
   }
   return gesamtbild(alle);

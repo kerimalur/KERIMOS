@@ -121,6 +121,41 @@ check("Hinweis bleibt als Hinweis gekennzeichnet",
   fazitVon([reihe(80, [0.5, 0.4, 0.3, 0.0])]).includes("kein Beweis"), true);
 
 
+// --- Ein Bein oder beide -------------------------------------------------
+// Der Fall aus Kerims TradingView-Screenshot vom 21.08.2026: sein Indikator
+// zeigt fuer USDJPY ein klares Short-Signal ("Quelle: USD", Commercials im
+// 7. Perzentil, Retail im 82.). Diese Rechnung sah dort NICHTS — weil sie
+// beide Beine voneinander abzieht und JPY zur selben Zeit ebenfalls gestreckt
+// short stand. Zwei gleichgerichtete Beine loeschen sich in der Differenz aus.
+//
+// Das ist keine Kleinigkeit: es erklaert, warum die Messung negativ aussah,
+// waehrend der Indikator gut aussah. Die beiden messen nicht dasselbe.
+{
+  const usd = [w(0, 7, 82)];   // Commercials short, Retail long -> USD belastet
+  const jpy = [w(0, 10, 80)];  // JPY genauso
+  check("gleichgerichtete Beine: beide -> kein Signal",
+    paarSignale(usd, jpy, 75, "beide").length, 0);
+  check("gleichgerichtete Beine: nur Basis -> Short",
+    paarSignale(usd, jpy, 75, "basis").map((x) => x.richtung), [-1]);
+  check("gleichgerichtete Beine: nur Quote -> Long",
+    paarSignale(usd, jpy, 75, "quote").map((x) => x.richtung), [1]);
+}
+{
+  // Passen die Beine zusammen, sagen alle drei Fassungen dasselbe.
+  const a = [w(0, 90, 10)], b = [w(0, 10, 90)];
+  check("passende Beine: beide", paarSignale(a, b, 75, "beide").map((x) => x.richtung), [1]);
+  check("passende Beine: basis", paarSignale(a, b, 75, "basis").map((x) => x.richtung), [1]);
+  check("passende Beine: quote", paarSignale(a, b, 75, "quote").map((x) => x.richtung), [1]);
+}
+{
+  // Fehlt der Gegentermin, darf die Basis-Fassung trotzdem zaehlen — sonst
+  // waere das ein stiller Datenverlust in genau der Fassung, die das andere
+  // Bein gar nicht braucht.
+  const a = [w(0, 90, 10), w(1, 90, 10)], b = [w(1, 50, 50)];
+  check("basis braucht kein Gegenbein", paarSignale(a, b, 75, "basis").length, 1);
+  check("beide ueberspringt fehlenden Termin", paarSignale(a, b, 75, "beide").length, 1);
+}
+
 // --- Das Urteil ueber alle Paare ----------------------------------------
 // Hier entscheidet sich, ob die Auswertung ehrlich bleibt. Der wichtigste
 // Fall ist Kerims echter Befund vom 21.08.2026: zwei von vier Paaren

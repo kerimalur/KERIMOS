@@ -89,8 +89,45 @@ export function divergenzBei(w: RangWoche, oben: number): -1 | 0 | 1 {
  * Gezählt wird der ÜBERGANG in einen Zustand: von 0 oder der Gegenrichtung
  * hinein. Solange derselbe Zustand anhält, entsteht kein neues Signal.
  */
+/**
+ * Aus welchen Beinen das Signal gebaut wird.
+ *
+ * Kerims Pine-Indikator nimmt fuer USDJPY ausdruecklich NUR den Dollar-Index
+ * ("Quelle: USD", CFTC 098662) — also ein Bein. Diese Rechnung nahm bisher
+ * immer beide und zog sie voneinander ab. Das sind zwei verschiedene Signale,
+ * und sie koennen sich gegenseitig ausloeschen: steht USD gestreckt short und
+ * JPY ebenfalls gestreckt short, ist die Differenz null und es entsteht gar
+ * kein Signal — obwohl der Indikator eines zeigt.
+ *
+ * Welche Fassung traegt, ist eine Messfrage. Deshalb alle drei, nebeneinander.
+ */
+export type Variante = "beide" | "basis" | "quote";
+
+export const VARIANTEN: { key: Variante; label: string; hilfe: string }[] = [
+  { key: "beide", label: "beide Währungen",
+    hilfe: "Basis minus Quote — nur wenn beide Seiten zusammenpassen" },
+  { key: "basis", label: "nur Basiswährung",
+    hilfe: "z. B. USD bei USDJPY — so rechnet Kerims Pine-Indikator" },
+  { key: "quote", label: "nur Quotewährung",
+    hilfe: "z. B. JPY bei USDJPY, Vorzeichen gedreht" },
+];
+
+/** Der Zustand einer Woche in der gewaehlten Fassung. */
+function zustand(
+  b: RangWoche, q: RangWoche | undefined, oben: number, variante: Variante,
+): -1 | 0 | 1 {
+  const db = divergenzBei(b, oben);
+  // Eine gestuetzte Quotewaehrung drueckt das Paar — daher das Minus.
+  const dq = q ? divergenzBei(q, oben) : 0;
+  const summe = variante === "basis" ? db
+    : variante === "quote" ? -dq
+      : db - dq;
+  return summe > 0 ? 1 : summe < 0 ? -1 : 0;
+}
+
 export function paarSignale(
   basis: RangWoche[], quote: RangWoche[], oben: number,
+  variante: Variante = "beide",
 ): Signal[] {
   const nachDatum = new Map(quote.map((w) => [w.datum, w]));
   const signale: Signal[] = [];
@@ -98,9 +135,10 @@ export function paarSignale(
 
   for (const b of basis) {
     const q = nachDatum.get(b.datum);
-    if (!q) continue;
-    const summe = divergenzBei(b, oben) - divergenzBei(q, oben);
-    const jetzt: -1 | 0 | 1 = summe > 0 ? 1 : summe < 0 ? -1 : 0;
+    // Nur bei "beide" ist der Gegentermin zwingend: braucht die Fassung das
+    // andere Bein gar nicht, waere das Ueberspringen ein stiller Datenverlust.
+    if (!q && variante !== "basis") continue;
+    const jetzt = zustand(b, q, oben, variante);
     if (jetzt !== 0 && jetzt !== vorher) {
       signale.push({ datum: b.datum, richtung: jetzt });
     }
@@ -120,6 +158,7 @@ export interface SchwellenZeile {
 
 export interface Kalibrierung {
   paar: string;
+  variante?: Variante;
   reihen: SchwellenZeile[];
   /** Was die Zahlen nahelegen — oder dass sie nichts nahelegen. */
   fazit: string;
@@ -136,9 +175,10 @@ export function kalibriere(
   paar: string, kurse: Kurspunkt[],
   basisReihe: RangWoche[], quoteReihe: RangWoche[],
   horizonte?: readonly Horizont[],
+  variante: Variante = "beide",
 ): Kalibrierung {
   const reihen: SchwellenZeile[] = SCHWELLEN.map((oben) => {
-    const signale = paarSignale(basisReihe, quoteReihe, oben);
+    const signale = paarSignale(basisReihe, quoteReihe, oben, variante);
     return {
       oben, unten: 100 - oben,
       signale: signale.length,
@@ -146,7 +186,7 @@ export function kalibriere(
     };
   });
 
-  return { paar, reihen, fazit: fazitVon(reihen) };
+  return { paar, variante, reihen, fazit: fazitVon(reihen) };
 }
 
 /**
