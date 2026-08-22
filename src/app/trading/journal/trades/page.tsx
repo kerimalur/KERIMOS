@@ -17,7 +17,12 @@ export const dynamic = "force-dynamic";
  *
  * Umgezogen aus dem GVA-Screener (`/journal`), siehe TRADING-UMBAU.md.
  *
- * Der Filter läuft über die Adresszeile (`?art=backtest&paar=EURUSD`) und nicht
+ * Seit 21.08.2026 stehen hier NUR Live-Trades. Backtest-Trades gehören in den
+ * Backtest — im Journal nebeneinander sahen sie gleich aus, kosteten aber
+ * nicht dasselbe, und jede gemeinsame Kennzahl war damit eine Mischung aus
+ * echtem und durchgespieltem Geld.
+ *
+ * Der Filter läuft über die Adresszeile (`?paar=EURUSD`) und nicht
  * über einen Zustand im Browser. Das kostet einen Server-Aufruf pro Klick und
  * bringt dafür: einen teilbaren Link, einen funktionierenden Zurück-Knopf und
  * eine Seite, die nach dem Neuladen noch dasselbe zeigt.
@@ -57,9 +62,7 @@ function TradeZeile({ t }: { t: Trade }) {
         <Badge tone={t.direction === "long" ? "good" : "bad"}>
           {t.direction === "long" ? "Long" : "Short"}
         </Badge>
-        {t.sessionType === "backtest"
-          ? <Badge tone="neutral">Backtest</Badge>
-          : <Badge tone="accent">Live</Badge>}
+        {t.status === "open" && <Badge tone="warn">läuft</Badge>}
         {t.session && <span className="text-xs text-ink-muted">{t.session}</span>}
 
         <span className={`tabular ml-auto text-sm font-medium ${
@@ -96,15 +99,15 @@ function TradeZeile({ t }: { t: Trade }) {
 export default async function TradesSeite({
   searchParams,
 }: {
-  searchParams: Promise<{ art?: string; paar?: string; ergebnis?: string }>;
+  searchParams: Promise<{ paar?: string; ergebnis?: string }>;
 }) {
   if (!tradingConfigured()) return <JournalHinweis grund="keine-db" />;
   const userId = await tradingUserId();
   if (!userId) return <JournalHinweis grund="kein-user" />;
 
   const sp = await searchParams;
-  const filter: TradeFilter = {};
-  if (sp.art === "backtest" || sp.art === "live") filter.sessionType = sp.art;
+  // Fest auf live: das Journal ist das Live-Journal.
+  const filter: TradeFilter = { sessionType: "live" };
   if (sp.paar) filter.pair = sp.paar;
   if (sp.ergebnis === "win" || sp.ergebnis === "loss" || sp.ergebnis === "breakeven") {
     filter.result = sp.ergebnis;
@@ -118,14 +121,13 @@ export default async function TradesSeite({
 
   // Paar-Filter nur aus dem, was auch wirklich gehandelt wurde — eine Liste
   // mit 32 Einträgen, von denen 26 leer sind, hilft niemandem.
-  const alleTrades = filter.pair || filter.result ? await fetchTrades(
-    filter.sessionType ? { sessionType: filter.sessionType } : {},
-  ) : trades;
+  const alleTrades = filter.pair || filter.result
+    ? await fetchTrades({ sessionType: "live" }) : trades;
   const gehandelt = [...new Set(alleTrades.map((t) => t.pair))].sort();
 
   const q = (aenderung: Record<string, string | undefined>) => {
     const p = new URLSearchParams();
-    const zusammen = { art: sp.art, paar: sp.paar, ergebnis: sp.ergebnis, ...aenderung };
+    const zusammen = { paar: sp.paar, ergebnis: sp.ergebnis, ...aenderung };
     for (const [k, v] of Object.entries(zusammen)) if (v) p.set(k, v);
     const qs = p.toString();
     return qs ? `/trading/journal/trades?${qs}` : "/trading/journal/trades";
@@ -143,12 +145,6 @@ export default async function TradesSeite({
       <Card>
         <CardTitle>Filter</CardTitle>
         <div className="space-y-2.5">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="w-20 shrink-0 text-xs text-ink-faint">Art</span>
-            <FilterChip aktiv={!sp.art} href={q({ art: undefined })}>alle</FilterChip>
-            <FilterChip aktiv={sp.art === "backtest"} href={q({ art: "backtest" })}>Backtest</FilterChip>
-            <FilterChip aktiv={sp.art === "live"} href={q({ art: "live" })}>Live</FilterChip>
-          </div>
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="w-20 shrink-0 text-xs text-ink-faint">Ergebnis</span>
             <FilterChip aktiv={!sp.ergebnis} href={q({ ergebnis: undefined })}>alle</FilterChip>
@@ -185,13 +181,14 @@ export default async function TradesSeite({
 
       <Card>
         <CardTitle>
-          {trades.length} {trades.length === 1 ? "Trade" : "Trades"}
+          {trades.length} {trades.length === 1 ? "Live-Trade" : "Live-Trades"}
         </CardTitle>
         {trades.length === 0 ? (
           <Empty>
-            {sp.art || sp.paar || sp.ergebnis
+            {sp.paar || sp.ergebnis
               ? "Kein Trade passt zu diesem Filter."
-              : "Noch nichts erfasst. Das Formular oben ist der Anfang."}
+              : "Noch kein Live-Trade. Das Formular oben ist der Anfang — "
+                + "oder die MT5-Brücke trägt ihn selbst ein."}
           </Empty>
         ) : (
           <div>

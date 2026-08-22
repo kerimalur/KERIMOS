@@ -81,7 +81,7 @@ export default async function HeutePage() {
         <Link href="/" className="text-xs text-ink-muted transition hover:text-ink-soft">
           Alle Modi →
         </Link>
-        <Link href="/kalender" className="text-xs text-ink-muted transition hover:text-ink-soft">
+        <Link href="/termine" className="text-xs text-ink-muted transition hover:text-ink-soft">
           Zeit erfassen
         </Link>
       </div>

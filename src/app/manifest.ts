@@ -28,7 +28,6 @@ export default function manifest(): MetadataRoute.Manifest {
     ],
     shortcuts: [
       { name: "Heute", url: "/heute" },
-      { name: "Zeit erfassen", url: "/kalender?ansicht=tag" },
       { name: "Trading", url: "/trading" },
     ],
   };

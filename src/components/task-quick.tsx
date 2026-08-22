@@ -1,6 +1,5 @@
 "use client";
 import { useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createTask, toggleTask } from "@/lib/actions";
 import { Button, Input, Label, Select, cx } from "@/components/ui";
@@ -69,10 +68,9 @@ export function TaskQuick({
   return (
     <>
       <div className="mb-2.5 flex items-baseline justify-between gap-2">
-        <Link href="/aufgaben"
-          className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted transition hover:text-ink-soft">
-          Aufgaben →
-        </Link>
+        <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted">
+          Aufgaben
+        </span>
         <div className="flex items-baseline gap-3">
           {ueberfaellig > 0 && (
             <span className="text-xs text-bad">
@@ -122,10 +120,6 @@ export function TaskQuick({
               Wichtig
             </label>
             <div className="flex gap-2">
-              <Link href="/aufgaben"
-                className="self-center text-xs text-ink-faint transition hover:text-ink-muted">
-                Mit Details →
-              </Link>
               <Button type="submit" disabled={busy} className="px-3 py-1.5 text-xs">
                 Hinzufügen
               </Button>
@@ -173,10 +167,9 @@ export function TaskQuick({
 
           {offen.length > 6 && (
             <li>
-              <Link href="/aufgaben"
-                className="text-xs text-ink-faint transition hover:text-ink-muted">
-                {offen.length - 6} weitere →
-              </Link>
+              <span className="text-xs text-ink-faint">
+                {offen.length - 6} weitere
+              </span>
             </li>
           )}
         </ul>

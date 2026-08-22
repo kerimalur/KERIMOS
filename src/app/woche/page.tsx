@@ -368,10 +368,7 @@ export default async function WochePage({
           Lohn beim Koch-Job, realisierte Gewinne beim Trading, Einnahmen aus einem Projekt.
           Bei den meisten Projekten steht hier am Anfang eine Null. Das ist keine schlechte
           Nachricht, sondern der Ausgangspunkt: Erst wenn die Stunden sichtbar sind, kann man
-          sagen, ob sich die Investition gelohnt hat.{" "}
-          <Link href="/transaktionen" className="text-accent hover:underline">
-            Buchungen zuordnen
-          </Link>
+          sagen, ob sich die Investition gelohnt hat.
         </p>
       </Card>
     </div>

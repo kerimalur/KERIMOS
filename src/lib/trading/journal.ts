@@ -130,6 +130,13 @@ export interface Trade {
   takeProfit: number | null;
   lotSize: number | null;
   sessionType: SessionTyp;
+  /**
+   * "open" oder "closed". Die MT5-Bruecke legt einen Trade beim Eroeffnen als
+   * `open` an und schliesst ihn erst, wenn BEIDE Positionen des Setups zu
+   * sind. Ohne dieses Feld sah ein laufender Trade im Journal aus wie ein
+   * abgeschlossener mit 0 R — und verwaesserte jede Kennzahl.
+   */
+  status: string;
   session: string;
   notes: string;
   comment: string;
@@ -245,6 +252,7 @@ function zuTrade(r: Row): Trade {
     takeProfit: zahl(r.take_profit),
     lotSize: zahl(r.lot_size),
     sessionType: (r.session_type as SessionTyp) ?? "live",
+    status: String(r.status ?? "closed"),
     session: String(r.session ?? ""),
     notes: String(r.notes ?? ""),
     comment: String(r.comment ?? ""),
@@ -292,7 +300,7 @@ function zuOutlook(r: Row): Outlook {
 
 const TRADE_SPALTEN =
   "id, type, symbol, side, date, result, r_multiple, risk_percent, profit_amount, " +
-  "entry_price, exit_price, stop_loss, take_profit, lot_size, session_type, session, " +
+  "entry_price, exit_price, stop_loss, take_profit, lot_size, session_type, status, session, " +
   "notes, comment, strategy_id, outlook_id, setup_daily_bos, setup_value_area, " +
   "setup_market_structure, setup_weekly_gva, setup_3day_gva, confluences, created_at";
 

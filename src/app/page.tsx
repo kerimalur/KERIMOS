@@ -1,10 +1,8 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { FocusPrompt } from "@/components/focus-prompt";
-import { TasksCard } from "@/components/tasks-card";
 import { AppointmentsCard } from "@/components/appointments-card";
 import { Tagessatz } from "@/components/tagessatz";
-import { Tagesstrahl } from "@/components/tagesstrahl";
 import { GewichtHeute } from "@/components/gewicht-heute";
 import { GvaLinienKarte } from "@/components/gva-linien-karte";
 import { BeobachtungKarte } from "@/components/beobachtung-karte";
@@ -17,7 +15,7 @@ import { WeeklyGoalsCard } from "@/components/weekly-goals";
 import { seedLinks } from "@/lib/actions";
 import { fetchModusKennzahlen } from "@/lib/modus-kennzahlen";
 import { fetchWeeklyGoals } from "@/lib/weekly-goals";
-import { MODE_ORDER, MODE_DIRECT } from "@/lib/modes";
+import { MODE_ORDER, MODE_DIRECT, MODE_AUS } from "@/lib/modes";
 import { addDays, weekStart as toWeekStart, heuteISO, heuteWochentag } from "@/lib/time";
 import type { Activity, FocusSession, NavLink } from "@/lib/types";
 
@@ -32,9 +30,14 @@ export const dynamic = "force-dynamic";
  * Dingen vorbei, die gerade nicht zählten.
  *
  * Jetzt beantwortet sie drei Fragen und sonst nichts:
- *   1. Was ist heute anders (ein Satz, Wetter, die Ankerpunkte des Tages)
+ *   1. Was ist heute anders (ein Satz, Wetter, die Termine des Tages)
  *   2. Was verlangt eine Entscheidung (nur wenn es etwas gibt)
  *   3. Wo arbeitest du jetzt (die Modi, mit ihren wichtigsten Zahlen)
+ *
+ * Reihenfolge seit 21.08.2026, von Kerim vorgegeben: Kopfzeile mit Suche und
+ * Farbumschalter, dann die Woche, dann was heute zaehlt, dann die Termine,
+ * dann Trading, dann die Modi. Der Zeitstrahl ist raus — er zeigte eine
+ * Erfassung, die es nicht mehr gibt.
  *
  * Steht nichts an, ist die Seite fast leer. Das ist das Ziel, kein Mangel.
  */
@@ -49,7 +52,7 @@ export default async function Start() {
 
   const [
     { data: linkRows }, { data: focusRows }, { data: actRows },
-    { data: lastReview }, { data: letzteBuchung }, kennzahlen, wochenziele,
+    { data: lastReview }, kennzahlen, wochenziele,
   ] = await Promise.all([
     supabase.from("links").select("*").eq("archived", false)
       .order("group_name").order("sort_order"),
@@ -57,8 +60,6 @@ export default async function Start() {
       .order("started_at", { ascending: false }),
     supabase.from("activities").select("*").eq("archived", false).order("name"),
     supabase.from("weekly_reviews").select("id").eq("week_start", vorwoche).maybeSingle(),
-    supabase.from("transactions").select("occurred_on")
-      .order("occurred_on", { ascending: false }).limit(1),
     fetchModusKennzahlen(),
     fetchWeeklyGoals(),
   ]);
@@ -72,7 +73,7 @@ export default async function Start() {
           <h1 className="font-display text-lg font-bold text-ink">Navigator einrichten</h1>
           <p className="mt-2 text-sm text-ink-muted">
             KerimOS legt dir Kacheln für deine Modi an — Traden, Gym, Essen,
-            Geld, Zeit. Alles danach änderbar.
+            Zeit. Alles danach änderbar.
           </p>
           <form action={seedLinks} className="mt-5">
             <Button type="submit" className="w-full">Kacheln anlegen</Button>
@@ -86,18 +87,11 @@ export default async function Start() {
   const wochentag = heuteWochentag();
   const reviewFehlt = !lastReview && (wochentag === 0 || wochentag === 1);
 
-  // Kontoauszug: ab einer Woche ohne neue Buchung erinnern. Der Import
-  // überspringt Bekanntes von selbst.
-  const letzterTag = (letzteBuchung?.[0]?.occurred_on as string | undefined) ?? null;
-  const tageOhneImport = letzterTag
-    ? Math.floor(
-        (new Date(heuteISO() + "T12:00:00").getTime() -
-          new Date(letzterTag + "T12:00:00").getTime()) / 86400000)
-    : null;
-  const importFaellig = tageOhneImport === null || tageOhneImport >= 7;
-
   const gruppen = new Map<string, NavLink[]>();
   for (const l of links) {
+    // Ausgeblendete Gruppen (aktuell "Geld") bleiben in der Datenbank stehen,
+    // erscheinen aber nicht mehr. Loeschen waere unumkehrbar fuer nichts.
+    if (MODE_AUS.has(l.group_name)) continue;
     const list = gruppen.get(l.group_name) ?? [];
     list.push(l);
     gruppen.set(l.group_name, list);
@@ -111,38 +105,36 @@ export default async function Start() {
 
   return (
     <div className="py-6">
-      <div className="mb-6 flex items-start gap-3.5">
+      {/* Kopfzeile: Begruessung links, Suche und Farbumschalter in der Mitte,
+          das Wetter steht im Tagessatz ganz rechts. Auf schmalen Schirmen
+          rutscht die Suche unter die Begruessung, statt sie zu quetschen. */}
+      <div className="mb-6 flex flex-wrap items-start gap-3.5">
         <Logo inverted className="mt-0.5 h-11 w-11 shrink-0 rounded-2xl" />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-64">
           <Tagessatz />
+        </div>
+        <div className="flex min-w-0 flex-1 basis-72 items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <QuickSearch links={links} />
+          </div>
+          {/* Abendmodus: schaltet die Farben des ganzen Windows-PCs um.
+              Blendet sich selbst aus, solange die Zeile nicht geladen ist. */}
+          <DisplayModeToggle />
         </div>
       </div>
 
-      <Tagesstrahl />
-
       <div className="mb-6">
         <WeeklyGoalsCard data={wochenziele} />
-      </div>
-
-      <div className="mb-6">
-        <QuickSearch links={links} />
-      </div>
-
-      {/* Abendmodus: schaltet die Farben des ganzen Windows-PCs um. Blendet
-          sich selbst aus, solange die Zeile noch nicht geladen ist. */}
-      <div className="mb-6">
-        <DisplayModeToggle />
       </div>
 
       {/* Was heute eine Entscheidung braucht. Jede Karte blendet sich selbst
           aus, wenn nichts ansteht - dann steht hier schlicht nichts. */}
       <div className="mb-7 space-y-3">
         <HeuteWichtig />
+        <AppointmentsCard />
         <GvaLinienKarte />
         <BeobachtungKarte kompakt />
         <GewichtHeute />
-        <TasksCard />
-        <AppointmentsCard />
 
         {reviewFehlt && (
           <Link href={`/rueckblick?w=${vorwoche}`}
@@ -150,17 +142,6 @@ export default async function Start() {
                        text-sm text-ink-soft transition hover:border-warn/60">
             Der Wochenrückblick für letzte Woche fehlt noch — 5 Minuten, die Felder
             sind schon vorbefüllt. →
-          </Link>
-        )}
-
-        {importFaellig && (
-          <Link href="/import"
-            className="block rounded-2xl border border-warn/30 bg-warn-tint px-5 py-3
-                       text-sm text-ink-soft transition hover:border-warn/60">
-            {tageOhneImport === null
-              ? "Noch keine Buchungen erfasst — Kontoauszug importieren. →"
-              : `Letzte Buchung vor ${tageOhneImport} Tagen — Kontoauszug holen und
-                 komplett importieren, Bekanntes wird übersprungen. →`}
           </Link>
         )}
 

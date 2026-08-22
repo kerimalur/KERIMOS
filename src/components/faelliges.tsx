@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { heuteISO, addDays } from "@/lib/time";
 import { dateLabel } from "@/lib/format";
@@ -44,10 +43,6 @@ export async function Faelliges() {
           <Badge tone="bad">{ueberfaellig.length} überfällig</Badge>
         )}
         {heuteFaellig.length > 0 && <Badge tone="warn">{heuteFaellig.length} heute</Badge>}
-        <Link href="/aufgaben"
-          className="ml-auto text-xs text-accent-soft transition hover:underline">
-          Aufgaben ↗
-        </Link>
       </div>
 
       <ul className="space-y-1.5">

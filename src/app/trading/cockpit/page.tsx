@@ -231,9 +231,9 @@ export default async function CockpitSeite() {
       <Card>
         <div className="mb-4 flex items-baseline justify-between gap-2">
           <CardTitle className="mb-0">2 · Beobachtet — auf den Einstieg warten</CardTitle>
-          <Link href="/trading/journal/outlook"
+          <Link href="/trading"
             className="text-xs text-accent-soft transition hover:underline">
-            alle Thesen →
+            Beobachtung →
           </Link>
         </div>
         {beobachtet.length === 0 ? (

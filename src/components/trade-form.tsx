@@ -23,6 +23,8 @@ export interface TradeVorgabe {
   result?: string;
   rMultiple?: number;
   sessionType?: "live" | "backtest";
+  /** Auf welches Konto der Trade geht. */
+  type?: "ek" | "funded";
   session?: string;
   notes?: string;
   entryPrice?: number | null;
@@ -107,12 +109,16 @@ export function TradeForm({
               defaultValue={vorgabe?.date ?? heute} required />
           </div>
           <div>
-            <Label htmlFor="tf-sessionType">Art</Label>
-            <Select id="tf-sessionType" name="sessionType"
-              defaultValue={vorgabe?.sessionType ?? "backtest"}>
-              <option value="backtest">Backtest</option>
-              <option value="live">Live</option>
+            {/* Kein Backtest/Live mehr: das Journal ist das Live-Journal, der
+                Backtest hat seine eigene Erfassung. Was hier zaehlt, ist auf
+                WELCHES Konto der Trade geht — das entscheidet, welcher
+                Kontostand sich bewegt. */}
+            <Label htmlFor="tf-type">Konto</Label>
+            <Select id="tf-type" name="type" defaultValue={vorgabe?.type ?? "ek"}>
+              <option value="ek">Eigenkapital</option>
+              <option value="funded">Fremdkapital</option>
             </Select>
+            <input type="hidden" name="sessionType" value="live" />
           </div>
         </div>
 

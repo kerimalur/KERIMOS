@@ -4,9 +4,18 @@
  * Neue Modi entstehen einfach dadurch, dass eine Kachel unter /links eine
  * neue Gruppe bekommt — hier steht nur die bevorzugte Reihenfolge.
  */
+/**
+ * "Geld" ist am 21.08.2026 ersatzlos raus — Kerim fuehrt seine Finanzen nicht
+ * mehr hier. Die Kachel wird auf der Startseite ausgeblendet, statt die
+ * `links`-Zeilen zu loeschen: so bleibt der Bestand unangetastet, falls es
+ * doch je zurueckkommt.
+ */
 export const MODE_ORDER = [
-  "Traden", "Gym", "Essen", "Geld", "Zeit", "Lernen",
+  "Traden", "Gym", "Essen", "Zeit", "Lernen",
 ];
+
+/** Gruppen, die auf der Startseite nicht mehr auftauchen. */
+export const MODE_AUS = new Set(["Geld"]);
 
 /**
  * Modi, die keinen eigenen Arbeitsplatz brauchen: sie führen direkt dorthin,
@@ -18,8 +27,7 @@ export const MODE_ORDER = [
  * deshalb führen beide Kacheln direkt in ihren Bereich.
  */
 export const MODE_DIRECT: Record<string, string> = {
-  Geld: "/geld",
-  Zeit: "/kalender?ansicht=tag",
+  Zeit: "/termine",
   Gym: "/gym",
   Essen: "/m/Essen",
   // Traden führt direkt aufs GVA-Board. TradingView und der Screener sind

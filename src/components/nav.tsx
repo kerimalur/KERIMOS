@@ -7,7 +7,7 @@ import { Logo } from "./logo";
 // Gym fehlt hier bewusst: dieser Bereich bringt seine eigene Tab-Leiste mit
 // (siehe app/gym/layout.tsx), wie der Essen-Bereich auch. Zwei Navigationen
 // übereinander verwirren mehr, als sie helfen.
-type Section = "geld" | "zeit" | "trading" | null;
+type Section = "zeit" | "trading" | null;
 
 /**
  * Zeit: erfasst wird nichts mehr.
@@ -21,25 +21,19 @@ type Section = "geld" | "zeit" | "trading" | null;
  * Raus sind: /zeit, /quick, /aktivitaeten, /achse, /heute, /fokus, /ziele.
  * Siehe ../../TRADING-UMBAU.md.
  */
-const GELD = {
-  home: { href: "/geld", label: "Übersicht" },
-  primary: [
-    { href: "/transaktionen", label: "Transaktionen" },
-  ],
-  secondary: [
-    { href: "/import", label: "Import" },
-    { href: "/kategorien", label: "Kategorien" },
-  ],
-};
-
+/**
+ * Zeit ist auf das Nötige zusammengestrichen (21.08.2026).
+ *
+ * Raus sind Kalender und Aufgaben. Beides doppelte Buchführung: was ansteht,
+ * ist entweder ein Termin oder eine Zeile im Heute-Tab. Eine dritte Liste
+ * daneben wird nicht gepflegt und ist dann schlimmer als keine.
+ */
 const ZEIT = {
-  home: { href: "/kalender", label: "Kalender" },
+  home: { href: "/termine", label: "Termine" },
   primary: [
-    { href: "/woche", label: "Woche" },
-    { href: "/termine", label: "Termine" },
-    { href: "/aufgaben", label: "Aufgaben" },
     { href: "/rueckblick/heute", label: "Heute" },
     { href: "/rueckblick", label: "Rückblick" },
+    { href: "/woche", label: "Woche" },
   ],
   secondary: [
     { href: "/schichten", label: "Schichten" },
@@ -77,21 +71,17 @@ const TRADING = {
   secondary: [] as { href: string; label: string }[],
 };
 
-const GELD_PATHS = ["/geld", "/transaktionen", "/kategorien", "/import"];
-const ZEIT_PATHS = ["/kalender", "/woche", "/rueckblick", "/schichten",
-  "/termine", "/aufgaben"];
+const ZEIT_PATHS = ["/termine", "/rueckblick", "/woche", "/schichten"];
 const TRADING_PATHS = ["/trading"];
 // "/", "/links", "/gym" und "/m/…" gehören zu keinem Bereich - dort zeigt
 // die Navigation nichts bzw. der Bereich bringt seine eigene Leiste mit.
 
 const SECTION_LABEL: Record<Exclude<Section, null>, string> = {
-  geld: "Geld",
   zeit: "Zeit",
   trading: "Trading",
 };
 
 function sectionOf(path: string): Section {
-  if (GELD_PATHS.some((p) => path === p || path.startsWith(p + "/"))) return "geld";
   if (ZEIT_PATHS.some((p) => path === p || path.startsWith(p + "/"))) return "zeit";
   if (TRADING_PATHS.some((p) => path === p || path.startsWith(p + "/"))) return "trading";
   return null;
@@ -100,7 +90,7 @@ function sectionOf(path: string): Section {
 export function Nav({ email }: { email?: string }) {
   const path = usePathname();
   const section = sectionOf(path);
-  const config = section === "geld" ? GELD : section === "zeit" ? ZEIT : TRADING;
+  const config = section === "zeit" ? ZEIT : TRADING;
 
   /**
    * Aktiv ist der längste passende Eintrag, nicht jeder passende.

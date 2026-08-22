@@ -1,208 +1,177 @@
 import Link from "next/link";
 import {
-  fetchTrades, fetchOutlooks, computeJournalStats, gruppiere, signiertesR,
-  SETUPS, tradingUserId, type Trade,
+  fetchTrades, fetchKonten, fetchKontoBuchungen, berechneKontostaende,
+  computeJournalStats, signiertesR, tradingUserId,
+  type Trade, type KontoTyp,
 } from "@/lib/trading/journal";
 import { tradingConfigured } from "@/lib/supabase/trading";
 import { JournalHinweis } from "@/components/journal-hinweis";
-import { Card, CardTitle, Stat, Badge, Empty, Bar } from "@/components/ui";
+import { Card, CardTitle, Stat, Badge, Empty, cx } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Journal-Übersicht — was die Trades zusammengenommen sagen.
+ * Journal-Übersicht — wo steht das Konto, und was läuft gerade.
  *
- * Umgezogen aus dem GVA-Screener (`/journal/dashboard`), siehe TRADING-UMBAU.md.
+ * Auf Kerims Ansage vom 21.08.2026 radikal zusammengestrichen. Vorher standen
+ * hier vier Auswertungstabellen (nach Setup, Paar, Session, Richtung) und ein
+ * Backtest-Block. Beides gehört nicht hierher:
  *
- * Die Seite trennt bewusst zwischen **Backtest** und **Live**. Beides in einen
- * Topf zu werfen wäre die bequemere Zahl und die falsche: ein Backtest-Trade
- * kostet nichts, ein Live-Trade schon. Solange Kerim im Backtest ist, steht
- * dieser oben — der Live-Block bleibt leer, bis es etwas zu zeigen gibt.
+ * - **Auswertung** ist eine eigene Frage und steht im Backtest. Auf der
+ *   Übersicht lenkt sie von der einen Zahl ab, die zählt: wo steht das Konto.
+ * - **Backtest-Trades** haben in einem Live-Journal nichts verloren. Ein
+ *   durchgespielter Trade hat kein Geld bewegt; ihn hier mitzuzählen macht
+ *   jede Kontozahl falsch.
+ *
+ * Geblieben ist: welches Konto, was steht drauf, was läuft offen, was war
+ * zuletzt. Mehr braucht ein Journal-Einstieg nicht.
  */
 
-function KennzahlenBlock({ trades, titel, sub }: {
-  trades: Trade[]; titel: string; sub: string;
-}) {
-  const s = computeJournalStats(trades);
+const KONTO_LABEL: Record<KontoTyp, string> = {
+  ek: "Eigenkapital",
+  funded: "Fremdkapital",
+};
 
+const geld = (v: number, waehrung: string) =>
+  `${v >= 0 ? "" : "−"}${Math.abs(v).toLocaleString("de-CH", {
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  })} ${waehrung}`;
+
+function OffeneTrades({ trades }: { trades: Trade[] }) {
+  if (trades.length === 0) {
+    return <Empty>Nichts offen. Kein Geld im Markt.</Empty>;
+  }
   return (
-    <Card area={s.n > 0 ? "trading" : undefined}>
-      <div className="mb-4 flex items-baseline justify-between gap-2">
-        <CardTitle className="mb-0">{titel}</CardTitle>
-        <span className="text-xs text-ink-faint">{sub}</span>
-      </div>
-
-      {s.n === 0 ? (
-        <Empty>Noch keine abgeschlossenen Trades.</Empty>
-      ) : (
-        <>
-          <div className="grid gap-4 sm:grid-cols-4">
-            <Stat label="Trades" value={s.n} sub={`${s.wins} W · ${s.losses} L · ${s.breakeven} BE`} />
-            <Stat
-              label="Winrate"
-              value={s.winrate === null ? "—" : `${s.winrate.toFixed(0)} %`}
-              tone={s.winrate !== null && s.winrate >= 50 ? "good" : "neutral"}
-            />
-            <Stat
-              label="Profit Factor"
-              value={s.profitFactor === null ? "—" : s.profitFactor.toFixed(2)}
-              tone={s.profitFactor !== null && s.profitFactor >= 1.5 ? "good"
-                : s.profitFactor !== null && s.profitFactor < 1 ? "bad" : "neutral"}
-              sub="Gewinn ÷ Verlust in R"
-            />
-            <Stat
-              label="Erwartungswert"
-              value={s.expectancy === null ? "—" : `${s.expectancy >= 0 ? "+" : ""}${s.expectancy.toFixed(2)} R`}
-              tone={s.expectancy !== null && s.expectancy > 0 ? "good"
-                : s.expectancy !== null && s.expectancy < 0 ? "bad" : "neutral"}
-              sub="Ø pro Trade"
-            />
-          </div>
-
-          <div className="mt-5 grid gap-4 border-t border-line/70 pt-4 sm:grid-cols-4">
-            <Stat
-              label="Gesamt"
-              value={`${s.gesamtR >= 0 ? "+" : ""}${s.gesamtR.toFixed(1)} R`}
-              tone={s.gesamtR > 0 ? "good" : s.gesamtR < 0 ? "bad" : "neutral"}
-            />
-            <Stat
-              label="Max. Drawdown"
-              value={`${s.maxDrawdownR.toFixed(1)} R`}
-              tone={s.maxDrawdownR > Math.abs(s.gesamtR) ? "bad" : "neutral"}
-              sub="grösster Rückgang"
-            />
-            <Stat label="Beste Serie" value={`${s.besteSerie}×`} sub="Gewinne in Folge" />
-            <Stat label="Schlechteste Serie" value={`${s.schlechtesteSerie}×`} sub="Verluste in Folge" />
-          </div>
-        </>
-      )}
-    </Card>
-  );
-}
-
-/** Kennzahlen je Gruppe als Tabelle — für Setups, Paare und Sessions. */
-function GruppenTabelle({ trades, schluessel, leer }: {
-  trades: Trade[];
-  schluessel: (t: Trade) => string;
-  leer: string;
-}) {
-  const gruppen = gruppiere(trades, schluessel).filter((g) => g.stats.n >= 1);
-  if (gruppen.length === 0) return <Empty>{leer}</Empty>;
-
-  return (
-    <div className="space-y-2">
-      {gruppen.map((g) => {
-        const wr = g.stats.winrate ?? 0;
-        const r = g.stats.gesamtR;
-        return (
-          <div key={g.key} className="flex items-center gap-3">
-            <span className="w-32 shrink-0 truncate text-sm text-ink-soft" title={g.key}>
-              {g.key}
-            </span>
-            <span className="tabular w-10 shrink-0 text-right text-xs text-ink-muted">
-              {g.stats.n}×
-            </span>
-            <div className="min-w-0 flex-1">
-              <Bar pct={wr} color={wr >= 50 ? "#5FC2A6" : "#E28B72"} />
-            </div>
-            <span className="tabular w-12 shrink-0 text-right text-xs text-ink-muted">
-              {g.stats.winrate === null ? "—" : `${wr.toFixed(0)} %`}
-            </span>
-            <span className={`tabular w-16 shrink-0 text-right text-sm font-medium ${
-              r > 0 ? "text-good-bright" : r < 0 ? "text-bad-bright" : "text-ink-muted"
-            }`}>
-              {r >= 0 ? "+" : ""}{r.toFixed(1)} R
-            </span>
-          </div>
-        );
-      })}
+    <div className="space-y-1.5">
+      {trades.map((t) => (
+        <div key={t.id}
+          className="flex flex-wrap items-center gap-2.5 rounded-xl bg-warn-tint px-3 py-2">
+          <span className="text-sm font-medium text-ink">{t.pair}</span>
+          <Badge tone={t.direction === "long" ? "good" : "bad"}>
+            {t.direction === "long" ? "Long" : "Short"}
+          </Badge>
+          {t.entryPrice !== null && (
+            <span className="tabular text-xs text-ink-muted">@ {t.entryPrice}</span>
+          )}
+          {t.lotSize !== null && (
+            <span className="tabular text-xs text-ink-faint">{t.lotSize} Lot</span>
+          )}
+          <span className="tabular ml-auto text-xs text-ink-faint">
+            seit {t.date.slice(8, 10)}.{t.date.slice(5, 7)}.
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
 
-export default async function JournalUebersicht() {
+export default async function JournalUebersicht({ searchParams }: {
+  searchParams: Promise<{ konto?: string }>;
+}) {
   if (!tradingConfigured()) return <JournalHinweis grund="keine-db" />;
   const userId = await tradingUserId();
   if (!userId) return <JournalHinweis grund="kein-user" />;
 
-  const [alle, outlooks] = await Promise.all([fetchTrades(), fetchOutlooks()]);
+  const sp = await searchParams;
+  const [alle, konten, buchungen] = await Promise.all([
+    fetchTrades(), fetchKonten(), fetchKontoBuchungen(),
+  ]);
 
-  const backtest = alle.filter((t) => t.sessionType === "backtest");
+  // Nur Live. Backtest-Trades haben kein Geld bewegt und gehoeren nicht in
+  // eine Kontoansicht — sie stehen im Backtest.
   const live = alle.filter((t) => t.sessionType === "live");
-  const offeneThesen = outlooks.filter(
-    (o) => o.status !== "closed" && o.status !== "executed" && !o.executedTradeId,
-  );
 
-  const letzte = alle.slice(0, 8);
+  const typen: KontoTyp[] = ["ek", "funded"];
+  const gewaehlt: KontoTyp = typen.find((x) => x === sp.konto) ?? "ek";
+
+  const meine = live.filter((t) => t.type === gewaehlt);
+  const offen = meine.filter((t) => t.status === "open");
+  const zu = meine.filter((t) => t.status !== "open");
+  const s = computeJournalStats(zu);
+
+  const staende = berechneKontostaende(konten, buchungen, live);
+  const stand = staende.find((x) => x.konto.type === gewaehlt) ?? null;
+  const waehrung = stand?.konto.currency ?? "EUR";
+
+  // Ergebnis in Prozent auf das eingesetzte Kapital, nicht auf den aktuellen
+  // Stand: sonst schrumpft der Nenner mit jedem Verlust und die Zahl schoent.
+  const eingesetzt = stand
+    ? stand.konto.initialBalance + stand.einzahlungen - stand.auszahlungen
+    : 0;
+  const prozent = eingesetzt > 0 && stand
+    ? (stand.handelsGewinn / eingesetzt) * 100 : null;
+
+  const letzte = meine.slice(0, 8);
 
   return (
     <div className="space-y-5">
-      <KennzahlenBlock
-        trades={backtest}
-        titel="Backtest"
-        sub="durchgespielt, ohne Geld — die Grundlage für alles weitere"
-      />
+      <Card area={offen.length > 0 ? "trading" : undefined}>
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <CardTitle className="mb-0">
+            {stand?.konto.name ?? KONTO_LABEL[gewaehlt]}
+          </CardTitle>
+          <span className="ml-auto flex flex-wrap items-center gap-1.5">
+            {typen.map((t) => (
+              <Link key={t} href={`/trading/journal?konto=${t}`}
+                className={cx("rounded-lg px-2.5 py-1 text-xs transition duration-150 ease-tactile",
+                  gewaehlt === t ? "bg-sand text-ink" : "text-ink-muted hover:text-ink")}>
+                {KONTO_LABEL[t]}
+              </Link>
+            ))}
+          </span>
+        </div>
 
-      <KennzahlenBlock
-        trades={live}
-        titel="Live"
-        sub={live.length === 0 ? "noch nicht gestartet — bewusst so" : "echtes Geld"}
-      />
+        {stand === null ? (
+          <Empty>
+            Für {KONTO_LABEL[gewaehlt]} ist kein Konto angelegt. Unter „Konten"
+            eintragen — ohne Startkapital lässt sich kein Stand rechnen.
+          </Empty>
+        ) : (
+          <>
+            <div className="grid gap-4 sm:grid-cols-4">
+              <Stat label="Kontostand" value={geld(stand.berechnet, waehrung)}
+                sub="Start + Ein- − Auszahlungen + Handel" />
+              <Stat
+                label="Ergebnis"
+                value={geld(stand.handelsGewinn, waehrung)}
+                tone={stand.handelsGewinn > 0 ? "good" : stand.handelsGewinn < 0 ? "bad" : "neutral"}
+                sub="realisiert, nur Live"
+              />
+              <Stat
+                label="Ergebnis %"
+                value={prozent === null ? "—" : `${prozent >= 0 ? "+" : ""}${prozent.toFixed(1)} %`}
+                tone={prozent !== null && prozent > 0 ? "good"
+                  : prozent !== null && prozent < 0 ? "bad" : "neutral"}
+                sub="auf das eingesetzte Kapital"
+              />
+              <Stat label="Trades" value={zu.length}
+                sub={offen.length > 0 ? `${offen.length} offen` : "alle geschlossen"} />
+            </div>
+
+            {stand.abweichung !== 0 && (
+              <p className="mt-4 rounded-xl bg-warn-tint px-3 py-2.5 text-[11px] leading-relaxed text-ink-soft">
+                Der hinterlegte Kontostand weicht um {geld(stand.abweichung, waehrung)} ab.
+                Das ist ein Hinweis, kein Fehler — meist fehlt bei einem Trade der Betrag
+                oder eine Einzahlung ist nicht erfasst.
+              </p>
+            )}
+          </>
+        )}
+      </Card>
 
       <div className="grid gap-5 lg:grid-cols-2">
         <Card>
-          <CardTitle>Nach Setup</CardTitle>
-          <GruppenTabelle
-            trades={alle}
-            schluessel={(t) => {
-              const treffer = SETUPS.filter((s) => t.setups[s.key]).map((s) => s.label);
-              return treffer.length ? treffer.join(" + ") : "ohne Setup-Angabe";
-            }}
-            leer="Noch keine Trades mit Setup-Angabe."
-          />
-          <p className="mt-4 text-xs text-ink-faint">
-            Ein Trade kann mehrere Setups tragen — dann steht die Kombination als
-            eigene Zeile. Das ist Absicht: die Frage lautet nicht „wirkt die GVA",
-            sondern „wirkt die GVA <em>zusammen mit</em> dem BOS".
+          <CardTitle>Offen</CardTitle>
+          <OffeneTrades trades={offen} />
+          <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+            Kommt automatisch aus MetaTrader, sobald die Brücke läuft. Ein Setup
+            mit zwei Positionen steht hier als <strong>ein</strong> Trade.
           </p>
         </Card>
 
-        <Card>
-          <CardTitle>Nach Paar</CardTitle>
-          <GruppenTabelle
-            trades={alle}
-            schluessel={(t) => t.pair}
-            leer="Noch keine Trades erfasst."
-          />
-        </Card>
-
-        <Card>
-          <CardTitle>Nach Session</CardTitle>
-          <GruppenTabelle
-            trades={alle}
-            schluessel={(t) => t.session || "ohne Session-Angabe"}
-            leer="Noch keine Session erfasst."
-          />
-          <p className="mt-4 text-xs text-ink-faint">
-            London 08–10 Uhr und New York 14–16 Uhr sind die Fenster, in denen
-            der Screener scannt. Was ausserhalb entsteht, ist erklärungsbedürftig.
-          </p>
-        </Card>
-
-        <Card>
-          <CardTitle>Nach Richtung</CardTitle>
-          <GruppenTabelle
-            trades={alle}
-            schluessel={(t) => (t.direction === "long" ? "Long" : "Short")}
-            leer="Noch keine Trades erfasst."
-          />
-        </Card>
-      </div>
-
-      <div className="grid gap-5 lg:grid-cols-2">
         <Card>
           <div className="mb-4 flex items-baseline justify-between gap-2">
-            <CardTitle className="mb-0">Letzte Trades</CardTitle>
+            <CardTitle className="mb-0">Zuletzt</CardTitle>
             <Link href="/trading/journal/trades"
               className="text-xs text-accent-soft transition hover:underline">
               alle ansehen →
@@ -214,6 +183,7 @@ export default async function JournalUebersicht() {
             <div className="space-y-1.5">
               {letzte.map((t) => {
                 const r = signiertesR(t);
+                const laeuft = t.status === "open";
                 return (
                   <div key={t.id}
                     className="flex items-center gap-2.5 rounded-xl bg-sand/50 px-3 py-2">
@@ -226,11 +196,10 @@ export default async function JournalUebersicht() {
                     <Badge tone={t.direction === "long" ? "good" : "bad"}>
                       {t.direction === "long" ? "Long" : "Short"}
                     </Badge>
-                    {t.sessionType === "backtest" && <Badge tone="neutral">BT</Badge>}
-                    <span className={`tabular ml-auto text-sm font-medium ${
-                      r > 0 ? "text-good-bright" : r < 0 ? "text-bad-bright" : "text-ink-muted"
-                    }`}>
-                      {r >= 0 ? "+" : ""}{r.toFixed(1)} R
+                    <span className={cx("tabular ml-auto text-sm font-medium",
+                      laeuft ? "text-ink-faint"
+                        : r > 0 ? "text-good-bright" : r < 0 ? "text-bad-bright" : "text-ink-muted")}>
+                      {laeuft ? "läuft" : `${r >= 0 ? "+" : ""}${r.toFixed(1)} R`}
                     </span>
                   </div>
                 );
@@ -238,38 +207,40 @@ export default async function JournalUebersicht() {
             </div>
           )}
         </Card>
+      </div>
 
+      {zu.length > 0 && (
         <Card>
           <div className="mb-4 flex items-baseline justify-between gap-2">
-            <CardTitle className="mb-0">Offene Thesen</CardTitle>
-            <Link href="/trading/journal/outlook"
+            <CardTitle className="mb-0">Wie es lief</CardTitle>
+            <Link href="/trading/backtest"
               className="text-xs text-accent-soft transition hover:underline">
-              Outlook →
+              Auswertung →
             </Link>
           </div>
-          {offeneThesen.length === 0 ? (
-            <Empty>Keine offene These. Nichts zu tun ist auch ein Zustand.</Empty>
-          ) : (
-            <div className="space-y-1.5">
-              {offeneThesen.slice(0, 8).map((o) => (
-                <div key={o.id}
-                  className="flex items-center gap-2.5 rounded-xl bg-sand/50 px-3 py-2">
-                  <span className="w-[76px] shrink-0 text-sm font-medium text-ink">
-                    {o.symbol}
-                  </span>
-                  <Badge tone={o.direction === "long" ? "good" : "bad"}>
-                    {o.direction === "long" ? "Long" : "Short"}
-                  </Badge>
-                  {o.source === "gva" && <Badge tone="accent">GVA</Badge>}
-                  <span className="min-w-0 flex-1 truncate text-xs text-ink-muted">
-                    {o.thesis || "ohne Notiz"}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="grid gap-4 sm:grid-cols-4">
+            <Stat label="Trefferquote"
+              value={s.winrate === null ? "—" : `${s.winrate.toFixed(0)} %`}
+              sub={`${s.wins} W · ${s.losses} L · ${s.breakeven} BE`}
+              tone={s.winrate !== null && s.winrate >= 50 ? "good" : "neutral"} />
+            <Stat label="Erwartungswert"
+              value={s.expectancy === null ? "—" : `${s.expectancy >= 0 ? "+" : ""}${s.expectancy.toFixed(2)} R`}
+              sub="Ø pro Trade"
+              tone={s.expectancy !== null && s.expectancy > 0 ? "good"
+                : s.expectancy !== null && s.expectancy < 0 ? "bad" : "neutral"} />
+            <Stat label="Gesamt"
+              value={`${s.gesamtR >= 0 ? "+" : ""}${s.gesamtR.toFixed(1)} R`}
+              tone={s.gesamtR > 0 ? "good" : s.gesamtR < 0 ? "bad" : "neutral"} />
+            <Stat label="Max. Rückgang" value={`${s.maxDrawdownR.toFixed(1)} R`}
+              sub="grösster Einbruch" />
+          </div>
+          <p className="mt-4 text-[11px] leading-relaxed text-ink-faint">
+            Vier Zahlen, mehr nicht. Die Aufschlüsselung nach Setup, Paar, Session und
+            Richtung steht im <strong>Backtest</strong> — dort gehört sie hin, weil sie
+            eine andere Frage beantwortet als „wo steht mein Konto".
+          </p>
         </Card>
-      </div>
+      )}
     </div>
   );
 }

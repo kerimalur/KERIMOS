@@ -22,8 +22,6 @@ const JOURNAL_PFADE = [
   "/trading/journal",
   "/trading/journal/trades",
   "/trading/journal/equity",
-  "/trading/journal/kalender",
-  "/trading/journal/rueckblick",
   "/trading/journal/konten",
   "/trading/cockpit",
 ];
@@ -149,7 +147,7 @@ export async function outlookSpeichern(fd: FormData) {
     await supabase.from("outlooks").insert([{ ...zeile, source: "manual" }]);
   }
 
-  journalAktualisieren(["/trading/journal/outlook"]);
+  journalAktualisieren();
 }
 
 export async function outlookStatusSetzen(fd: FormData) {
@@ -162,7 +160,7 @@ export async function outlookStatusSetzen(fd: FormData) {
     .update({ status, updated_at: new Date().toISOString() })
     .eq("id", id)
     .eq("user_id", userId);
-  journalAktualisieren(["/trading/journal/outlook"]);
+  journalAktualisieren();
 }
 
 export async function outlookSternSetzen(fd: FormData) {
@@ -174,7 +172,7 @@ export async function outlookSternSetzen(fd: FormData) {
     .update({ is_starred: txt(fd, "wert") === "1", updated_at: new Date().toISOString() })
     .eq("id", id)
     .eq("user_id", userId);
-  journalAktualisieren(["/trading/journal/outlook"]);
+  journalAktualisieren();
 }
 
 export async function outlookLoeschen(fd: FormData) {
@@ -182,7 +180,7 @@ export async function outlookLoeschen(fd: FormData) {
   const id = txt(fd, "id");
   if (!id) return;
   await supabase.from("outlooks").delete().eq("id", id).eq("user_id", userId);
-  journalAktualisieren(["/trading/journal/outlook"]);
+  journalAktualisieren();
 }
 
 // ---------------------------------------------------------------------------
@@ -390,5 +388,5 @@ export async function signalUebernehmen(fd: FormData) {
     .update({ status: "watchlist", updated_at: new Date().toISOString() })
     .eq("id", id);
 
-  journalAktualisieren(["/trading/journal/outlook"]);
+  journalAktualisieren();
 }
