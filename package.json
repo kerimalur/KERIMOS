@@ -19,7 +19,8 @@
     "check:vorwaerts": "npx -y tsx tools/checks/vorwaerts.mts",
     "check:cot-gruppen": "npx -y tsx tools/checks/cot-gruppen.mts",
     "check:beobachtung": "npx -y tsx tools/checks/beobachtung.mts",
-    "check:kalibrierung": "npx -y tsx tools/checks/kalibrierung.mts"
+    "check:kalibrierung": "npx -y tsx tools/checks/kalibrierung.mts",
+    "check:heute": "npx -y tsx tools/checks/heute.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

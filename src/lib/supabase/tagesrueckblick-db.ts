@@ -104,3 +104,54 @@ export const RUECKBLICK_SQL = `create table if not exists day_review (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );`;
+
+
+/* --------------------------------------------------------- Abhaken */
+
+/**
+ * Welche Zeilen aus „Was ist morgen das Wichtigste?" schon erledigt sind.
+ *
+ * Gespeichert wird der **Text der Zeile**, nicht ihre Nummer. Nummern wären
+ * kürzer und falsch: schreibt Kerim abends eine Zeile dazwischen, verschieben
+ * sich alle Haken. Der Text ändert sich nicht mehr, sobald der Abend vorbei
+ * ist — und ändert er sich doch, ist der Haken zu Recht weg.
+ */
+export async function ladeErledigt(datum: string): Promise<string[]> {
+  const db = await createClient();
+  const { data, error } = await db.from(TABELLE)
+    .select("tomorrow_done").eq("date", datum).maybeSingle();
+  if (error || !data) return [];
+  const w = (data as { tomorrow_done: string[] | null }).tomorrow_done;
+  return Array.isArray(w) ? w : [];
+}
+
+/**
+ * Einen Haken setzen oder wegnehmen.
+ *
+ * Bewusst ein Umschalter und kein „setze auf true": ein Klick auf eine bereits
+ * erledigte Zeile soll sie wieder öffnen. Ein Haken, den man nicht zurück-
+ * nehmen kann, wird aus Vorsicht nicht gesetzt.
+ */
+export async function schalteErledigt(
+  datum: string, zeile: string,
+): Promise<string | null> {
+  const vorher = await ladeErledigt(datum);
+  const nachher = vorher.includes(zeile)
+    ? vorher.filter((x) => x !== zeile)
+    : [...vorher, zeile];
+
+  const db = await createClient();
+  const { error } = await db.from(TABELLE).upsert({
+    date: datum, tomorrow_done: nachher, updated_at: new Date().toISOString(),
+  }, { onConflict: "date" });
+
+  if (!error) return null;
+  if (istTabelleFehlt(error.code, error.message)) {
+    return "Die Spalte tomorrow_done fehlt noch — die SQL steht auf der Startseite.";
+  }
+  return `Abhaken fehlgeschlagen: ${error.message}`;
+}
+
+/** SQL für die Spalte — steht zum Kopieren auf der Startseite. */
+export const ERLEDIGT_SQL = `alter table day_review
+  add column if not exists tomorrow_done text[] not null default '{}';`;
