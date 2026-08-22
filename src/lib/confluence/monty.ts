@@ -1,6 +1,8 @@
 import "server-only";
 import { ladeCotLang, ladeFuerStichtag, ladeKurse, KALIBRIER_JAHRE } from "./daten";
-import { kalibriere, raengeReihe, type Kalibrierung } from "./kalibrierung";
+import {
+  gesamtbild, kalibriere, raengeReihe, type Gesamtbild, type Kalibrierung,
+} from "./kalibrierung";
 import { G8, PAARE } from "./faktoren";
 import { cotStatistik, type CotStatistik } from "./monty-cot";
 import { saisonBild, type Fenster, type SaisonBild } from "./saison";
@@ -85,3 +87,40 @@ export async function baueKalibrierung(
 }
 
 export { KALIBRIER_JAHRE };
+
+
+/** Welche Paare durchgerechnet werden — decken alle acht Währungen ab. */
+export const KALIBRIER_PAARE = [
+  "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD",
+] as const;
+
+/**
+ * Alle Paare auf einmal — das Urteil, auf das es ankommt.
+ *
+ * Ein einzelnes Paar sagt fast nichts: bei fünf Schwellen mal vier Horizonten
+ * findet sich immer irgendwo eine gute Zahl. Erst über sieben Paare zeigt
+ * sich, ob eine Schwelle wirklich vorne liegt oder ob man nur lange genug
+ * gesucht hat.
+ *
+ * Die COT-Ränge werden je Währung EINMAL gerechnet und dann über alle Paare
+ * wiederverwendet — sonst wäre dieselbe Arbeit siebenmal fällig.
+ */
+export async function baueGesamtbild(stichtag: string): Promise<Gesamtbild> {
+  const cot = await ladeCotLang(stichtag);
+
+  const waehrungen = [...new Set(
+    KALIBRIER_PAARE.flatMap((p) => [p.slice(0, 3), p.slice(3, 6)]),
+  )];
+  const raenge = new Map(waehrungen.map((c) => [c, raengeReihe(cot, c)]));
+
+  const alle: Kalibrierung[] = [];
+  for (const paar of KALIBRIER_PAARE) {
+    const kurse = await ladeKurse(paar);
+    alle.push(kalibriere(
+      paar, kurse,
+      raenge.get(paar.slice(0, 3)) ?? [],
+      raenge.get(paar.slice(3, 6)) ?? [],
+    ));
+  }
+  return gesamtbild(alle);
+}

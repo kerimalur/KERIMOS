@@ -1,7 +1,7 @@
 import { Badge, cx } from "@/components/ui";
 import { COT_GRENZE } from "@/lib/confluence/cot-divergenz";
 import { MIN_SIGNALE } from "@/lib/confluence/vorwaerts";
-import type { Kalibrierung } from "@/lib/confluence/kalibrierung";
+import { SCHWELLEN, type Gesamtbild, type Kalibrierung } from "@/lib/confluence/kalibrierung";
 
 /**
  * Die Schwellen-Tabelle.
@@ -103,6 +103,86 @@ export function SchwellenTabelleLaedt({ paar }: { paar: string }) {
   return (
     <p className="py-6 text-sm text-ink-faint">
       {paar}: zwanzig Jahre COT-Historie werden gerechnet …
+    </p>
+  );
+}
+
+
+/**
+ * Alle sieben Paare auf einen Blick.
+ *
+ * Diese Tabelle ist der eigentliche Entscheidungsgrund. Ein einzelnes Paar
+ * findet bei fünf Schwellen mal vier Horizonten immer irgendwo eine gute
+ * Zahl — erst nebeneinander sieht man, ob eine Schwelle trägt oder ob sich
+ * die Paare widersprechen.
+ *
+ * Gezeigt wird je Feld der MITTELWERT über die vier Horizonte. Das versteckt
+ * Ausreisser bewusst: eine Schwelle, die nur bei 26 Wochen glänzt und sonst
+ * verliert, soll hier nicht gut aussehen.
+ */
+export function PaarUebersicht({ bild }: { bild: Gesamtbild }) {
+  const zelle = (w: number | null) => {
+    if (w === null) return <span className="text-ink-faint">·</span>;
+    const stark = Math.abs(w) >= 0.2;
+    return (
+      <span className={cx("tabular",
+        !stark ? "text-ink-faint"
+          : w > 0 ? "font-medium text-good-bright" : "text-bad-bright")}>
+        {w > 0 ? "+" : ""}{w.toFixed(2)}
+      </span>
+    );
+  };
+
+  return (
+    <div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[520px] border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-line text-xs text-ink-muted">
+              <th className="px-2 py-2 text-left font-normal">Paar</th>
+              {SCHWELLEN.map((o) => (
+                <th key={o} className="px-2 py-2 text-right font-normal">
+                  {o}/{100 - o}
+                </th>
+              ))}
+              <th className="px-2 py-2 text-right font-normal">beste</th>
+            </tr>
+          </thead>
+          <tbody>
+            {bild.zeilen.map((z) => (
+              <tr key={z.paar} className="border-b border-line/50 last:border-b-0 hover:bg-sand/40">
+                <td className="px-2 py-2 font-medium text-ink">{z.paar}</td>
+                {z.jeSchwelle.map((w, i) => (
+                  <td key={i} className="px-2 py-2 text-right">{zelle(w)}</td>
+                ))}
+                <td className="px-2 py-2 text-right text-xs">
+                  {z.beste === null
+                    ? <span className="text-ink-faint">keine</span>
+                    : <span className="text-ink-muted">{z.beste}/{100 - z.beste}</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="mt-3 text-sm leading-relaxed text-ink">{bild.fazit}</p>
+
+      <p className="mt-2 text-[11px] leading-relaxed text-ink-faint">
+        Je Feld der Mittelwert über die vier Horizonte, in Prozentpunkten
+        gegenüber der Basis. Das versteckt Ausreisser mit Absicht: eine
+        Schwelle, die nur bei 26 Wochen glänzt und sonst verliert, soll hier
+        nicht gut aussehen. „beste" bleibt leer, wenn keine Schwelle über der
+        Basis liegt.
+      </p>
+    </div>
+  );
+}
+
+export function PaarUebersichtLaedt() {
+  return (
+    <p className="py-6 text-sm text-ink-faint">
+      Sieben Paare über zwanzig Jahre — das dauert einen Moment …
     </p>
   );
 }

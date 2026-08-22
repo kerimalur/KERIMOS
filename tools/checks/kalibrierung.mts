@@ -11,7 +11,7 @@
 //   2. Eine engere Schwelle darf nie MEHR Signale liefern als eine weitere —
 //      sie ist eine Teilmenge. Passiert das doch, ist der Vergleich verdreht.
 import {
-  SCHWELLEN, divergenzBei, paarSignale, fazitVon,
+  SCHWELLEN, divergenzBei, paarSignale, fazitVon, gesamtbild,
   type RangWoche, type SchwellenZeile,
 } from "../../src/lib/confluence/kalibrierung";
 import type { VorwaertsZeile } from "../../src/lib/confluence/vorwaerts";
@@ -119,6 +119,64 @@ check("mehrere Horizonte -> Hinweis",
   fazitVon([reihe(80, [0.5, 0.4, 0.3, 0.0])]).includes("80/20"), true);
 check("Hinweis bleibt als Hinweis gekennzeichnet",
   fazitVon([reihe(80, [0.5, 0.4, 0.3, 0.0])]).includes("kein Beweis"), true);
+
+
+// --- Das Urteil ueber alle Paare ----------------------------------------
+// Hier entscheidet sich, ob die Auswertung ehrlich bleibt. Der wichtigste
+// Fall ist Kerims echter Befund vom 21.08.2026: zwei von vier Paaren
+// durchgehend im Minus. Eine Auswertung, die daraus trotzdem eine Empfehlung
+// baut, waere schlimmer als keine.
+const paarAus = (name: string, proSchwelle: (number | null)[], n = 40): SchwellenZeile => ({
+  oben: 75 as never, unten: 25, signale: n,
+  zeilen: proSchwelle.map((v) => zeile(n, v)),
+} as never);
+
+const bau = (name: string, proSchwelle: (number | null)[], n = 40) => ({
+  paar: name, fazit: "",
+  reihen: proSchwelle.map((v) => reihe(75, [v, v, v, v], n)),
+} as never);
+
+{
+  const g = gesamtbild([
+    bau("EURUSD", [0.27, -0.15, -0.24, 0.25, 0.14]),
+    bau("GBPUSD", [0.34, 0.16, 0.07, 0.40, 0.59]),
+    bau("USDJPY", [-0.81, -1.05, -0.95, -0.66, -0.59]),
+    bau("AUDUSD", [-0.17, -0.61, -0.77, -1.21, -0.24]),
+  ]);
+  check("echter Befund: 2 von 4 mit Vorsprung", g.mitVorsprung, 2);
+  check("Haelfte im Minus -> keine Empfehlung",
+    g.fazit.includes("75/25 bleibt"), true);
+  check("durchgehend negatives Paar hat keine beste Schwelle",
+    g.zeilen[2].beste, null);
+}
+{
+  const g = gesamtbild([bau("A", [-1, -1, -1, -1, -1]), bau("B", [-1, -1, -1, -1, -1])]);
+  check("alles negativ -> Faktor traegt nicht",
+    g.fazit.includes("keine Drift"), true);
+}
+{
+  const hoch = [0.1, 0.1, 0.1, 0.1, 0.9];
+  const g = gesamtbild(["A", "B", "C", "D", "E", "F", "G"].map((n, i) =>
+    bau(n, i < 5 ? hoch : [-1, -1, -1, -1, -1])));
+  check("5 von 7 bei derselben Schwelle -> Hinweis", g.fazit.includes("85/15"), true);
+}
+{
+  // Alle positiv, aber jede bei einer anderen Schwelle. Genau der Fall, in dem
+  // man versucht waere, den "Gewinner" zu nehmen — und ihn nicht nehmen darf.
+  const g = gesamtbild([
+    bau("A", [0.9, 0.1, 0.1, 0.1, 0.1]),
+    bau("B", [0.1, 0.9, 0.1, 0.1, 0.1]),
+    bau("C", [0.1, 0.1, 0.9, 0.1, 0.1]),
+    bau("D", [0.1, 0.1, 0.1, 0.9, 0.1]),
+  ]);
+  check("Paare widersprechen sich -> 75/25 bleibt",
+    g.fazit.includes("75/25 bleibt"), true);
+}
+{
+  const g = gesamtbild([bau("A", [0.5, 0.5, 0.5, 0.5, 0.5], 5)]);
+  check("unter 15 Signalen -> Feld leer statt Null",
+    g.zeilen[0].jeSchwelle, [null, null, null, null, null]);
+}
 
 console.log(fails === 0 ? "\nAlle Kontrollwerte stimmen." : `\n${fails} Abweichung(en).`);
 process.exit(fails === 0 ? 0 : 1);

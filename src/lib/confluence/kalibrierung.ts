@@ -189,3 +189,92 @@ export function fazitVon(reihen: SchwellenZeile[]): string {
 
 const mittel = (w: number[]): number | null =>
   w.length === 0 ? null : w.reduce((a, b) => a + b, 0) / w.length;
+
+
+/* ------------------------------------------------- Über alle Paare hinweg */
+
+export interface PaarZeile {
+  paar: string;
+  /** Mittlerer Abstand zur Basis je Schwelle, über alle Horizonte. */
+  jeSchwelle: (number | null)[];
+  /** Beste Schwelle — oder null, wenn keine über der Basis liegt. */
+  beste: Schwelle | null;
+  /** Mittlerer Abstand der besten Schwelle. */
+  besterWert: number | null;
+}
+
+export interface Gesamtbild {
+  zeilen: PaarZeile[];
+  /** Paare, bei denen ÜBERHAUPT eine Schwelle über der Basis liegt. */
+  mitVorsprung: number;
+  fazit: string;
+}
+
+/**
+ * Das Urteil über alle Paare, nicht über eines.
+ *
+ * Ein einzelnes Paar sagt fast nichts: bei fünf Schwellen mal vier Horizonten
+ * findet man immer irgendwo eine gute Zahl. Erst wenn DIESELBE Schwelle über
+ * MEHRERE Paare vorne liegt, ist es mehr als Rauschen — und wenn die Hälfte
+ * der Paare durchgehend im Minus steht, ist die Frage nicht mehr, welche
+ * Schwelle die richtige ist.
+ *
+ * Bewertet wird je Schwelle der Mittelwert der Horizonte, und nur aus
+ * Horizonten mit genug Signalen. Fehlen die, bleibt das Feld leer statt eine
+ * Null einzusetzen, die wie ein Ergebnis aussieht.
+ */
+export function gesamtbild(alle: Kalibrierung[]): Gesamtbild {
+  const zeilen: PaarZeile[] = alle.map((k) => {
+    const jeSchwelle = k.reihen.map((r) => {
+      const werte = r.zeilen
+        .filter((z) => z.signal.n >= 15 && z.abstand !== null)
+        .map((z) => z.abstand!);
+      return werte.length === 0
+        ? null : werte.reduce((a, b) => a + b, 0) / werte.length;
+    });
+
+    let beste: Schwelle | null = null;
+    let besterWert: number | null = null;
+    jeSchwelle.forEach((w, i) => {
+      if (w === null || w <= 0) return;
+      if (besterWert === null || w > besterWert) {
+        besterWert = w;
+        beste = SCHWELLEN[i];
+      }
+    });
+
+    return { paar: k.paar, jeSchwelle, beste, besterWert };
+  });
+
+  const mitVorsprung = zeilen.filter((z) => z.beste !== null).length;
+
+  // Wie oft gewinnt jede Schwelle?
+  const siege = new Map<Schwelle, number>();
+  for (const z of zeilen) {
+    if (z.beste !== null) siege.set(z.beste, (siege.get(z.beste) ?? 0) + 1);
+  }
+  const [gewinner, anzahl] = [...siege.entries()]
+    .sort((a, b) => b[1] - a[1])[0] ?? [null, 0];
+
+  let fazit: string;
+  if (mitVorsprung === 0) {
+    fazit = "Bei keinem Paar liegt eine Schwelle über der Basis. Das ist kein "
+      + "Kalibrierproblem — der Faktor erzeugt in dieser Form keine Drift.";
+  } else if (mitVorsprung <= zeilen.length / 2) {
+    fazit = `Nur ${mitVorsprung} von ${zeilen.length} Paaren haben überhaupt eine `
+      + "Schwelle über der Basis, und die andere Hälfte steht durchgehend im "
+      + "Minus. Eine neue Grenze würde daran nichts ändern: die Frage ist nicht, "
+      + "wie streng gefiltert wird, sondern ob der Faktor trägt. 75/25 bleibt, "
+      + "bis es dafür einen Beleg gibt.";
+  } else if (gewinner !== null && anzahl >= Math.ceil(zeilen.length * 0.6)) {
+    fazit = `${gewinner}/${100 - gewinner} liegt bei ${anzahl} von ${zeilen.length} `
+      + "Paaren vorn. Das ist der erste Befund, der eine Änderung tragen würde — "
+      + "vorher trotzdem an einem Paar prüfen, das hier nicht dabei war.";
+  } else {
+    fazit = `${mitVorsprung} von ${zeilen.length} Paaren haben einen Vorsprung, aber `
+      + "bei verschiedenen Schwellen. Widersprechen sich die Paare, ist der "
+      + "Gewinner das Ergebnis der Suche und nicht des Marktes. 75/25 bleibt.";
+  }
+
+  return { zeilen, mitVorsprung, fazit };
+}

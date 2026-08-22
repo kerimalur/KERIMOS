@@ -4,8 +4,13 @@ import { tradingConfigured } from "@/lib/supabase/trading";
 import { heuteISO } from "@/lib/time";
 import { PAARE, ampelFuer } from "@/lib/confluence/faktoren";
 import { baueJetzt, baueRueckblick, baueBilanz, type Ansicht } from "@/lib/confluence/seite";
-import { baueKalibrierung, baueMontyCot, baueSaisonZeile, KALIBRIER_JAHRE, MONTY_PAARE } from "@/lib/confluence/monty";
-import { SchwellenTabelle, SchwellenTabelleLaedt } from "@/components/confluence/kalibrier-teile";
+import {
+  baueGesamtbild, baueKalibrierung, baueMontyCot, baueSaisonZeile,
+  KALIBRIER_JAHRE, KALIBRIER_PAARE, MONTY_PAARE,
+} from "@/lib/confluence/monty";
+import {
+  PaarUebersicht, PaarUebersichtLaedt, SchwellenTabelle, SchwellenTabelleLaedt,
+} from "@/components/confluence/kalibrier-teile";
 import { FENSTER, MAX_JAHRE, MIN_JAHRE, type Fenster } from "@/lib/confluence/saison";
 import { CotStatistikTabelle, SaisonKopf, SaisonZeile, SaisonZeileLaedt } from "@/components/confluence/monty-teile";
 import {
@@ -232,6 +237,13 @@ async function AnsichtMonty({ p }: { p: Record<string, string | string[] | undef
           <strong>Termin</strong>markt, nicht CFD-Retail; ein Proxy, dafür mit Jahrzehnten
           Historie.
         </p>
+      </Card>
+
+      <Card>
+        <CardTitle>Trägt der Faktor überhaupt? — alle sieben Paare</CardTitle>
+        <Suspense fallback={<PaarUebersichtLaedt />}>
+          <GesamtLader heute={heute} />
+        </Suspense>
       </Card>
 
       <Card>
@@ -570,18 +582,12 @@ async function AnsichtBilanz() {
 }
 
 
-/**
- * Welche Paare zur Kalibrierung angeboten werden.
- *
- * Nicht alle 28: jedes kostet zwanzig Jahre COT-Historie und eine volle
- * Kursreihe. Diese sieben decken alle acht Währungen genau einmal ab — mehr
- * bringt keine neue Information, nur Rechenzeit.
- */
-const KALIBRIER_PAARE = [
-  "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD",
-] as const;
-
 async function KalibrierLader({ paar, heute }: { paar: string; heute: string }) {
   const bild = await baueKalibrierung(paar, heute);
   return <SchwellenTabelle bild={bild} />;
+}
+
+async function GesamtLader({ heute }: { heute: string }) {
+  const bild = await baueGesamtbild(heute);
+  return <PaarUebersicht bild={bild} />;
 }
