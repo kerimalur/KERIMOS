@@ -44,7 +44,5 @@ export async function gvaMarkieren(fd: FormData): Promise<void> {
     // dass der Treffer beim nächsten Laden noch dasteht — kein Datenverlust.
   }
 
-  revalidatePath("/trading/radar");
   revalidatePath("/trading/cockpit");
-  revalidatePath("/trading/cockpit/board");
 }

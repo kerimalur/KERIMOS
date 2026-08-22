@@ -24,7 +24,7 @@ export function BereichTabs({ reiter }: { reiter: Reiter[] }) {
   const pfad = usePathname();
 
   // Aktiv ist der längste passende Eintrag, nicht jeder passende. Sonst
-  // leuchten auf /trading/cockpit/board gleich zwei Reiter.
+  // leuchten auf /trading/backtest/auswertung gleich zwei Reiter.
   const treffer = reiter
     .map((r) => r.href)
     .filter((h) => pfad === h || pfad.startsWith(h + "/"))
@@ -49,38 +49,35 @@ export function BereichTabs({ reiter }: { reiter: Reiter[] }) {
   );
 }
 
-/* --------------------------------------------------- Die drei Reiter-Sätze */
+/* ------------------------------------------------------ Die zwei Reiter-Sätze */
 
 /**
- * Cockpit: was ist gerade los am Chart.
+ * Confluences: die fundamentale Lage.
  *
- * Radar und Heatmap behalten bewusst ihre alten Adressen. Sie unter
- * /trading/cockpit/… zu schieben hätte nur die URL hübscher gemacht und dafür
- * jeden gespeicherten Link gebrochen — die Reiter funktionieren so genauso.
- */
-export const COCKPIT_REITER: Reiter[] = [
-  { href: "/trading/cockpit", label: "Lebenszyklus", exakt: true },
-  { href: "/trading/radar", label: "Radar" },
-  { href: "/trading/heatmap", label: "Heatmap" },
-  { href: "/trading/cockpit/board", label: "GVA-Board" },
-  { href: "/trading/cockpit/news", label: "News" },
-];
-
-/**
- * Confluences: warum — die fundamentale Lage.
+ * Zwei Reiter, seit dem Umbau vom 22.08.2026. **Ranking** ist die Übersicht
+ * (Q-Score je Währung, wöchentlich aus dem ML-Modell), **Monty** die Tiefe
+ * (Commercials gegen Retail, Saisonalität).
  *
- * Jetzt / Rückblick / Bilanz stehen NICHT hier: das sind Abfragen auf
- * derselben Adresse (?ansicht=…), und `usePathname` kennt keine Query.
- * Sie bleiben in der Seite selbst, sonst leuchteten hier immer alle drei.
+ * Weg sind Terminal und Jetzt: das Fünf-Faktoren-Modell aus Zins, Realzins und
+ * Risiko-Regime stand als zweites, konkurrierendes Urteil neben Monty, und
+ * Kerim handelt nach Monty. Rückblick steht jetzt im Backtest, Bilanz im
+ * Journal — beide sind Auswertungen eigener Trades und nicht Marktlage.
  */
 export const CONFLUENCE_REITER: Reiter[] = [
-  { href: "/trading/confluence", label: "Confluences" },
   { href: "/trading/ranking", label: "Ranking" },
+  { href: "/trading/confluence", label: "Monty" },
 ];
 
-/** Backtest: eintragen und auswerten. */
+/**
+ * Backtest: eintragen und auswerten.
+ *
+ * „Rückblick · Confluence" ist bewusst so beschriftet: es ist die
+ * Fundamental-Lage eines vergangenen Handelstages, nicht der Wochenrückblick
+ * aus dem Journal. Ohne den Zusatz hätte man zwei Rückblicke ohne Unterschied.
+ */
 export const BACKTEST_REITER: Reiter[] = [
   { href: "/trading/backtest", label: "Eintragen", exakt: true },
   { href: "/trading/backtest/auswertung", label: "Auswertung" },
   { href: "/trading/backtest/kategorien", label: "Kategorien" },
+  { href: "/trading/backtest/rueckblick", label: "Rückblick · Confluence" },
 ];

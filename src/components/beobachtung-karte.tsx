@@ -41,15 +41,15 @@ export async function BeobachtungKarte({ kompakt = false }: { kompakt?: boolean 
             verwalten ↗
           </Link>
         ) : (
-          <Link href="/trading/radar" className="text-xs text-accent-soft hover:underline">
-            Radar ↗
+          <Link href="/trading/cockpit" className="text-xs text-accent-soft hover:underline">
+            Cockpit ↗
           </Link>
         )}
       </div>
 
       {zeilen.length === 0 ? (
         <Empty>
-          Nichts in Beobachtung. Markier im Radar ein Setup als „läuft noch",
+          Nichts in Beobachtung. Markier im Cockpit ein Setup als „läuft noch",
           oder trag hier unten ein Paar ein, das du im Blick behalten willst.
         </Empty>
       ) : (

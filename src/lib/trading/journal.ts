@@ -219,6 +219,12 @@ export interface Signal {
   lineLevel: number;
   status: string;
   hitAt: string;
+  /**
+   * Tag, an dem die GVA-Linie ENTSTANDEN ist — nicht der Tag des Treffers.
+   * Das Cockpit-Popup zeichnet den Chart um genau diesen Punkt herum.
+   * Null bei Altbestand aus der Zeit vor der Spalte.
+   */
+  lineFormedDate: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -406,14 +412,25 @@ export async function fetchSignale(status?: string[]): Promise<Signal[]> {
   // Signale schreibt das Backend teils ohne user_id (der Screener läuft als
   // Dienst). Deshalb hier bewusst KEIN user_id-Filter — es ist ohnehin nur
   // ein Benutzer in dieser Datenbank.
-  let q = supabase
-    .from("signals")
-    .select("id, pair, line_type, line_level, status, hit_at")
-    .order("hit_at", { ascending: false })
-    .limit(200);
-  if (status?.length) q = q.in("status", status);
+  //
+  // `line_formed_date` schreibt das Backend, steht aber nicht im ältesten
+  // Schema (supabase/schema.sql). Fehlt die Spalte, lässt PostgREST die
+  // GANZE Abfrage scheitern — deshalb der zweite Versuch ohne sie. Lieber ein
+  // Cockpit ohne Chart als ein Cockpit ohne Hits.
+  const abfrage = (spalten: string) => {
+    let q = supabase
+      .from("signals")
+      .select(spalten)
+      .order("hit_at", { ascending: false })
+      .limit(200);
+    if (status?.length) q = q.in("status", status);
+    return q;
+  };
 
-  const { data } = await q;
+  const SPALTEN = "id, pair, line_type, line_level, status, hit_at";
+  let { data, error } = await abfrage(SPALTEN + ", line_formed_date");
+  if (error) ({ data } = await abfrage(SPALTEN));
+
   return ((data ?? []) as unknown as Row[]).map((r) => ({
     id: String(r.id),
     pair: String(r.pair ?? ""),
@@ -421,6 +438,7 @@ export async function fetchSignale(status?: string[]): Promise<Signal[]> {
     lineLevel: Number(r.line_level ?? 0),
     status: String(r.status ?? "new"),
     hitAt: String(r.hit_at ?? ""),
+    lineFormedDate: r.line_formed_date ? String(r.line_formed_date).slice(0, 10) : null,
   }));
 }
 

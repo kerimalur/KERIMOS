@@ -210,7 +210,7 @@ export function PaarTabelle({ paare }: { paare: PaarUrteil[] }) {
           {sortiert.map((u) => (
             <tr key={u.paar} className="border-b border-line/50 last:border-b-0 hover:bg-sand/40">
               <td className="px-2 py-2">
-                <a href={`/trading/confluence?ansicht=rueckblick&paar=${u.paar}`}
+                <a href={`/trading/backtest/rueckblick?paar=${u.paar}`}
                   className="font-medium text-ink hover:text-accent-soft hover:underline">
                   {u.basis}/{u.quote}
                 </a>
@@ -489,7 +489,7 @@ export function PaarMatrix({ matrix }: { matrix: MatrixZelle[][] }) {
                     <div className="h-9 w-14 rounded-lg bg-sand/30" />
                   ) : (
                     <Link
-                      href={`/trading/confluence?ansicht=rueckblick&paar=${zelle.paar}`
+                      href={`/trading/backtest/rueckblick?paar=${zelle.paar}`
                         + `&richtung=${zelle.richtung > 0 ? "long" : zelle.richtung < 0 ? "short" : ""}`}
                       title={`${zelle.basis}${zelle.quote}`
                         + `${zelle.gedreht ? ` (gerechnet als ${zelle.paar})` : ""} — `
@@ -547,7 +547,7 @@ export function HandelbarListe({ handelbar }: {
       {handelbar.map(({ u, a }) => (
         <li key={u.paar}>
           <Link
-            href={`/trading/confluence?ansicht=rueckblick&paar=${u.paar}`
+            href={`/trading/backtest/rueckblick?paar=${u.paar}`
               + `&richtung=${a.richtung > 0 ? "long" : "short"}`}
             title={u.satz}
             className="flex flex-wrap items-center gap-2.5 rounded-xl bg-sand/50 px-3 py-2 transition duration-150 ease-tactile hover:bg-sand active:scale-[0.99]">

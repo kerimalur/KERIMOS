@@ -209,7 +209,7 @@ export function TradeListe({ trades }: { trades: TradeUrteil[] }) {
             <tr key={t.id} className="border-b border-line/50 last:border-b-0 hover:bg-sand/40">
               <td className="num px-2 py-2 text-ink-muted">
                 <a className="hover:text-accent-soft hover:underline"
-                  href={`/trading/confluence?ansicht=rueckblick&paar=${t.paar}&datum=${t.datum}&richtung=${t.richtung > 0 ? "long" : "short"}`}>
+                  href={`/trading/backtest/rueckblick?paar=${t.paar}&datum=${t.datum}&richtung=${t.richtung > 0 ? "long" : "short"}`}>
                   {t.datum}
                 </a>
               </td>

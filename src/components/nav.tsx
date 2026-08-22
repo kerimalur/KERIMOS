@@ -10,6 +10,27 @@ import { Logo } from "./logo";
 type Section = "zeit" | "trading" | null;
 
 /**
+ * Ein Eintrag der Hauptnavigation.
+ *
+ * `auch` gibt es, seit ein Bereich aus zwei getrennten Adressen besteht:
+ * Confluence führt auf /trading/ranking (die Übersicht), enthält aber auch
+ * /trading/confluence (Monty). Ohne die Liste leuchtet auf Monty gar kein
+ * Punkt, und man weiss beim Blick nach oben nicht mehr, wo man ist.
+ */
+interface NavLink {
+  href: string;
+  label: string;
+  /** Weitere Pfade, die zu diesem Eintrag gehören. */
+  auch?: string[];
+}
+
+interface NavConfig {
+  home: NavLink;
+  primary: NavLink[];
+  secondary: NavLink[];
+}
+
+/**
  * Zeit: erfasst wird nichts mehr.
  *
  * Die minutengenaue Erfassung hat zwei Fragen beantworten sollen - "was mache
@@ -28,7 +49,7 @@ type Section = "zeit" | "trading" | null;
  * ist entweder ein Termin oder eine Zeile im Heute-Tab. Eine dritte Liste
  * daneben wird nicht gepflegt und ist dann schlimmer als keine.
  */
-const ZEIT = {
+const ZEIT: NavConfig = {
   home: { href: "/termine", label: "Termine" },
   primary: [
     { href: "/rueckblick/heute", label: "Heute" },
@@ -51,24 +72,25 @@ const ZEIT = {
  *
  * Die Reihenfolge bildet den Arbeitsweg ab:
  *   Uebersicht     was habe ich mir selbst vorgenommen (nur die Watchlist)
- *   Cockpit        was ist gerade los am Chart (Radar, Heatmap, Board, News)
- *   Confluence     spricht die Fundamentallage dafuer (inkl. Ranking)
+ *   Cockpit        was ist gerade los am Chart (ein Raster, 28 Kacheln)
+ *   Confluence     spricht die Fundamentallage dafuer (Ranking, Monty)
  *   Journal        was habe ich gemacht
- *   Backtest       traegt die Methode ueberhaupt (Auswertung, Kategorien)
+ *   Backtest       traegt die Methode ueberhaupt (Auswertung, Kategorien,
+ *                  Rueckblick auf die Lage eines vergangenen Handelstages)
  *   Einstellungen  Alarme und der Weg ins Labor
  *
  * Siehe ../../TRADING-UMBAU.md.
  */
-const TRADING = {
+const TRADING: NavConfig = {
   home: { href: "/trading", label: "Übersicht" },
   primary: [
     { href: "/trading/cockpit", label: "Cockpit" },
-    { href: "/trading/confluence", label: "Confluence" },
+    { href: "/trading/ranking", label: "Confluence", auch: ["/trading/confluence"] },
     { href: "/trading/journal", label: "Journal" },
     { href: "/trading/backtest", label: "Backtest" },
     { href: "/trading/einstellungen", label: "Einstellungen" },
   ],
-  secondary: [] as { href: string; label: string }[],
+  secondary: [],
 };
 
 const ZEIT_PATHS = ["/termine", "/rueckblick", "/woche", "/schichten"];
@@ -97,12 +119,19 @@ export function Nav({ email }: { email?: string }) {
    * Sonst leuchten auf /trading/backtest/auswertung gleich drei Punkte
    * ("Übersicht", "Backtest", "Auswertung"), weil alle Präfixe passen.
    */
+  const passt = (h: string) => path === h || path.startsWith(h + "/");
+
   const treffer = [config.home, ...config.primary, ...config.secondary]
-    .map((l) => l.href)
+    .flatMap((l) => [l.href, ...(l.auch ?? [])])
     .filter((h) => !h.startsWith("http"))
-    .filter((h) => path === h || path.startsWith(h + "/"))
+    .filter(passt)
     .sort((a, b) => b.length - a.length)[0];
-  const isActive = (href: string) => href === treffer;
+
+  const isActive = (href: string) => {
+    const l = [config.home, ...config.primary, ...config.secondary]
+      .find((x) => x.href === href);
+    return href === treffer || (l?.auch ?? []).includes(treffer);
+  };
 
   if (!section) {
     return (

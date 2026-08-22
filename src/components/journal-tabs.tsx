@@ -10,7 +10,7 @@ import { cx } from "./ui";
  */
 
 /**
- * Fuenf Tabs, seit 21.08.2026. Raus sind Outlook, Kalender und Rueckblick:
+ * Sechs Tabs, seit 22.08.2026. Raus sind Outlook, Kalender und Rueckblick:
  *
  * - **Outlook** doppelte die Beobachtungsliste auf der Trading-Uebersicht.
  * - **Kalender** war eine dritte Ansicht derselben Trades.
@@ -19,6 +19,11 @@ import { cx } from "./ui";
  *
  * Was bleibt, ist der Ablauf: wo steht das Konto, welche Trades gab es, wie
  * lief die Kurve, nach welcher Strategie, auf welchem Konto.
+ *
+ * Dazu seit 22.08.2026 **Bilanz** (vorher unter Confluences): hat der
+ * fundamentale Rueckenwind bei den eigenen Trades etwas gebracht? Die Zahl
+ * kommt aus dem Journal und aendert sich, wenn ein Trade nachgetragen wird —
+ * also gehoert sie hierher und nicht zur Marktlage.
  */
 const TABS = [
   { href: "/trading/journal", label: "Übersicht" },
@@ -26,6 +31,7 @@ const TABS = [
   { href: "/trading/journal/equity", label: "Equity" },
   { href: "/trading/journal/strategien", label: "Strategien" },
   { href: "/trading/journal/konten", label: "Konten" },
+  { href: "/trading/journal/bilanz", label: "Bilanz" },
 ];
 
 export function JournalTabs() {
