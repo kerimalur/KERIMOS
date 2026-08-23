@@ -10,9 +10,9 @@ name: KerimOS Morgen-Anstoss
 # 07:00 Zuercher Sommerzeit bzw. 06:00 Winterzeit; der Endpoint akzeptiert
 # 04:00-12:00 Ortszeit, damit beides und eine Verspaetung durchgehen.
 #
-# Noetige Repository-Secrets:
-#   KERIMOS_URL           z.B. https://kerimos.vercel.app  (ohne Slash am Ende)
+# Optionale Repository-Secrets:
 #   KERIMOS_CRON_SECRET   derselbe Wert wie CRON_SECRET in Vercel
+#   KERIMOS_URL           nur noetig, wenn die App woanders liegt
 
 on:
   schedule:
@@ -26,19 +26,32 @@ jobs:
     steps:
       - name: Morgen-Anstoss ausloesen
         env:
-          URL: ${{ secrets.KERIMOS_URL }}
+          # URL als Standard im Workflow, nicht als Secret: sie ist kein
+          # Geheimnis und steht ohnehin im Code. Ein Repository-Secret
+          # KERIMOS_URL oder eine Variable gleichen Namens uebersteuert sie.
+          URL: ${{ secrets.KERIMOS_URL || vars.KERIMOS_URL || 'https://kerimos.vercel.app' }}
           SECRET: ${{ secrets.KERIMOS_CRON_SECRET }}
         run: |
-          if [ -z "$URL" ] || [ -z "$SECRET" ]; then
-            echo "KERIMOS_URL oder KERIMOS_CRON_SECRET fehlt — nichts zu tun."
-            exit 0
+          # Frueher stieg dieser Schritt bei fehlenden Secrets mit "exit 0" aus.
+          # Das ist genau das Muster, das man nie wieder findet: der Workflow
+          # ist gruen, der Cron laeuft, und es passiert trotzdem nichts. Jetzt
+          # wird der Aufruf in jedem Fall versucht — ohne Secret entscheidet
+          # der Endpoint selbst, ob er ihn annimmt (er prueft nur, wenn in
+          # Vercel CRON_SECRET gesetzt ist).
+          if [ -z "$SECRET" ]; then
+            echo "::warning::KERIMOS_CRON_SECRET ist nicht gesetzt. Der Aufruf laeuft"
+            echo "::warning::ohne Authorization-Kopf. Das geht nur, solange in Vercel"
+            echo "::warning::auch CRON_SECRET fehlt — dann ist der Endpoint offen."
+            KOPF=()
+          else
+            # Das Geheimnis geht als Kopf, nicht als Query — Query-Parameter
+            # landen in Server- und Proxy-Logs.
+            KOPF=(-H "Authorization: Bearer ${SECRET}")
           fi
-          # Das Geheimnis geht als Authorization-Kopf, nicht als Query —
-          # Query-Parameter landen in Server- und Proxy-Logs.
+
           for i in 1 2 3; do
             antwort=$(curl -s --max-time 45 -w "\n%{http_code}" \
-              -H "Authorization: Bearer ${SECRET}" \
-              "${URL}/api/morgen-anstoss") && code=$(echo "$antwort" | tail -1)
+              "${KOPF[@]}" "${URL}/api/morgen-anstoss") && code=$(echo "$antwort" | tail -1)
             if [ "$code" = "200" ]; then
               echo "$antwort" | head -n -1
               exit 0
@@ -46,4 +59,5 @@ jobs:
             echo "Versuch $i: HTTP ${code:-timeout} — retry in 15 s"
             sleep 15
           done
-          echo "KerimOS antwortet nicht (nach 3 Versuchen)"; exit 1
+          echo "::error::KerimOS antwortet nicht (nach 3 Versuchen) — Morgen-Anstoss nicht verschickt."
+          exit 1
