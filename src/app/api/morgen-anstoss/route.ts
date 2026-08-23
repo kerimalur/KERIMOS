@@ -86,7 +86,7 @@ export async function GET(request: NextRequest) {
       art: "zeit",
       titel: vorsatz.titel,
       text: vorsatz.text,
-      url: "/rueckblick/heute",
+      url: "/rueckblick#heute",
       tag: `morgen-vorsatz-${heute}`,
     }, werte, lage);
     if (r.push.gesendet > 0 || r.telegram.ok) gesendet.push("vorsatz");

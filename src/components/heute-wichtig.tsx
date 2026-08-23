@@ -45,7 +45,7 @@ export async function HeuteWichtig() {
               {fertig}/{punkte.length}
             </span>
           )}
-          <Link href="/rueckblick/heute" className="text-xs text-accent-soft hover:underline">
+          <Link href="/rueckblick#heute" className="text-xs text-accent-soft hover:underline">
             Rückblick ↗
           </Link>
         </span>

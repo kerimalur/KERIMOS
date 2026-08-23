@@ -1,82 +1,74 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Faelliges } from "@/components/faelliges";
-import { TagesZeilen } from "@/components/tages-zeilen";
+import { WochenzielListe } from "@/components/wochenziel-liste";
 import { saveWeeklyReview, deleteWeeklyReview } from "@/lib/actions";
-import { Button, Card, CardTitle, Input, Label, Stat, Empty, cx } from "@/components/ui";
-import { chf } from "@/lib/format";
+import { rueckblickSpeichern, rueckblickLoeschen } from "@/lib/tagesrueckblick-actions";
+import { ladeRueckblick, ladeTageMitRueckblick, RUECKBLICK_SQL } from "@/lib/supabase/tagesrueckblick-db";
+import { FRAGEN, LEER, MAX_ZEICHEN, beantwortet, hatInhalt, serie } from "@/lib/tagesrueckblick";
+import { ladeWochenziele, WOCHENZIELE_SQL } from "@/lib/wochenziele";
+import { Button, Card, CardTitle, Label, Stat, Badge, Empty, cx, inputClass } from "@/components/ui";
 import {
-  weekStart as toWeekStart, addDays, fmtHours, pct, summarizeWeek, weekLabel, heuteISO,
+  weekStart as toWeekStart, addDays, weekLabel, heuteISO, dayName,
 } from "@/lib/time";
-import { computeRunway } from "@/lib/runway";
 import { createGymClient, gymConfigured } from "@/lib/supabase/gym";
 import { createTradingClient } from "@/lib/supabase/trading";
-import type {
-  DailyTime, RunwayInputs, WeeklyBucket, WeeklyReview,
-} from "@/lib/types";
+import type { WeeklyReview } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Rückblick — Tag und Woche auf einer Seite.
+ *
+ * Vorher waren es zwei: `/rueckblick/heute` für die drei Abendfragen und
+ * `/rueckblick` für die Woche. Getrennt sinnvoll, in der Praxis nicht — man
+ * öffnet sonntags beides hintereinander, und unter der Woche fand niemand die
+ * Unterseite. Jetzt steht der Tag oben (weil täglich), die Woche darunter.
+ *
+ * **Die Zeiterfassung ist raus.** `v_daily_time`, `v_weekly_buckets` und der
+ * Runway hingen hier; erfasst wird seit dem Zuschnitt vom 21.08. nichts mehr,
+ * also standen dort dauerhaft Nullen. Eine Kennzahl, die immer null ist, ist
+ * keine Kennzahl — sie bringt einem nur bei, die Karte zu überblättern.
+ *
+ * Was bleibt und was neu ist: Trainingstage und Backtest-Trades kommen aus den
+ * Fachdatenbanken und zählen sich selbst. Dazu die **Wochenziele** — die zwei,
+ * drei Dinge, die diese Woche zählen. Die stehen die ganze Woche auf der
+ * Startseite, gesetzt werden sie hier.
+ */
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
 export default async function RueckblickPage({
   searchParams,
 }: {
-  searchParams: Promise<{ w?: string }>;
+  searchParams: Promise<{ w?: string; t?: string }>;
 }) {
   const sp = await searchParams;
-  const current = toWeekStart(heuteISO());
-  // Standard ist die eben vergangene Woche - sonntags schaut man zurück
-  const fallback = addDays(current, -7);
-  const week = ISO.test(sp.w ?? "") ? toWeekStart(sp.w!) : fallback;
+  const heute = heuteISO();
+  const laufende = toWeekStart(heute);
+
+  // Standard ist die eben vergangene Woche — sonntags schaut man zurück.
+  const week = ISO.test(sp.w ?? "") ? toWeekStart(sp.w!) : addDays(laufende, -7);
   const weekEnd = addDays(week, 6);
+  const tag = sp.t && ISO.test(sp.t) && sp.t <= heute ? sp.t : heute;
 
   const supabase = await createClient();
+
   const [
-    { data: dailyRows }, { data: bucketRows }, { data: inputsRows },
     { data: existing }, { data: history },
+    { rueckblick, tabelleFehlt }, tage, zielListe,
   ] = await Promise.all([
-    supabase.from("v_daily_time").select("*")
-      .gte("entry_date", week).lte("entry_date", weekEnd),
-    supabase.from("v_weekly_buckets").select("*").eq("week_start", week),
-    supabase.rpc("runway_inputs", { months_lookback: 3 }),
     supabase.from("weekly_reviews").select("*").eq("week_start", week).maybeSingle(),
     supabase.from("weekly_reviews").select("*")
       .order("week_start", { ascending: false }).limit(12),
+    ladeRueckblick(tag),
+    ladeTageMitRueckblick(addDays(heute, -90)),
+    // Ziele immer für die LAUFENDE Woche, auch wenn man einen alten Rückblick
+    // liest: Ziele setzt man nach vorne, nicht rückwirkend.
+    ladeWochenziele(laufende),
   ]);
 
-  const days = ((dailyRows ?? []) as DailyTime[]).map((d) => ({
-    ...d,
-    logged_minutes: Number(d.logged_minutes),
-    ziel_minutes: Number(d.ziel_minutes),
-    arbeit_minutes: Number(d.arbeit_minutes),
-    pflicht_minutes: Number(d.pflicht_minutes),
-    regeneration_minutes: Number(d.regeneration_minutes),
-    sozial_minutes: Number(d.sozial_minutes),
-    spass_minutes: Number(d.spass_minutes),
-    leerlauf_minutes: Number(d.leerlauf_minutes),
-    sleep_hours: d.sleep_hours === null ? null : Number(d.sleep_hours),
-    waking_minutes: Number(d.waking_minutes),
-    unaccounted_minutes: Number(d.unaccounted_minutes),
-  }));
-  const summary = summarizeWeek(days, (bucketRows ?? []) as WeeklyBucket[]);
-
-  const rawInputs = (inputsRows as RunwayInputs[] | null)?.[0];
-  const inputs: RunwayInputs = {
-    liquid: Number(rawInputs?.liquid ?? 0),
-    net_worth: Number(rawInputs?.net_worth ?? 0),
-    avg_income: Number(rawInputs?.avg_income ?? 0),
-    avg_expenses: Number(rawInputs?.avg_expenses ?? 0),
-    recurring_fixed: Number(rawInputs?.recurring_fixed ?? 0),
-    months_with_data: Number(rawInputs?.months_with_data ?? 0),
-  };
-  const runway = computeRunway(inputs, {
-    incomeFactor: 0, expenseDeltaMonthly: 0, oneOffCost: 0,
-    incomeOverride: null, expenseOverride: null,
-  });
-
-  // Trainingstage und Backtest-Trades der Woche - beide liegen in eigenen
-  // Datenbanken und lassen sich deshalb nicht aus v_daily_time lesen.
+  // Trainingstage und Backtest-Trades liegen in eigenen Datenbanken.
   const trainingstage = await (async () => {
     if (!gymConfigured()) return null;
     const gym = createGymClient();
@@ -90,153 +82,172 @@ export default async function RueckblickPage({
     if (!trading) return null;
     const { data } = await trading.from("backtest_sessions").select("trades");
     const alle = (data ?? []).flatMap(
-      (s) => (s.trades ?? []) as { date?: string; result?: string }[]
+      (s) => (s.trades ?? []) as { date?: string; result?: string }[],
     );
     return alle.filter(
-      (t) => t.date && t.date >= week && t.date <= weekEnd && t.result
+      (t) => t.date && t.date >= week && t.date <= weekEnd && t.result,
     ).length;
   })();
 
-  const goalHours = (summary.byBucket.find((b) => b.bucket === "ziel")?.minutes ?? 0) / 60;
   const review = (existing ?? null) as WeeklyReview | null;
   const past = (history ?? []) as WeeklyReview[];
 
-  // Vorbefüllung aus den Kennzahlen - nur beim ersten Schreiben, nie beim
-  // Bearbeiten. Startpunkt zum Anpassen, kein fertiger Text.
+  const werte = rueckblick ?? { datum: tag, ...LEER };
+  const n = beantwortet(werte);
+  const strecke = serie(tage, heute);
+  const istHeute = tag === heute;
+
+  // Vorbefüllung nur beim ersten Schreiben, nie beim Bearbeiten: Startpunkt
+  // zum Anpassen, kein fertiger Text.
   let wellVorschlag = "";
-  let poorlyVorschlag = "";
-  if (!review && days.length > 0) {
+  if (!review) {
     const gut: string[] = [];
-    const schlecht: string[] = [];
-
-    if (goalHours >= 1) {
-      gut.push(`${fmtHours(goalHours * 60)} an Zielen (${pct(summary.goalShare)} der Wachzeit)`);
-    } else {
-      schlecht.push("unter 1 h an Zielen gearbeitet");
-    }
-
-    // Schlaf: Ø der Nächte, für die etwas erfasst ist
-    const schlafNaechte = days.filter((d) => (d.sleep_hours ?? 0) > 0);
-    if (schlafNaechte.length > 0) {
-      const schnitt =
-        schlafNaechte.reduce((s, d) => s + (d.sleep_hours ?? 0), 0) / schlafNaechte.length;
-      const text = `Ø ${schnitt.toFixed(1).replace(".", ",")} h Schlaf`;
-      if (schnitt >= 7) gut.push(text); else schlecht.push(text);
-    }
-
-    // Training und Backtest kommen aus den Fachdatenbanken
-    if (trainingstage !== null) {
-      const text = `${trainingstage} Trainingstage`;
-      if (trainingstage >= 4) gut.push(text); else schlecht.push(`nur ${text}`);
-    }
-    if (backtestNeu !== null && backtestNeu > 0) {
-      gut.push(`${backtestNeu} Backtest-Trades dokumentiert`);
-    }
-
-    const leerlaufMin = summary.byBucket.find((b) => b.bucket === "leerlauf")?.minutes ?? 0;
-    if (leerlaufMin >= 120) schlecht.push(`${fmtHours(leerlaufMin)} Leerlauf`);
-
-    if (summary.totalUnaccounted > summary.totalLogged) {
-      schlecht.push(`${fmtHours(summary.totalUnaccounted)} unerfasst - mehr als erfasst`);
-    } else if (summary.totalWaking > 0 &&
-        summary.totalUnaccounted / summary.totalWaking > 0.25) {
-      schlecht.push(`${fmtHours(summary.totalUnaccounted)} unerfasst`);
-    }
-
+    if (trainingstage !== null && trainingstage > 0) gut.push(`${trainingstage} Trainingstage`);
+    if (backtestNeu) gut.push(`${backtestNeu} Backtest-Trades dokumentiert`);
     wellVorschlag = gut.join(" · ");
-    poorlyVorschlag = schlecht.join(" · ");
   }
 
+  const zieleErledigt = zielListe.ziele.filter((z) => z.erledigtAm).length;
+
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="font-display text-xl font-bold text-ink">Wochenrückblick</h1>
-          <p className="mt-1 max-w-2xl text-sm text-ink-muted">
-            Fünf Minuten am Sonntag. Die Zahlen werden eingefroren — sonst lassen sich
-            Monate später nicht mehr vergleichen, weil sich die Berechnung inzwischen
-            geändert hat.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link href={`/rueckblick?w=${addDays(week, -7)}`}
-            className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-soft transition hover:border-line-strong">
-            ←
-          </Link>
-          <span className="min-w-32 text-center text-sm text-ink">{weekLabel(week)}</span>
-          <Link href={`/rueckblick?w=${addDays(week, 7)}`}
-            className={cx("rounded-lg border border-line px-3 py-1.5 text-sm transition",
-              week >= current ? "pointer-events-none opacity-40 text-ink-faint"
-                : "text-ink-soft hover:border-line-strong")}>
-            →
-          </Link>
-        </div>
+    <div className="mx-auto max-w-3xl space-y-5 py-6">
+      <div>
+        <h1 className="font-display text-xl font-bold text-ink">Rückblick</h1>
+        <p className="mt-1 max-w-2xl text-sm text-ink-muted">
+          Oben der Tag, unten die Woche. Nicht um es zu dokumentieren, sondern
+          um zu merken, was daraus geworden ist.
+        </p>
       </div>
 
-      {/* Was faellig ist, steht VOR dem Rueckblick: ein Rueckblick, der nur
-          zurueckschaut, laesst genau das liegen, was gerade kippt. */}
+      {/* Was fällig ist, steht VOR dem Rückblick: ein Rückblick, der nur
+          zurückschaut, lässt genau das liegen, was gerade kippt. */}
       <Faelliges />
 
-      <TagesZeilen woche={week} />
-
-      <Card>
-        <CardTitle>Zahlen dieser Woche</CardTitle>
-        <div className="grid gap-4 sm:grid-cols-4">
-          <Stat label="An Zielen" value={fmtHours(goalHours * 60)}
-            tone={summary.goalShare >= 0.15 ? "good" : "warn"}
-            sub={`${pct(summary.goalShare)} der Wachzeit`} />
-          <Stat label="Erfasst" value={fmtHours(summary.totalLogged)}
-            sub={`von ${fmtHours(summary.totalWaking)}`} />
-          <Stat label="Unerfasst" value={fmtHours(summary.totalUnaccounted)}
-            tone={summary.totalUnaccounted > summary.totalLogged ? "bad" : "neutral"} />
-          <Stat label="Runway ohne Einkommen"
-            value={runway.runwayMonths === null ? "unbegrenzt"
-              : `${runway.runwayMonths.toFixed(1).replace(".", ",")} Mt.`}
-            sub={chf(inputs.liquid)} />
+      {/* ------------------------------------------------------------- Tag */}
+      <Card id="heute">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <CardTitle className="mb-0">{istHeute ? "Heute" : dayName(tag)}</CardTitle>
+          <span className="tabular text-sm text-ink-muted">{tag}</span>
+          {n > 0 && <Badge tone={n === 3 ? "good" : "neutral"}>{n} von 3</Badge>}
+          {strecke > 1 && <Badge tone="good">{strecke} Tage am Stück</Badge>}
         </div>
-        {days.length === 0 && (
-          <p className="mt-4 text-sm text-ink-muted">
-            Für diese Woche ist keine Zeit erfasst. Du kannst den Rückblick trotzdem
-            schreiben — die Zahlen bleiben dann leer.
-          </p>
-        )}
+
+        <form action={rueckblickSpeichern} className="space-y-4">
+          <input type="hidden" name="datum" value={tag} />
+
+          {FRAGEN.map((frage) => (
+            <div key={frage.feld}>
+              <label htmlFor={frage.feld} className="mb-1 block text-sm font-medium text-ink">
+                {frage.titel}
+              </label>
+              <p className="mb-1.5 text-xs text-ink-faint">{frage.hinweis}</p>
+              <textarea id={frage.feld} name={frage.feld} rows={2}
+                maxLength={MAX_ZEICHEN}
+                defaultValue={werte[frage.feld]}
+                className={`${inputClass} resize-y`} />
+            </div>
+          ))}
+
+          <div className="flex flex-wrap items-center gap-2.5 border-t border-line/70 pt-4">
+            <Button type="submit">Tag speichern</Button>
+            {hatInhalt(werte) && (
+              <Button type="submit" variant="ghost" formAction={rueckblickLoeschen}>
+                Löschen
+              </Button>
+            )}
+          </div>
+        </form>
+
+        <div className="mt-4 flex flex-wrap gap-1.5 border-t border-line/70 pt-4">
+          {Array.from({ length: 14 }, (_, i) => addDays(heute, -13 + i)).map((t) => {
+            const gesetzt = tage.includes(t);
+            const aktiv = t === tag;
+            return (
+              <Link key={t} href={`/rueckblick?t=${t}&w=${week}#heute`} title={t}
+                className={cx("flex h-9 w-9 items-center justify-center rounded-lg text-xs transition",
+                  aktiv ? "bg-accent font-medium text-ink-on"
+                    : gesetzt ? "bg-good-tint text-good-bright"
+                      : "bg-sand text-ink-faint hover:text-ink-muted")}>
+                {t.slice(8, 10)}
+              </Link>
+            );
+          })}
+        </div>
       </Card>
 
+      {/* --------------------------------------------------------- Ziele */}
+      <Card area="zeit">
+        <div className="mb-4 flex flex-wrap items-baseline gap-2">
+          <CardTitle className="mb-0">Ziele diese Woche</CardTitle>
+          <span className="text-[11px] text-ink-faint">
+            {weekLabel(laufende)}
+            {zielListe.ziele.length > 0 && ` · ${zieleErledigt} von ${zielListe.ziele.length}`}
+          </span>
+        </div>
+        <WochenzielListe ziele={zielListe.ziele} weekStart={laufende} mitFormular />
+        <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+          Diese Ziele stehen die ganze Woche auf der Startseite und lassen sich
+          dort abhaken. Zwei oder drei reichen — was auf einer Liste von zehn
+          steht, ist kein Ziel mehr, sondern eine Aufgabe.
+        </p>
+      </Card>
+
+      {/* -------------------------------------------------------- Woche */}
       <Card>
-        <CardTitle>{review ? "Rückblick bearbeiten" : "Rückblick schreiben"}</CardTitle>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <CardTitle className="mb-0">Wochenrückblick</CardTitle>
+          <div className="flex items-center gap-2">
+            <Link href={`/rueckblick?w=${addDays(week, -7)}`}
+              className="rounded-lg border border-line px-3 py-1 text-sm text-ink-soft transition hover:border-line-strong">
+              ←
+            </Link>
+            <span className="min-w-32 text-center text-sm text-ink">{weekLabel(week)}</span>
+            <Link href={`/rueckblick?w=${addDays(week, 7)}`}
+              className={cx("rounded-lg border border-line px-3 py-1 text-sm transition",
+                week >= laufende ? "pointer-events-none text-ink-faint opacity-40"
+                  : "text-ink-soft hover:border-line-strong")}>
+              →
+            </Link>
+          </div>
+        </div>
+
+        <div className="mb-5 grid gap-4 sm:grid-cols-2">
+          <Stat label="Trainingstage" value={trainingstage ?? "—"}
+            tone={trainingstage !== null && trainingstage >= 4 ? "good" : "neutral"}
+            sub="Kraft und Ausdauer zusammen" />
+          <Stat label="Backtest-Trades" value={backtestNeu ?? "—"}
+            tone={backtestNeu !== null && backtestNeu >= 24 ? "good" : "neutral"}
+            sub="dokumentiert in dieser Woche" />
+        </div>
+
         <form action={saveWeeklyReview} className="space-y-4">
           <input type="hidden" name="week_start" value={week} />
-          <input type="hidden" name="goal_hours" value={goalHours.toFixed(2)} />
-          <input type="hidden" name="total_hours" value={(summary.totalLogged / 60).toFixed(2)} />
-          <input type="hidden" name="net_worth" value={inputs.net_worth} />
-          <input type="hidden" name="runway_months"
-            value={runway.runwayMonths === null ? "" : runway.runwayMonths.toFixed(2)} />
 
           <div>
             <Label htmlFor="went_well">Was lief gut?</Label>
             <textarea id="went_well" name="went_well" rows={2}
               defaultValue={review?.went_well ?? wellVorschlag}
-              className="w-full rounded-xl border border-line bg-field px-3 py-2 text-sm text-ink outline-none transition placeholder:text-ink-faint hover:border-line-strong focus:border-accent focus:ring-2 focus:ring-accent/15"
+              className={`${inputClass} resize-y`}
               placeholder="Konkret — nicht „war ok“" />
           </div>
           <div>
             <Label htmlFor="went_poorly">Was nicht?</Label>
             <textarea id="went_poorly" name="went_poorly" rows={2}
-              defaultValue={review?.went_poorly ?? poorlyVorschlag}
-              className="w-full rounded-xl border border-line bg-field px-3 py-2 text-sm text-ink outline-none transition placeholder:text-ink-faint hover:border-line-strong focus:border-accent focus:ring-2 focus:ring-accent/15" />
+              defaultValue={review?.went_poorly ?? ""}
+              className={`${inputClass} resize-y`} />
           </div>
           <div>
             <Label htmlFor="next_week_focus">Worauf kommt es nächste Woche an?</Label>
             <textarea id="next_week_focus" name="next_week_focus" rows={2}
               defaultValue={review?.next_week_focus ?? ""}
-              className="w-full rounded-xl border border-line bg-field px-3 py-2 text-sm text-ink outline-none transition placeholder:text-ink-faint hover:border-line-strong focus:border-accent focus:ring-2 focus:ring-accent/15"
+              className={`${inputClass} resize-y`}
               placeholder="Eine Sache, nicht fünf" />
           </div>
           <Button type="submit">{review ? "Aktualisieren" : "Festhalten"}</Button>
         </form>
       </Card>
 
-      <Card>
+      <Card flat>
         <CardTitle>Verlauf</CardTitle>
         {past.length === 0 ? (
           <Empty>Noch kein Rückblick festgehalten.</Empty>
@@ -249,17 +260,10 @@ export default async function RueckblickPage({
                     className="text-sm font-medium text-ink transition hover:text-accent-soft">
                     {weekLabel(r.week_start)}
                   </Link>
-                  <span className="tabular flex gap-3 text-xs text-ink-muted">
-                    {r.goal_hours !== null && <span>Ziele {Number(r.goal_hours).toFixed(1)} h</span>}
-                    {r.total_hours !== null && <span>erfasst {Number(r.total_hours).toFixed(1)} h</span>}
-                    {r.runway_months !== null && (
-                      <span>Runway {Number(r.runway_months).toFixed(1)} Mt.</span>
-                    )}
-                    <form action={deleteWeeklyReview} className="inline">
-                      <input type="hidden" name="id" value={r.id} />
-                      <button className="text-ink-faint transition hover:text-bad">✕</button>
-                    </form>
-                  </span>
+                  <form action={deleteWeeklyReview} className="inline">
+                    <input type="hidden" name="id" value={r.id} />
+                    <button className="text-xs text-ink-faint transition hover:text-bad">✕</button>
+                  </form>
                 </div>
                 {r.next_week_focus && (
                   <p className="mt-1 text-sm text-ink-soft">→ {r.next_week_focus}</p>
@@ -269,6 +273,24 @@ export default async function RueckblickPage({
           </ul>
         )}
       </Card>
+
+      {(tabelleFehlt || zielListe.tabelleFehlt) && (
+        <Card>
+          <CardTitle>Ein Schritt fehlt noch</CardTitle>
+          <p className="text-sm text-ink-soft">
+            Einmal im Supabase-SQL-Editor der KerimOS-Datenbank ausführen — bis
+            dahin lässt sich {tabelleFehlt && "der Tagesrückblick"}
+            {tabelleFehlt && zielListe.tabelleFehlt && " und "}
+            {zielListe.tabelleFehlt && "die Wochenziele"} nicht speichern:
+          </p>
+          <pre className="mt-2.5 overflow-x-auto rounded-xl bg-sand/70 p-3 text-[11.5px] leading-relaxed text-ink-soft">
+            <code>{[
+              tabelleFehlt ? RUECKBLICK_SQL : null,
+              zielListe.tabelleFehlt ? WOCHENZIELE_SQL : null,
+            ].filter(Boolean).join("\n\n")}</code>
+          </pre>
+        </Card>
+      )}
     </div>
   );
 }

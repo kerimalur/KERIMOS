@@ -43,18 +43,22 @@ interface NavConfig {
  * Siehe ../../TRADING-UMBAU.md.
  */
 /**
- * Zeit ist auf das Nötige zusammengestrichen (21.08.2026).
+ * Zeit ist auf drei Dinge zusammengestrichen (Stand 23.08.2026).
  *
- * Raus sind Kalender und Aufgaben. Beides doppelte Buchführung: was ansteht,
- * ist entweder ein Termin oder eine Zeile im Heute-Tab. Eine dritte Liste
- * daneben wird nicht gepflegt und ist dann schlimmer als keine.
+ * **Termine** — jetzt mit Aufgaben zusammen: beides notiert man im selben
+ * Moment, und die Aufgaben-Seite war beim letzten Zuschnitt weggefallen,
+ * während die Tabelle blieb.
+ *
+ * **Rückblick** — Tag und Woche auf einer Seite. Vorher drei Einträge
+ * („Heute", „Rückblick", „Woche"), von denen zwei dieselbe Woche zeigten
+ * und einer an einer Zeiterfassung hing, die es nicht mehr gibt.
+ *
+ * **Schichten** — der Dienstplan, unverändert.
  */
 const ZEIT: NavConfig = {
   home: { href: "/termine", label: "Termine" },
   primary: [
-    { href: "/rueckblick/heute", label: "Heute" },
-    { href: "/rueckblick", label: "Rückblick" },
-    { href: "/woche", label: "Woche" },
+    { href: "/rueckblick", label: "Rückblick", auch: ["/rueckblick/heute"] },
   ],
   secondary: [
     { href: "/schichten", label: "Schichten" },
@@ -93,7 +97,7 @@ const TRADING: NavConfig = {
   secondary: [],
 };
 
-const ZEIT_PATHS = ["/termine", "/rueckblick", "/woche", "/schichten"];
+const ZEIT_PATHS = ["/termine", "/rueckblick", "/schichten"];
 const TRADING_PATHS = ["/trading"];
 // "/", "/links", "/gym" und "/m/…" gehören zu keinem Bereich - dort zeigt
 // die Navigation nichts bzw. der Bereich bringt seine eigene Leiste mit.

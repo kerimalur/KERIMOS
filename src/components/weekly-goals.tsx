@@ -1,5 +1,7 @@
 import { Card, CardTitle, Bar, cx } from "@/components/ui";
 import type { WeeklyGoals } from "@/lib/weekly-goals";
+import type { Wochenziel } from "@/lib/wochenziele";
+import { WochenzielListe } from "@/components/wochenziel-liste";
 
 /** Eine Zeile: Label, Stand/Ziel und ein Balken. */
 function GoalRow({
@@ -31,12 +33,34 @@ function GoalRow({
   );
 }
 
-export function WeeklyGoalsCard({ data }: { data: WeeklyGoals }) {
-  if (!data.trades && !data.gym && !data.steps) return null;
+/**
+ * „Diese Woche" — zwei Ebenen in einer Karte.
+ *
+ * Oben die selbst gesetzten Ziele (abhakbar, gesetzt im Rückblick), darunter
+ * die drei Zahlen, die sich von selbst zählen. Bewusst dieselbe Karte und
+ * nicht zwei: Beides beantwortet dieselbe Frage — läuft die Woche? Zwei
+ * Karten übereinander mit derselben Überschrift wären eine Trennung, die es
+ * im Kopf nicht gibt.
+ */
+export function WeeklyGoalsCard({
+  data, ziele = [], weekStart,
+}: {
+  data: WeeklyGoals;
+  ziele?: Wochenziel[];
+  weekStart: string;
+}) {
+  if (!data.trades && !data.gym && !data.steps && ziele.length === 0) return null;
 
   return (
     <Card>
       <CardTitle>Diese Woche</CardTitle>
+
+      {ziele.length > 0 && (
+        <div className="mb-4">
+          <WochenzielListe ziele={ziele} weekStart={weekStart} />
+        </div>
+      )}
+
       <div className="space-y-3.5">
         {data.trades && (
           <GoalRow label="Backtest-Trades" current={data.trades.current}

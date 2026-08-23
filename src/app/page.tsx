@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { FocusPrompt } from "@/components/focus-prompt";
 import { AppointmentsCard } from "@/components/appointments-card";
 import { Tagessatz } from "@/components/tagessatz";
 import { GewichtHeute } from "@/components/gewicht-heute";
@@ -14,9 +13,10 @@ import { WeeklyGoalsCard } from "@/components/weekly-goals";
 import { seedLinks } from "@/lib/actions";
 import { fetchModusKennzahlen } from "@/lib/modus-kennzahlen";
 import { fetchWeeklyGoals } from "@/lib/weekly-goals";
+import { ladeWochenziele } from "@/lib/wochenziele";
 import { MODE_ORDER, MODE_DIRECT, MODE_AUS } from "@/lib/modes";
 import { addDays, weekStart as toWeekStart, heuteISO, heuteWochentag } from "@/lib/time";
-import type { Activity, FocusSession, NavLink } from "@/lib/types";
+import type { NavLink } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -49,18 +49,17 @@ export default async function Start() {
   const supabase = await createClient();
   const vorwoche = addDays(toWeekStart(heuteISO()), -7);
 
+  const laufendeWoche = toWeekStart(heuteISO());
+
   const [
-    { data: linkRows }, { data: focusRows }, { data: actRows },
-    { data: lastReview }, kennzahlen, wochenziele,
+    { data: linkRows }, { data: lastReview }, kennzahlen, wochenziele, zielListe,
   ] = await Promise.all([
     supabase.from("links").select("*").eq("archived", false)
       .order("group_name").order("sort_order"),
-    supabase.from("focus_sessions").select("*").eq("status", "open")
-      .order("started_at", { ascending: false }),
-    supabase.from("activities").select("*").eq("archived", false).order("name"),
     supabase.from("weekly_reviews").select("id").eq("week_start", vorwoche).maybeSingle(),
     fetchModusKennzahlen(),
     fetchWeeklyGoals(),
+    ladeWochenziele(laufendeWoche),
   ]);
 
   const links = (linkRows ?? []) as NavLink[];
@@ -123,7 +122,8 @@ export default async function Start() {
       </div>
 
       <div className="mb-6">
-        <WeeklyGoalsCard data={wochenziele} />
+        <WeeklyGoalsCard data={wochenziele} ziele={zielListe.ziele}
+          weekStart={laufendeWoche} />
       </div>
 
       {/* Was heute eine Entscheidung braucht. Jede Karte blendet sich selbst
@@ -143,10 +143,16 @@ export default async function Start() {
           </Link>
         )}
 
-        <FocusPrompt
-          sessions={(focusRows ?? []) as FocusSession[]}
-          activities={(actRows ?? []) as Activity[]}
-        />
+        {/* Zen: eine Uhr und ein leerer Bildschirm. Ersetzt die
+            Fokus-Sitzungen, die am Ende nach jeder Sitzung eine Erfassung
+            verlangten — genau das, was abgeschafft wurde. */}
+        <Link href="/zen"
+          className="flex items-center justify-between rounded-2xl border border-line/70
+                     bg-card px-5 py-3 text-sm text-ink-soft shadow-card transition
+                     hover:border-line-strong active:scale-[0.99]">
+          <span>Zen-Modus — Uhr an, Bildschirm leer</span>
+          <span className="text-ink-faint">→</span>
+        </Link>
       </div>
 
       <div className="mb-3 text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted">

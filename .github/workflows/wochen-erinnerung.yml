@@ -1,0 +1,50 @@
+name: KerimOS Wochenrückblick-Erinnerung
+
+# Erinnert sonntags an den Wochenrueckblick — aber nur, wenn fuer die zu Ende
+# gehende Woche noch nichts geschrieben steht.
+#
+# Warum GitHub und nicht Vercel: der Hobby-Plan erlaubt genau EINEN eigenen
+# Cron pro Tag, und der ist von /api/garmin-sync belegt. Morgen-Anstoss und
+# Abenderinnerung laufen aus demselben Grund schon von aussen.
+#
+# GitHub-Cron laeuft in UTC und kann sich 5-20 min verspaeten. 16:00 UTC ist
+# 18:00 Zuercher Sommerzeit bzw. 17:00 Winterzeit; der Endpoint akzeptiert ab
+# 16:00 Ortszeit und prueft selbst, dass wirklich Sonntag ist.
+#
+# Noetige Repository-Secrets (dieselben wie beim Morgen-Anstoss):
+#   KERIMOS_URL           z.B. https://kerimos.vercel.app  (ohne Slash am Ende)
+#   KERIMOS_CRON_SECRET   derselbe Wert wie CRON_SECRET in Vercel
+
+on:
+  schedule:
+    - cron: "0 16 * * 0"
+  workflow_dispatch:
+
+jobs:
+  erinnern:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Wochenrueckblick-Erinnerung ausloesen
+        env:
+          URL: ${{ secrets.KERIMOS_URL }}
+          SECRET: ${{ secrets.KERIMOS_CRON_SECRET }}
+        run: |
+          if [ -z "$URL" ] || [ -z "$SECRET" ]; then
+            echo "KERIMOS_URL oder KERIMOS_CRON_SECRET fehlt — nichts zu tun."
+            exit 0
+          fi
+          # Das Geheimnis geht als Authorization-Kopf, nicht als Query —
+          # Query-Parameter landen in Server- und Proxy-Logs.
+          for i in 1 2 3; do
+            antwort=$(curl -s --max-time 45 -w "\n%{http_code}" \
+              -H "Authorization: Bearer ${SECRET}" \
+              "${URL}/api/wochen-erinnerung") && code=$(echo "$antwort" | tail -1)
+            if [ "$code" = "200" ]; then
+              echo "$antwort" | head -n -1
+              exit 0
+            fi
+            echo "Versuch $i: HTTP ${code:-timeout} — retry in 15 s"
+            sleep 15
+          done
+          echo "KerimOS antwortet nicht (nach 3 Versuchen)"; exit 1

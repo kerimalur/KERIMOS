@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
     titel: "Tagesrückblick",
     text: "Drei Zeilen, eine Minute: Was hast du erreicht, was ist liegengeblieben, "
       + "was ist morgen das Wichtigste?",
-    url: "/rueckblick/heute",
+    url: "/rueckblick#heute",
     tag: `rueckblick-${heute}`,
   }, werte, { jetztMinuten: jetzt, heute });
 

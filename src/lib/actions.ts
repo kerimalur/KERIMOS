@@ -72,7 +72,7 @@ export async function addBodyWeight(fd: FormData) {
     user_id: gymUserId,
   }), "Gewicht speichern");
   revalidatePath("/gym"); revalidatePath("/quick");
-  revalidatePath("/heute"); revalidatePath("/");
+  revalidatePath("/");
 }
 
 /* -------------------------------------------------------- Einkaufsliste */
@@ -1195,7 +1195,7 @@ export async function logSleep(fd: FormData) {
       ];
 
   check(await supabase.from("time_entries").insert(zeilen), "Schlaf eintragen");
-  revalidateTime(); revalidatePath("/heute"); revalidatePath("/");
+  revalidateTime(); revalidatePath("/");
 }
 
 /* --------------------------------------------------------------- Termine */
@@ -1749,7 +1749,9 @@ export async function applyRulesToUncategorized() {
 
 /* =========================================================== Zeit-Modul */
 
-const TIME_PATHS = ["/zeit", "/woche", "/kalender", "/", "/aktivitaeten"];
+// Seit dem Zuschnitt vom 23.08.2026 gibt es im Zeit-Bereich nur noch
+// Termine, Rueckblick und Schichten — alle anderen Ziele waren Leichen.
+const TIME_PATHS = ["/", "/rueckblick", "/termine"];
 const revalidateTime = () => TIME_PATHS.forEach((p) => revalidatePath(p));
 
 /** Legt das Standard-Set an Aktivitäten an. Bereits vorhandene bleiben unberührt. */
@@ -2024,7 +2026,7 @@ export async function applyShift(fd: FormData) {
   }
 
   check(await supabase.from("time_entries").insert(neu), "Schicht eintragen");
-  revalidateTime(); revalidatePath("/kalender"); revalidatePath("/schichten");
+  revalidateTime(); revalidatePath("/schichten");
 }
 
 export async function saveCheckin(fd: FormData) {
@@ -2049,7 +2051,6 @@ export async function linkTransactionToActivity(fd: FormData) {
   await supabase.from("transactions")
     .update({ activity_id: str(fd, "activity_id") || null })
     .eq("id", str(fd, "id"));
-  revalidatePath("/transaktionen"); revalidatePath("/woche");
 }
 
 /** Farbe, Art und Eigenschaften jeder Kategorie, die eine Regel braucht. */
@@ -2288,7 +2289,7 @@ export async function setEntryStart(fd: FormData) {
   await supabase.from("time_entries")
     .update({ start_minute: startMinute })
     .eq("id", str(fd, "id"));
-  revalidateTime(); revalidatePath("/kalender");
+  revalidateTime();
 }
 
 /** Setzt Start und Ende eines Eintrags neu - zum Korrigieren von Fehlern. */
@@ -2336,7 +2337,7 @@ export async function setEntryRange(fd: FormData) {
     );
   }
 
-  revalidateTime(); revalidatePath("/kalender"); revalidatePath("/heute");
+  revalidateTime();
 }
 
 /** Legt einen Zeiteintrag mit Uhrzeit an - für die Kalenderansicht. */
@@ -2468,7 +2469,7 @@ export async function addTimedEntry(fd: FormData) {
     await zeitstueckSpeichern(supabase, userId, activityId, stueck, note);
   }
 
-  revalidateTime(); revalidatePath("/kalender"); revalidatePath("/heute");
+  revalidateTime();
 }
 
 /**
@@ -2743,7 +2744,7 @@ export async function startCustomFocus(label: string) {
     link_id: null,
     activity_id: null,
   }), "Sitzung starten");
-  revalidatePath("/heute"); revalidatePath("/"); revalidatePath("/fokus");
+  revalidatePath("/");
 }
 
 /** Startet eine Sitzung ohne Kachel, direkt aus dem Zen-Modus. */
@@ -3460,7 +3461,7 @@ export async function saveWeeklyReview(fd: FormData) {
     next_week_focus: str(fd, "next_week_focus") || null,
   }, { onConflict: "user_id,week_start" }), "Rückblick speichern");
 
-  revalidatePath("/rueckblick"); revalidatePath("/woche"); revalidatePath("/");
+  revalidatePath("/rueckblick"); revalidatePath("/termine"); revalidatePath("/");
 }
 
 export async function deleteWeeklyReview(fd: FormData) {

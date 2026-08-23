@@ -3,8 +3,6 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { MODE_DIRECT } from "@/lib/modes";
 import { Launcher } from "@/components/launcher";
-import { FocusPrompt } from "@/components/focus-prompt";
-import { FocusStarter } from "@/components/focus-starter";
 import { TradingCard } from "@/components/trading-card";
 import { Card, Stat, Empty } from "@/components/ui";
 import { chf, dateLabel } from "@/lib/format";
@@ -230,16 +228,13 @@ export default async function ModusPage({
   if (direkt && direkt !== `/m/${gruppe}` && direkt !== `/m/${raw}`) redirect(direkt);
 
   const supabase = await createClient();
-  const [{ data: linkRows }, { data: focusRows }, { data: actRows }] = await Promise.all([
-    supabase.from("links").select("*").eq("archived", false)
-      .eq("group_name", gruppe).order("sort_order"),
-    supabase.from("focus_sessions").select("*").eq("status", "open")
-      .order("started_at", { ascending: false }),
-    supabase.from("activities").select("*").eq("archived", false).order("name"),
-  ]);
+  // Fokus-Sitzungen sind seit 23.08.2026 raus: sie verlangten nach jeder
+  // Sitzung eine Nacherfassung — also genau das, was mit der Zeiterfassung
+  // abgeschafft wurde. Damit fallen hier zwei Abfragen je Seitenaufruf weg.
+  const { data: linkRows } = await supabase.from("links").select("*")
+    .eq("archived", false).eq("group_name", gruppe).order("sort_order");
 
   const links = (linkRows ?? []) as NavLink[];
-  const activities = (actRows ?? []) as Activity[];
   const n = gruppe.toLowerCase();
 
   return (
@@ -267,11 +262,6 @@ export default async function ModusPage({
         {n.includes("essen") && <EssenKarte />}
         {n.includes("essen") && <EinkaufKarte />}
 
-        <FocusPrompt
-          sessions={(focusRows ?? []) as FocusSession[]}
-          activities={activities}
-        />
-
         {links.length === 0 ? (
           <Empty>
             Diesem Modus sind noch keine Kacheln zugeordnet. Unter{" "}
@@ -281,18 +271,7 @@ export default async function ModusPage({
             einer Kachel die Gruppe „{gruppe}“ geben.
           </Empty>
         ) : (
-          <>
-            <Launcher links={links} />
-            {/* Bewusst zuunterst: der Hauptweg ist die Fokus-Abfrage beim Kachel-Klick */}
-            <details className="rounded-2xl border border-line/70 bg-card px-5 py-4">
-              <summary className="cursor-pointer text-xs text-ink-muted transition hover:text-ink-soft">
-                Fokus manuell starten (mehrere Kacheln kombinieren)
-              </summary>
-              <div className="mt-4">
-                <FocusStarter activities={activities} links={links} />
-              </div>
-            </details>
-          </>
+          <Launcher links={links} />
         )}
       </div>
     </div>
