@@ -1,5 +1,7 @@
 import { fetchKategorien, fetchWatchlist } from "@/lib/supabase/trading";
-import { kategorieAendern, kategorieAnlegen, kategorieLoeschen } from "@/lib/trading-actions";
+import {
+  kategorieAendern, kategorieAnlegen, kategorieLoeschen, kategorieVerschieben,
+} from "@/lib/trading-actions";
 import { FARBEN, farbPunkt, sortiereKategorien } from "@/lib/trading/kategorien";
 import { KATEGORIEN_MIGRATION_SQL } from "@/lib/trading/kategorien-migration";
 import { KopierFeld } from "@/components/alarm/kopierfeld";
@@ -41,9 +43,29 @@ export async function KategorienKarte() {
         </Empty>
       ) : (
         <ul className="mb-5 space-y-1.5">
-          {sortiert.map((k) => (
+          {sortiert.map((k, i) => (
             <li key={k.id}
               className="flex flex-wrap items-end gap-2 rounded-xl bg-sand/50 px-3 py-2.5">
+              {/* Reihenfolge per Pfeil. Die Liste hier steht in derselben
+                  Folge wie die Gruppen auf der Uebersicht — was man oben
+                  sieht, steht dort oben. */}
+              <span className="mb-1 flex flex-col">
+                <form action={kategorieVerschieben}>
+                  <input type="hidden" name="id" value={k.id} />
+                  <input type="hidden" name="richtung" value="hoch" />
+                  <button aria-label="nach oben" disabled={i === 0}
+                    className="px-1 text-xs leading-none text-ink-faint transition
+                               hover:text-ink disabled:opacity-25">▲</button>
+                </form>
+                <form action={kategorieVerschieben}>
+                  <input type="hidden" name="id" value={k.id} />
+                  <input type="hidden" name="richtung" value="runter" />
+                  <button aria-label="nach unten" disabled={i === sortiert.length - 1}
+                    className="px-1 text-xs leading-none text-ink-faint transition
+                               hover:text-ink disabled:opacity-25">▼</button>
+                </form>
+              </span>
+
               <span className={cx("mb-2.5 h-2.5 w-2.5 shrink-0 rounded-full", farbPunkt(k.farbe))} />
 
               <form action={kategorieAendern} className="flex flex-wrap items-end gap-2">
@@ -60,11 +82,6 @@ export async function KategorienKarte() {
                       <option key={f.key} value={f.key}>{f.label}</option>
                     ))}
                   </Select>
-                </div>
-                <div>
-                  <Label htmlFor={`s-${k.id}`}>Reihenfolge</Label>
-                  <Input id={`s-${k.id}`} name="sort_order" type="number"
-                    defaultValue={k.sortOrder} className="w-24" />
                 </div>
                 <Button type="submit" variant="ghost" className="mb-0">Speichern</Button>
               </form>
@@ -97,18 +114,14 @@ export async function KategorienKarte() {
             {FARBEN.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
           </Select>
         </div>
-        <div>
-          <Label htmlFor="neu-sort">Reihenfolge</Label>
-          <Input id="neu-sort" name="sort_order" type="number" defaultValue={0}
-            className="w-24" />
-        </div>
         <Button type="submit" variant="ghost">Anlegen</Button>
       </form>
 
       <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
-        Eine gelöschte Kategorie nimmt keine Trades mit — die Zeilen rutschen
-        unter „ohne Kategorie". Die Reihenfolge bestimmt, in welcher Folge die
-        Gruppen auf der Übersicht stehen; gleiche Zahl sortiert nach Name.
+        Die Reihenfolge hier ist die Reihenfolge auf der Übersicht und der
+        Startseite — oben steht oben. Neue Kategorien kommen ans Ende. Eine
+        gelöschte Kategorie nimmt keine Trades mit; die Zeilen rutschen unter
+        „ohne Kategorie".
       </p>
 
       <details className="mt-4 rounded-xl border border-line/60 bg-sand/40 px-4 py-3">

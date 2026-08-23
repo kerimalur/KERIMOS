@@ -158,10 +158,19 @@ export async function kategorieAnlegen(fd: FormData) {
   const supabase = createTradingClient();
   if (!supabase) throw new Error("Trading-Datenbank nicht verbunden");
 
+  // Eine neue Kategorie kommt ans Ende. Eine Zahl dafür zu tippen waere die
+  // Art Bedienung, bei der man beim dritten Mal aufgibt — verschoben wird
+  // danach mit den Pfeilen.
+  const { data: letzte } = await supabase
+    .from("trading_kategorien").select("sort_order")
+    .order("sort_order", { ascending: false }).limit(1);
+  const naechste = Number(
+    ((letzte ?? []) as { sort_order: number }[])[0]?.sort_order ?? -1) + 1;
+
   const { error } = await supabase.from("trading_kategorien").insert({
     name,
     farbe: text(fd, "farbe") || "neutral",
-    sort_order: zahl(fd, "sort_order") ?? 0,
+    sort_order: naechste,
   });
 
   if (error) {
@@ -194,11 +203,7 @@ export async function kategorieAendern(fd: FormData) {
 
   const { error } = await supabase
     .from("trading_kategorien")
-    .update({
-      name,
-      farbe: text(fd, "farbe") || "neutral",
-      sort_order: zahl(fd, "sort_order") ?? 0,
-    })
+    .update({ name, farbe: text(fd, "farbe") || "neutral" })
     .eq("id", id);
   if (error) throw new Error(`Kategorie aendern: ${error.message}`);
 
@@ -238,6 +243,50 @@ export async function watchlistKategorieSetzen(fd: FormData) {
     .update({ kategorie_id: text(fd, "kategorie_id") || null })
     .eq("id", id);
   if (error) throw new Error(`Kategorie zuordnen: ${error.message}`);
+
+  kategorienAktualisieren();
+}
+
+/**
+ * Eine Kategorie eine Position nach oben oder unten schieben.
+ *
+ * Warum Pfeile und kein Zahlenfeld: Die Reihenfolge ist das, was man beim
+ * Anschauen der Liste sofort ändern will — „Live gehört nach oben". Eine
+ * Sortierzahl dafür einzutippen heisst, sich erst die Zahlen aller anderen
+ * anzusehen und dann zu rechnen. Das macht niemand zweimal.
+ *
+ * Geschrieben werden ALLE Zeilen neu (0, 1, 2 …), nicht nur die zwei
+ * getauschten. Das kostet bei einer Handvoll Kategorien nichts und räumt
+ * nebenbei doppelte oder gerissene Zahlen auf, die sich sonst über die Zeit
+ * ansammeln und die Pfeile stillstehen lassen.
+ */
+export async function kategorieVerschieben(fd: FormData) {
+  const id = text(fd, "id");
+  const richtung = text(fd, "richtung");
+  if (!id || (richtung !== "hoch" && richtung !== "runter")) return;
+
+  const supabase = createTradingClient();
+  if (!supabase) throw new Error("Trading-Datenbank nicht verbunden");
+
+  const { data } = await supabase
+    .from("trading_kategorien").select("id, name, sort_order")
+    .order("sort_order", { ascending: true });
+
+  const liste = ((data ?? []) as { id: string; name: string; sort_order: number }[])
+    .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name, "de"));
+
+  const i = liste.findIndex((k) => k.id === id);
+  const j = richtung === "hoch" ? i - 1 : i + 1;
+  if (i < 0 || j < 0 || j >= liste.length) return; // schon ganz oben bzw. unten
+
+  [liste[i], liste[j]] = [liste[j], liste[i]];
+
+  for (let n = 0; n < liste.length; n++) {
+    if (liste[n].sort_order === n) continue; // nichts zu tun
+    const { error } = await supabase
+      .from("trading_kategorien").update({ sort_order: n }).eq("id", liste[n].id);
+    if (error) throw new Error(`Reihenfolge speichern: ${error.message}`);
+  }
 
   kategorienAktualisieren();
 }
