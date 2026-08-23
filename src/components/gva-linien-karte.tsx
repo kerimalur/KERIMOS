@@ -4,7 +4,8 @@ import {
   type ScreenerPair, type WatchlistPair,
 } from "@/lib/supabase/trading";
 import { gruppiereNachKategorie, farbPunkt } from "@/lib/trading/kategorien";
-import { Card, CardTitle, Badge, cx } from "@/components/ui";
+import { GruppenBox } from "@/components/trading/gruppen-box";
+import { Card, CardTitle, Badge } from "@/components/ui";
 import { heuteISO } from "@/lib/time";
 
 /** JPY-Paare rechnen mit 0.01 Pip, alles andere mit 0.0001. */
@@ -65,22 +66,8 @@ export async function GvaLinienKarte() {
       </div>
 
       <div className="space-y-3">
-        {gruppen.map((g) => (
-          <div key={g.kategorie?.id ?? "ohne"}>
-            {/* Ueberschrift nur, wenn es ueberhaupt Kategorien gibt — sonst
-                stuende ueber der einen Liste „ohne Kategorie", und das ist
-                keine Information, sondern Rauschen. */}
-            {kategorien.length > 0 && (
-              <div className="mb-1.5 flex items-center gap-2">
-                <span className={cx("h-2 w-2 shrink-0 rounded-full",
-                  g.kategorie ? farbPunkt(g.kategorie.farbe) : "bg-transparent ring-1 ring-line")} />
-                <span className="text-[11px] font-medium uppercase tracking-wide text-ink-muted">
-                  {g.kategorie?.name ?? "ohne Kategorie"}
-                </span>
-                <span className="h-px flex-1 bg-line/40" />
-              </div>
-            )}
-
+        {gruppen.map((g) => {
+          const liste = (
             <ul className="space-y-1.5">
               {g.zeilen.map((linie) => {
                 const preis = preise.get(linie.pair.toUpperCase()) ?? null;
@@ -124,8 +111,20 @@ export async function GvaLinienKarte() {
                 );
               })}
             </ul>
-          </div>
-        ))}
+          );
+
+          if (kategorien.length === 0) return <div key="ohne">{liste}</div>;
+
+          return (
+            <GruppenBox key={g.kategorie?.id ?? "ohne"}
+              schluessel={`start:${g.kategorie?.id ?? "ohne"}`}
+              titel={g.kategorie?.name ?? "ohne Kategorie"}
+              punkt={g.kategorie ? farbPunkt(g.kategorie.farbe) : null}
+              anzahl={g.zeilen.length}>
+              {liste}
+            </GruppenBox>
+          );
+        })}
       </div>
     </Card>
   );

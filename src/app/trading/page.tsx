@@ -7,9 +7,10 @@ import {
   gruppiereNachKategorie, farbPunkt, type Kategorie,
 } from "@/lib/trading/kategorien";
 import { KategorieWahl } from "@/components/trading/kategorie-wahl";
+import { GruppenBox } from "@/components/trading/gruppen-box";
 import { addWatchlistPair, removeWatchlistPair } from "@/lib/trading-actions";
 import { GVA_NOTIZ } from "@/lib/trading/herkunft";
-import { Card, CardTitle, Badge, Empty, Input, Select, Label, Button, cx } from "@/components/ui";
+import { Card, CardTitle, Badge, Empty, Input, Select, Label, Button } from "@/components/ui";
 import { KopierFeld } from "@/components/alarm/kopierfeld";
 import { WATCHLIST_MIGRATION_SQL } from "@/lib/trading/watchlist-migration";
 import { dateLabel } from "@/lib/format";
@@ -100,29 +101,29 @@ export default async function TradingPage() {
           </Empty>
         ) : (
           <div className="mb-5 space-y-4">
-            {gruppen.map((g) => (
-              <div key={g.kategorie?.id ?? "ohne"}>
-                {/* Ueberschrift nur, wenn es ueberhaupt Kategorien gibt —
-                    sonst stuende ueber der einen Liste „ohne Kategorie", und
-                    das ist keine Information, sondern Rauschen. */}
-                {kategorien.length > 0 && (
-                  <div className="mb-1.5 flex items-center gap-2">
-                    <span className={cx("h-2 w-2 shrink-0 rounded-full",
-                      g.kategorie ? farbPunkt(g.kategorie.farbe) : "bg-transparent ring-1 ring-line")} />
-                    <span className="text-[11px] font-medium uppercase tracking-wide text-ink-muted">
-                      {g.kategorie?.name ?? "ohne Kategorie"}
-                    </span>
-                    <span className="text-[11px] text-ink-faint">{g.zeilen.length}</span>
-                    <span className="h-px flex-1 bg-line/40" />
-                  </div>
-                )}
+            {gruppen.map((g) => {
+              const liste = (
                 <ul className="space-y-1.5">
                   {g.zeilen.map((w) => (
                     <TradeZeile key={w.id} w={w} pairs={pairs} kategorien={kategorien} />
                   ))}
                 </ul>
-              </div>
-            ))}
+              );
+
+              // Ohne Kategorien gibt es nichts zu gruppieren — dann steht die
+              // Liste blank da, statt unter einer Ueberschrift „ohne Kategorie".
+              if (kategorien.length === 0) return <div key="ohne">{liste}</div>;
+
+              return (
+                <GruppenBox key={g.kategorie?.id ?? "ohne"}
+                  schluessel={`trading:${g.kategorie?.id ?? "ohne"}`}
+                  titel={g.kategorie?.name ?? "ohne Kategorie"}
+                  punkt={g.kategorie ? farbPunkt(g.kategorie.farbe) : null}
+                  anzahl={g.zeilen.length}>
+                  {liste}
+                </GruppenBox>
+              );
+            })}
           </div>
         )}
 
