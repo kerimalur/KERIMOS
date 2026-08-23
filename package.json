@@ -20,7 +20,8 @@
     "check:cot-gruppen": "npx -y tsx tools/checks/cot-gruppen.mts",
     "check:kalibrierung": "npx -y tsx tools/checks/kalibrierung.mts",
     "check:heute": "npx -y tsx tools/checks/heute.mts",
-    "check:kerzen": "npx -y tsx tools/checks/kerzen.mts"
+    "check:kerzen": "npx -y tsx tools/checks/kerzen.mts",
+    "check:server-actions": "npx -y tsx tools/checks/server-actions.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

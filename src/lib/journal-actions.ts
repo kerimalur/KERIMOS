@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createTradingClient } from "@/lib/supabase/trading";
 import { tradingUserId } from "@/lib/trading/journal";
+import { GVA_NOTIZ } from "@/lib/trading/herkunft";
 
 /**
  * Schreibzugriffe aufs Trading-Journal.
@@ -334,16 +335,6 @@ export async function buchungLoeschen(fd: FormData) {
  * `Backend/supabase_signals.py`) genau sie liest — ein fünfter Wert würde
  * dort still ignoriert.
  */
-/**
- * Herkunftsmarke für Zeilen, die aus einem GVA-Hit entstanden sind.
- *
- * Es gibt bewusst keine eigene Spalte dafür: die Liste auf /trading ist EINE
- * Liste, und ein Eintrag aus dem Cockpit ist darin nichts anderes als eine von
- * Hand eingetragene Linie — nur bequemer entstanden. Die Marke dient allein
- * der Anzeige („kam aus dem Screener") und dem Wiederfinden beim Verwerfen.
- */
-export const GVA_NOTIZ = "GVA-Hit";
-
 const ddmm = (iso: string | null) =>
   iso && /^\d{4}-\d{2}-\d{2}/.test(iso) ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}.` : null;
 

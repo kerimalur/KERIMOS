@@ -4,7 +4,7 @@ import {
   type ScreenerPair, type WatchlistPair,
 } from "@/lib/supabase/trading";
 import { addWatchlistPair, removeWatchlistPair } from "@/lib/trading-actions";
-import { GVA_NOTIZ } from "@/lib/journal-actions";
+import { GVA_NOTIZ } from "@/lib/trading/herkunft";
 import { Card, CardTitle, Badge, Empty, Input, Select, Label, Button } from "@/components/ui";
 import { KopierFeld } from "@/components/alarm/kopierfeld";
 import { WATCHLIST_MIGRATION_SQL } from "@/lib/trading/watchlist-migration";
