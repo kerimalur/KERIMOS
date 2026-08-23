@@ -1,11 +1,15 @@
 import Link from "next/link";
 import {
-  fetchScreener, fetchWatchlist,
+  fetchScreener, fetchWatchlist, fetchKategorien,
   type ScreenerPair, type WatchlistPair,
 } from "@/lib/supabase/trading";
+import {
+  gruppiereNachKategorie, farbPunkt, type Kategorie,
+} from "@/lib/trading/kategorien";
+import { KategorieWahl } from "@/components/trading/kategorie-wahl";
 import { addWatchlistPair, removeWatchlistPair } from "@/lib/trading-actions";
 import { GVA_NOTIZ } from "@/lib/trading/herkunft";
-import { Card, CardTitle, Badge, Empty, Input, Select, Label, Button } from "@/components/ui";
+import { Card, CardTitle, Badge, Empty, Input, Select, Label, Button, cx } from "@/components/ui";
 import { KopierFeld } from "@/components/alarm/kopierfeld";
 import { WATCHLIST_MIGRATION_SQL } from "@/lib/trading/watchlist-migration";
 import { dateLabel } from "@/lib/format";
@@ -42,8 +46,11 @@ function pipsZu(pair: string, a: number, b: number): number {
 }
 
 export default async function TradingPage() {
-  const [screener, watchlist] = await Promise.all([fetchScreener(), fetchWatchlist()]);
+  const [screener, watchlist, kategorien] = await Promise.all([
+    fetchScreener(), fetchWatchlist(), fetchKategorien(),
+  ]);
   const pairs = (screener?.data ?? []) as ScreenerPair[];
+  const gruppen = gruppiereNachKategorie(watchlist, kategorien);
 
   const erreicht = watchlist.filter((w) => {
     const live = livePreis(w.pair, pairs);
@@ -92,67 +99,31 @@ export default async function TradingPage() {
             über „In aktive Trades" ebenfalls hier.
           </Empty>
         ) : (
-          <ul className="mb-4 space-y-1.5">
-            {watchlist.map((w) => {
-              const live = livePreis(w.pair, pairs);
-              const preis = live?.price ?? null;
-              const abstand = preis !== null && w.line_level !== null
-                ? pipsZu(w.pair, preis, w.line_level) : null;
-
-              return (
-                <li key={w.id}
-                  className="flex flex-wrap items-center gap-2 rounded-lg bg-sand/60 px-3 py-2 text-sm">
-                  <span className="font-medium text-ink">{w.pair}</span>
-                  {w.side && (
-                    <Badge tone={w.side === "long" ? "good" : "bad"}>
-                      {w.side.toUpperCase()}
-                    </Badge>
-                  )}
-                  {w.line_level !== null && (
-                    <span className="tabular text-xs text-ink-muted">@ {w.line_level}</span>
-                  )}
-
-                  {abstand !== null ? (
-                    <span className={"tabular text-xs " +
-                      (abstand < 1 ? "text-bad-bright"
-                        : w.alarm_pips !== null && abstand <= w.alarm_pips ? "text-accent"
-                          : "text-ink-soft")}>
-                      {abstand < 1 ? "erreicht" : `${Math.round(abstand)} Pips`}
+          <div className="mb-5 space-y-4">
+            {gruppen.map((g) => (
+              <div key={g.kategorie?.id ?? "ohne"}>
+                {/* Ueberschrift nur, wenn es ueberhaupt Kategorien gibt —
+                    sonst stuende ueber der einen Liste „ohne Kategorie", und
+                    das ist keine Information, sondern Rauschen. */}
+                {kategorien.length > 0 && (
+                  <div className="mb-1.5 flex items-center gap-2">
+                    <span className={cx("h-2 w-2 shrink-0 rounded-full",
+                      g.kategorie ? farbPunkt(g.kategorie.farbe) : "bg-transparent ring-1 ring-line")} />
+                    <span className="text-[11px] font-medium uppercase tracking-wide text-ink-muted">
+                      {g.kategorie?.name ?? "ohne Kategorie"}
                     </span>
-                  ) : !live ? (
-                    <Badge tone="neutral">kein Live-Preis</Badge>
-                  ) : null}
-
-                  {w.alarm_pips !== null && (
-                    <Badge tone="neutral">Warnung {w.alarm_pips} Pips</Badge>
-                  )}
-                  {w.alarm_on_hit && <Badge tone="neutral">bei Treffer</Badge>}
-                  {w.alarm_time && <Badge tone="neutral">{w.alarm_time.slice(0, 5)}</Badge>}
-                  {w.show_until && (
-                    <span className="text-[11px] text-ink-faint">
-                      bis {dateLabel(w.show_until)}
-                    </span>
-                  )}
-                  {w.note?.startsWith(GVA_NOTIZ)
-                    ? <Badge tone="accent" title={w.note}>aus dem Cockpit</Badge>
-                    : w.note && <span className="text-xs text-ink-muted">{w.note}</span>}
-
-                  <span className="ml-auto flex items-center gap-3">
-                    <Link href={`/trading/journal/trades?paar=${w.pair}`}
-                      className="text-xs text-accent-soft transition hover:underline">
-                      Trade eintragen →
-                    </Link>
-                    <form action={removeWatchlistPair}>
-                      <input type="hidden" name="id" value={w.id} />
-                      <button className="text-xs text-ink-faint transition hover:text-bad">
-                        entfernen
-                      </button>
-                    </form>
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
+                    <span className="text-[11px] text-ink-faint">{g.zeilen.length}</span>
+                    <span className="h-px flex-1 bg-line/40" />
+                  </div>
+                )}
+                <ul className="space-y-1.5">
+                  {g.zeilen.map((w) => (
+                    <TradeZeile key={w.id} w={w} pairs={pairs} kategorien={kategorien} />
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
         )}
 
         <form action={addWatchlistPair} className="flex flex-wrap items-end gap-2.5">
@@ -191,6 +162,17 @@ export default async function TradingPage() {
             <input type="checkbox" name="alarm_on_hit" defaultChecked className="accent-accent" />
             bei Treffer
           </label>
+          {kategorien.length > 0 && (
+            <div>
+              <Label htmlFor="wl-kat">Kategorie</Label>
+              <Select id="wl-kat" name="kategorie_id" defaultValue="" className="w-40">
+                <option value="">— ohne —</option>
+                {kategorien.map((k) => (
+                  <option key={k.id} value={k.id}>{k.name}</option>
+                ))}
+              </Select>
+            </div>
+          )}
           <div className="min-w-36 flex-1">
             <Label htmlFor="wl-note">Notiz</Label>
             <Input id="wl-note" name="note" placeholder="optional" />
@@ -242,5 +224,69 @@ export default async function TradingPage() {
         </ol>
       </Card>
     </div>
+  );
+}
+
+/**
+ * Eine Zeile der aktiven Trades.
+ *
+ * Eigene Komponente, seit die Liste nach Kategorien gruppiert wird: Sonst
+ * stuende derselbe Block zweimal im JSX, einmal je Gruppe, und beim naechsten
+ * Feld haette man ihn an einer Stelle vergessen.
+ */
+function TradeZeile({
+  w, pairs, kategorien,
+}: { w: WatchlistPair; pairs: ScreenerPair[]; kategorien: Kategorie[] }) {
+  const live = livePreis(w.pair, pairs);
+  const preis = live?.price ?? null;
+  const abstand = preis !== null && w.line_level !== null
+    ? pipsZu(w.pair, preis, w.line_level) : null;
+
+  return (
+    <li className="flex flex-wrap items-center gap-2 rounded-lg bg-sand/60 px-3 py-2 text-sm">
+      <span className="font-medium text-ink">{w.pair}</span>
+      {w.side && (
+        <Badge tone={w.side === "long" ? "good" : "bad"}>{w.side.toUpperCase()}</Badge>
+      )}
+      {w.line_level !== null && (
+        <span className="tabular text-xs text-ink-muted">@ {w.line_level}</span>
+      )}
+
+      {abstand !== null ? (
+        <span className={"tabular text-xs " +
+          (abstand < 1 ? "text-bad-bright"
+            : w.alarm_pips !== null && abstand <= w.alarm_pips ? "text-accent"
+              : "text-ink-soft")}>
+          {abstand < 1 ? "erreicht" : `${Math.round(abstand)} Pips`}
+        </span>
+      ) : !live ? (
+        <Badge tone="neutral">kein Live-Preis</Badge>
+      ) : null}
+
+      {w.alarm_pips !== null && <Badge tone="neutral">Warnung {w.alarm_pips} Pips</Badge>}
+      {w.alarm_on_hit && <Badge tone="neutral">bei Treffer</Badge>}
+      {w.alarm_time && <Badge tone="neutral">{w.alarm_time.slice(0, 5)}</Badge>}
+      {w.show_until && (
+        <span className="text-[11px] text-ink-faint">bis {dateLabel(w.show_until)}</span>
+      )}
+
+      {w.note?.startsWith(GVA_NOTIZ)
+        ? <Badge tone="accent" title={w.note}>aus dem Cockpit</Badge>
+        : w.note && <span className="text-xs text-ink-muted">{w.note}</span>}
+
+      <span className="ml-auto flex items-center gap-3">
+        <KategorieWahl id={w.id} aktuell={w.kategorie_id} kategorien={kategorien} />
+        <Link href={`/trading/journal/trades?paar=${w.pair}`}
+          className="text-xs text-accent-soft transition hover:underline">
+          Trade eintragen →
+        </Link>
+        <form action={removeWatchlistPair}>
+          <input type="hidden" name="id" value={w.id} />
+          <button className="text-xs text-ink-faint transition hover:text-bad">
+            entfernen
+          </button>
+        </form>
+      </span>
+    </li>
   );
 }

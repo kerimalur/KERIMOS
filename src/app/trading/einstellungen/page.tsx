@@ -5,6 +5,7 @@ import { warnungen, inRuhezeit, ART_LABEL } from "@/lib/alarm/regeln";
 import { pushConfigured } from "@/lib/push";
 import { tradingConfigured, fetchWatchlist } from "@/lib/supabase/trading";
 import { heuteMinuten } from "@/lib/time";
+import { KategorienKarte } from "@/components/trading/kategorien-karte";
 import { Card, CardTitle, Badge, Empty } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -65,7 +66,7 @@ export default async function TradingEinstellungenPage() {
       <div>
         <h1 className="font-display text-xl font-bold text-ink">Einstellungen</h1>
         <p className="mt-1 max-w-2xl text-sm text-ink-muted">
-          Alarme, Kanäle und der Weg ins Labor.
+          Alarme, Kategorien, Kanäle und der Weg ins Labor.
         </p>
       </div>
 
@@ -100,6 +101,8 @@ export default async function TradingEinstellungenPage() {
           </ul>
         )}
       </Card>
+
+      <KategorienKarte />
 
       <div className="grid gap-2 sm:grid-cols-2">
         <Kachel href="/trading/alarme/einstellungen" titel="Alarm-Setup"

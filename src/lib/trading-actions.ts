@@ -48,6 +48,7 @@ export async function addWatchlistPair(fd: FormData) {
   const werte = {
     pair,
     note: text(fd, "note") || null,
+    kategorie_id: text(fd, "kategorie_id") || null,
     line_level: level,
     side: seite === "long" || seite === "short" ? seite : null,
     alarm_pips: zahl(fd, "alarm_pips"),
@@ -125,4 +126,118 @@ export async function removeWatchlistPair(fd: FormData) {
 
   revalidatePath("/trading");
   revalidatePath("/");
+}
+
+
+/* ------------------------------------------------------------- Kategorien */
+
+/**
+ * Kategorien der aktiven Trades — angelegt unter /trading/einstellungen.
+ *
+ * Warum es sie gibt: Die Liste auf /trading ist bewusst EINE Liste. Sobald
+ * mehr als eine Handvoll Zeilen darin steht, will man sie trotzdem ordnen
+ * können — nach Setup-Art, nach Zeithorizont, nach was auch immer gerade
+ * trägt. Feste Rubriken wären geraten; frei benannte lassen sich ändern,
+ * wenn sich die Arbeitsweise ändert.
+ *
+ * Alle drei Aktionen erneuern auch die Startseite: die Linien-Karte dort
+ * zeigt dieselben Zeilen, nur gefiltert.
+ */
+
+/** Alles, was eine Änderung an Kategorien sehen muss. */
+function kategorienAktualisieren() {
+  revalidatePath("/trading");
+  revalidatePath("/trading/einstellungen");
+  revalidatePath("/");
+}
+
+export async function kategorieAnlegen(fd: FormData) {
+  const name = text(fd, "name");
+  if (!name) return;
+
+  const supabase = createTradingClient();
+  if (!supabase) throw new Error("Trading-Datenbank nicht verbunden");
+
+  const { error } = await supabase.from("trading_kategorien").insert({
+    name,
+    farbe: text(fd, "farbe") || "neutral",
+    sort_order: zahl(fd, "sort_order") ?? 0,
+  });
+
+  if (error) {
+    // 42P01 = Tabelle fehlt. Das ist kein Fehler im Formular, sondern die
+    // noch nicht ausgefuehrte Migration — und das muss dranstehen, sonst
+    // sucht man an der falschen Stelle.
+    if (error.code === "42P01") {
+      throw new Error(
+        "Die Tabelle trading_kategorien fehlt. Fuehr die Migration aus — sie "
+        + "steht auf /trading/einstellungen unter „Kategorien einrichten“ zum Kopieren.",
+      );
+    }
+    // 23505 = doppelter Name.
+    if (error.code === "23505") {
+      throw new Error(`Es gibt schon eine Kategorie „${name}“.`);
+    }
+    throw new Error(`Kategorie anlegen: ${error.message}`);
+  }
+
+  kategorienAktualisieren();
+}
+
+export async function kategorieAendern(fd: FormData) {
+  const id = text(fd, "id");
+  const name = text(fd, "name");
+  if (!id || !name) return;
+
+  const supabase = createTradingClient();
+  if (!supabase) throw new Error("Trading-Datenbank nicht verbunden");
+
+  const { error } = await supabase
+    .from("trading_kategorien")
+    .update({
+      name,
+      farbe: text(fd, "farbe") || "neutral",
+      sort_order: zahl(fd, "sort_order") ?? 0,
+    })
+    .eq("id", id);
+  if (error) throw new Error(`Kategorie aendern: ${error.message}`);
+
+  kategorienAktualisieren();
+}
+
+/**
+ * Eine Kategorie löschen — die Trades darin bleiben.
+ *
+ * Das erledigt die Datenbank über `on delete set null` (siehe
+ * `kategorien-migration.ts`). Hier wird bewusst NICHT vorher aufgeräumt:
+ * zwei Stellen, die dasselbe sicherstellen, laufen irgendwann auseinander.
+ */
+export async function kategorieLoeschen(fd: FormData) {
+  const id = text(fd, "id");
+  if (!id) return;
+
+  const supabase = createTradingClient();
+  if (!supabase) throw new Error("Trading-Datenbank nicht verbunden");
+
+  const { error } = await supabase.from("trading_kategorien").delete().eq("id", id);
+  if (error) throw new Error(`Kategorie loeschen: ${error.message}`);
+
+  kategorienAktualisieren();
+}
+
+/** Einen aktiven Trade in eine andere Kategorie schieben. */
+export async function watchlistKategorieSetzen(fd: FormData) {
+  const id = text(fd, "id");
+  if (!id) return;
+
+  const supabase = createTradingClient();
+  if (!supabase) throw new Error("Trading-Datenbank nicht verbunden");
+
+  const { error } = await supabase
+    .from("trading_watchlist")
+    .update({ kategorie_id: text(fd, "kategorie_id") || null })
+    .eq("id", id);
+  if (error) throw new Error(`Kategorie zuordnen: ${error.message}`);
+
+  kategorienAktualisieren();
 }

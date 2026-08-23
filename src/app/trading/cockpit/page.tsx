@@ -24,26 +24,26 @@ export const dynamic = "force-dynamic";
  */
 
 /**
- * Die 28 Majors, gruppiert nach Basiswährung.
+ * Die 28 Majors in Kerims Watchlist-Reihenfolge.
  *
- * Ein Raster aus 28 gleich aussehenden Kacheln ist beim Suchen langsamer als
- * es aussieht — man zählt Spalten. Die Treppe 7-6-5-4-3-2-1 ist dagegen die
- * natürliche Struktur der Sache: jede Währung bildet mit den verbleibenden ein
- * Paar weniger als die vorige. Damit hat jede Kachel eine Zeile, die man sich
- * merken kann, und die Gruppengrösse selbst ist schon eine Orientierung.
+ * Reihenfolge und Gruppierung sind aus seiner TradingView-Liste übernommen,
+ * nicht alphabetisch sortiert und nicht nach Schönheit umgestellt. Der Grund
+ * ist banal und wichtig: Er sucht ein Paar nicht, er weiss, wo es steht. Jede
+ * Umsortierung macht diese Gewohnheit einmalig kaputt und spart nichts.
  *
- * Fest verdrahtet und nicht aus dem Paarnamen gerechnet: USDJPY und EURUSD
- * gehören beide zu den USD-Paaren, stehen aber in unterschiedlicher Notation.
- * Eine Regel, die das automatisch trifft, wäre länger als die Liste.
+ * Gruppiert wird nach der Basiswährung des Paarnamens, absteigend nach
+ * Gruppengrösse — EUR sieben, GBP sechs, AUD fünf, NZD vier, USD drei, CAD
+ * zwei, CHF eines. Die Treppe ist keine Design-Idee, sondern die Struktur der
+ * Sache: jede Währung bildet mit den verbleibenden ein Paar weniger.
  */
 const GRUPPEN: { titel: string; paare: string[] }[] = [
-  { titel: "USD-Paare", paare: ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD"] },
-  { titel: "EUR-Crosses", paare: ["EURJPY", "EURGBP", "EURAUD", "EURCAD", "EURCHF", "EURNZD"] },
-  { titel: "GBP-Crosses", paare: ["GBPJPY", "GBPAUD", "GBPCAD", "GBPCHF", "GBPNZD"] },
-  { titel: "AUD-Crosses", paare: ["AUDJPY", "AUDCAD", "AUDCHF", "AUDNZD"] },
-  { titel: "NZD-Crosses", paare: ["NZDJPY", "NZDCAD", "NZDCHF"] },
-  { titel: "CAD-Crosses", paare: ["CADJPY", "CADCHF"] },
-  { titel: "CHF-Crosses", paare: ["CHFJPY"] },
+  { titel: "EUR", paare: ["EURAUD", "EURCAD", "EURGBP", "EURCHF", "EURNZD", "EURJPY", "EURUSD"] },
+  { titel: "GBP", paare: ["GBPAUD", "GBPNZD", "GBPUSD", "GBPCAD", "GBPJPY", "GBPCHF"] },
+  { titel: "AUD", paare: ["AUDCAD", "AUDJPY", "AUDNZD", "AUDUSD", "AUDCHF"] },
+  { titel: "NZD", paare: ["NZDCAD", "NZDCHF", "NZDJPY", "NZDUSD"] },
+  { titel: "USD", paare: ["USDCAD", "USDCHF", "USDJPY"] },
+  { titel: "CAD", paare: ["CADCHF", "CADJPY"] },
+  { titel: "CHF", paare: ["CHFJPY"] },
 ];
 
 const sauber = (p: string) => p.replace(/[^A-Za-z]/g, "").toUpperCase();
@@ -107,10 +107,18 @@ export default async function CockpitSeite() {
   const baueKachel = (paar: string): Kachel => {
     const p = nachPaar.get(paar);
     const s = hitNachPaar.get(paar);
+    const seite = s ? s.lineType
+      : p?.near === "LONG" ? "long" : p?.near === "SHORT" ? "short" : null;
+
+    // Ohne Treffer ist die Linie die, auf die der Screener gerade zeigt —
+    // `near` sagt, welche der beiden Seiten das ist.
+    const linie = s ? s.lineLevel
+      : p?.near === "LONG" ? p.long : p?.near === "SHORT" ? p.short : null;
+
     return {
-      paar,
-      seite: s ? s.lineType : p?.near === "LONG" ? "long" : p?.near === "SHORT" ? "short" : null,
+      paar, seite, linie: linie ?? null,
       zeitrahmen: s ? tfFuerSignal(s, p) : (p ? pairTf(p) : null),
+      distanz: s ? null : p?.distance ?? null,
       hit: s
         ? {
           signalId: s.id, level: s.lineLevel, formiert: s.lineFormedDate,
@@ -149,8 +157,8 @@ export default async function CockpitSeite() {
       <div>
         <h1 className="font-display text-2xl font-bold text-ink">Cockpit</h1>
         <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-ink-muted">
-          Alle 28 Paare an festen Plätzen. Farbe heisst: da liegt eine Linie.
-          Der gelbe Ring heisst: sie wurde getroffen und wartet auf dich.
+          Alle 28 Paare in deiner Watchlist-Reihenfolge. Der gelbe Balken links
+          heisst: getroffen und wartet auf dich. Gruppen lassen sich zuklappen.
         </p>
       </div>
 
@@ -158,13 +166,13 @@ export default async function CockpitSeite() {
         <Card area={offen > 0 ? "trading" : undefined}>
           <Stat label="Wartet auf dich" value={offen}
             tone={offen > 0 ? "warn" : "neutral"}
-            sub={offen > 0 ? "umkreiste Kacheln anklicken" : "alles beantwortet"} />
+            sub={offen > 0 ? "gelb markierte Zeilen" : "alles beantwortet"} />
         </Card>
         <Card>
           <Stat label="In aktiven Trades" value={beobachtet} sub="steht auf der Übersicht" />
         </Card>
         <Card>
-          <Stat label="Linien in Reichweite" value={mitLinie} sub="gefärbt, noch kein Treffer" />
+          <Stat label="Linien in Reichweite" value={mitLinie} sub="mit Richtung, noch kein Treffer" />
         </Card>
       </div>
 
@@ -191,24 +199,21 @@ export default async function CockpitSeite() {
         <CardTitle>Legende</CardTitle>
         <div className="grid gap-x-6 gap-y-2.5 text-xs text-ink-muted sm:grid-cols-2">
           <span className="flex items-center gap-2">
-            <span className="h-3.5 w-3.5 shrink-0 rounded bg-good-tint" /> Long-Linie
+            <span className="h-4 w-[3px] shrink-0 rounded-full bg-warn" />
+            getroffen — Zeile anklicken und entscheiden
           </span>
           <span className="flex items-center gap-2">
-            <span className="h-3.5 w-3.5 shrink-0 rounded bg-bad-tint" /> Short-Linie
+            <span className="h-4 w-[3px] shrink-0 rounded-full bg-accent-deep" />
+            schon in den aktiven Trades
           </span>
           <span className="flex items-center gap-2">
-            <span className="h-3.5 w-3.5 shrink-0 rounded bg-sand/40" /> keine Linie in Reichweite
+            <span className="shrink-0 text-good-bright">Long</span>
+            <span className="shrink-0 text-bad-bright">Short</span>
+            Richtung der Linie
           </span>
-          <span className="flex items-center gap-2">
-            <span className="h-3.5 w-3.5 shrink-0 rounded ring-2 ring-warn" /> getroffen — anklicken
-          </span>
-          <span className="flex items-center gap-2">
-            <span className="h-3.5 w-3.5 shrink-0 rounded ring-1 ring-accent-deep" /> schon in den aktiven Trades
-          </span>
-          <span className="flex items-center gap-2">
-            <span className="shrink-0 rounded bg-black/25 px-1.5 py-0.5 text-[10px]">3D</span>
-            Zeitrahmen der Linie (3D oder W)
-          </span>
+          <span>TF = Zeitrahmen der Linie (3D oder W)</span>
+          <span>Linie = Kurs, auf dem sie liegt</span>
+          <span>Abstand = Pips bis dorthin</span>
         </div>
       </Card>
     </div>

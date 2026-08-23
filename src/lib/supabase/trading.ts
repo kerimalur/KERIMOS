@@ -1,6 +1,7 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
+import type { Kategorie } from "@/lib/trading/kategorien";
 
 /**
  * Zugang zur Trading-Datenbank (Journal + GVA-Screener teilen sich ein Projekt).
@@ -138,6 +139,8 @@ export interface WatchlistPair {
   /** Letzter Tag auf der Startseite. Null = unbegrenzt. */
   show_until: string | null;
   archived: boolean;
+  /** Kategorie aus `trading_kategorien`. Null = ohne Kategorie. */
+  kategorie_id: string | null;
 }
 
 const WATCHLIST_SPALTEN =
@@ -147,15 +150,48 @@ export async function fetchWatchlist(): Promise<WatchlistPair[]> {
   const supabase = createTradingClient();
   if (!supabase) return [];
 
-  const { data } = await supabase
+  // `kategorie_id` kommt aus der Kategorien-Migration. Fehlt die Spalte, laesst
+  // PostgREST die GANZE Abfrage scheitern — dann lieber eine Liste ohne
+  // Einteilung als gar keine. Dieselbe Vorsicht wie bei `line_formed_date`.
+  const hole = (spalten: string) => supabase
     .from("trading_watchlist")
-    .select(WATCHLIST_SPALTEN)
+    .select(spalten)
     .eq("archived", false)
     .order("created_at", { ascending: false });
+
+  let { data, error } = await hole(WATCHLIST_SPALTEN + ", kategorie_id");
+  if (error) ({ data } = await hole(WATCHLIST_SPALTEN));
 
   return ((data ?? []) as unknown as WatchlistPair[]).map((w) => ({
     ...w,
     line_level: w.line_level === null ? null : Number(w.line_level),
+    kategorie_id: w.kategorie_id ?? null,
+  }));
+}
+
+/**
+ * Die angelegten Kategorien.
+ *
+ * Leeres Array, wenn die Tabelle noch nicht existiert — die Migration steht
+ * unter /trading/einstellungen zum Kopieren, und bis dahin soll die Liste
+ * einfach ohne Einteilung funktionieren statt eine Fehlerseite zu zeigen.
+ */
+export async function fetchKategorien(): Promise<Kategorie[]> {
+  const supabase = createTradingClient();
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from("trading_kategorien")
+    .select("id, name, farbe, sort_order")
+    .order("sort_order", { ascending: true });
+
+  if (error) return [];
+
+  return ((data ?? []) as unknown as Record<string, unknown>[]).map((k) => ({
+    id: String(k.id),
+    name: String(k.name ?? ""),
+    farbe: String(k.farbe ?? "neutral"),
+    sortOrder: Number(k.sort_order ?? 0),
   }));
 }
 

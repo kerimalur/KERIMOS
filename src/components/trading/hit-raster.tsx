@@ -8,24 +8,22 @@ import { Modal, ModalKopf } from "@/components/trading/modal";
 import { cx } from "@/components/ui";
 
 /**
- * Das Cockpit — Kacheln, und sonst nichts.
+ * Das Cockpit — eine Watchlist, wie Kerim sie aus TradingView kennt.
  *
- * Der Aufbau folgt bewusst der Heatmap und nicht einer Liste: die Kacheln
- * stehen immer an derselben Stelle, egal was gerade los ist. Eine Liste, die
- * nach Dringlichkeit sortiert, ist beim ersten Blick schneller und beim
- * hundertsten langsamer — man muss jedes Mal neu lesen, wo etwas steht.
+ * Vorher war das ein Kachel-Raster. Die Idee war, dass man am Muster erkennt,
+ * was los ist; in der Praxis zählt man Spalten, um ein Paar zu finden. Eine
+ * Liste mit aufklappbaren Gruppen ist hier besser, weil sie genau die Form
+ * hat, in der Kerim seine Paare ohnehin jeden Tag ansieht — dieselbe
+ * Reihenfolge, dieselbe Gruppierung, dieselbe Lesart von links nach rechts.
  *
- * Gruppiert wird nach der Basiswährung, weil die 28 Majors genau so zerfallen:
- * sieben USD-Paare, sechs EUR-Crosses, fünf GBP, vier AUD, drei NZD, zwei CAD,
- * eines mit CHF. Diese Treppe ist keine Design-Idee, sondern die Struktur der
- * Sache — und sie gibt jeder Kachel einen Platz, den man wiederfindet.
+ * Die Spalten beantworten der Reihe nach: Welches Paar? In welche Richtung
+ * liegt die Linie? Auf welchem Zeitrahmen? Auf welchem Kurs? Wie weit ist der
+ * Preis noch weg? Mehr steht nicht drin — der Rest ist im Popup.
  *
- * Drei Zustände, mehr gibt es nicht:
- *   grau   — der Screener sieht für dieses Paar keine Linie in Reichweite
- *   farbig — es gibt eine Linie, rot für Short, grün für Long, mit Zeitrahmen
- *   Ring   — die Linie wurde getroffen und wartet auf eine Entscheidung
- *
- * Nur der Ring ist anklickbar. Alles andere ist Information, keine Aufgabe.
+ * Der farbige Balken ganz links ist die einzige Auszeichnung, die auffallen
+ * soll: gelb heisst getroffen und wartet auf eine Entscheidung, bernstein
+ * heisst schon in den aktiven Trades. Wer nichts Farbiges sieht, muss nichts
+ * tun — und genau das ist die häufigste Antwort.
  */
 
 export interface KachelHit {
@@ -50,6 +48,10 @@ export interface Kachel {
   /** Richtung der Linie, die für dieses Paar gerade zählt. */
   seite: "long" | "short" | null;
   zeitrahmen: "3D" | "W" | null;
+  /** Kurs der Linie, auf die es ankommt. */
+  linie: number | null;
+  /** Pips bis dorthin. Null, wenn der Screener keinen Preis hat. */
+  distanz: number | null;
   hit: KachelHit | null;
 }
 
@@ -58,27 +60,60 @@ export interface Gruppe {
   kacheln: Kachel[];
 }
 
+/** Spaltenraster — einmal definiert, damit Kopf und Zeilen nicht auseinanderlaufen. */
+const RASTER = "grid grid-cols-[3px_1fr_58px_28px] sm:grid-cols-[3px_1fr_72px_34px_92px_84px]";
+
 export function HitRaster({ gruppen }: { gruppen: Gruppe[] }) {
   const [offen, setOffen] = useState<Kachel | null>(null);
+  const [zu, setZu] = useState<Set<string>>(new Set());
+
+  const umschalten = (titel: string) =>
+    setZu((v) => {
+      const n = new Set(v);
+      if (n.has(titel)) n.delete(titel); else n.add(titel);
+      return n;
+    });
 
   return (
     <>
-      <div className="space-y-6">
-        {gruppen.map((g) => (
-          <div key={g.titel}>
-            <div className="mb-2 flex items-baseline gap-2">
-              <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-faint">
-                {g.titel}
-              </span>
-              <span className="h-px flex-1 bg-line/50" />
-            </div>
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-7">
-              {g.kacheln.map((k) => (
-                <KachelFeld key={k.paar} k={k} onOeffnen={() => setOffen(k)} />
-              ))}
-            </div>
+      <div className="overflow-x-auto">
+        <div className="min-w-[300px]">
+          <div className={cx(RASTER,
+            "border-b border-line/70 pb-2 text-[11px] uppercase tracking-wide text-ink-faint")}>
+            <span />
+            <span className="pl-2">Symbol</span>
+            <span className="text-right">Richtung</span>
+            <span className="text-right">TF</span>
+            <span className="hidden text-right sm:block">Linie</span>
+            <span className="hidden text-right sm:block">Abstand</span>
           </div>
-        ))}
+
+          {gruppen.map((g) => {
+            const treffer = g.kacheln.filter((k) => k.hit).length;
+            const eingeklappt = zu.has(g.titel);
+            return (
+              <div key={g.titel}>
+                <button type="button" onClick={() => umschalten(g.titel)}
+                  className="flex w-full items-center gap-1.5 py-1.5 pl-1 text-left
+                             text-[11px] font-medium uppercase tracking-wide text-ink-muted
+                             transition hover:text-ink">
+                  <span className={cx("inline-block transition-transform duration-150",
+                    eingeklappt ? "-rotate-90" : "rotate-0")}>⌄</span>
+                  {g.titel}
+                  {treffer > 0 && (
+                    <span className="rounded bg-warn-tint px-1.5 py-0.5 text-[10px] text-warn">
+                      {treffer}
+                    </span>
+                  )}
+                </button>
+
+                {!eingeklappt && g.kacheln.map((k) => (
+                  <ZeileFeld key={k.paar} k={k} onOeffnen={() => setOffen(k)} />
+                ))}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {offen?.hit && (
@@ -88,53 +123,52 @@ export function HitRaster({ gruppen }: { gruppen: Gruppe[] }) {
   );
 }
 
-function KachelFeld({ k, onOeffnen }: { k: Kachel; onOeffnen: () => void }) {
+function ZeileFeld({ k, onOeffnen }: { k: Kachel; onOeffnen: () => void }) {
   const wartet = !!k.hit && !k.hit.inListe;
-  const beobachtet = !!k.hit?.inListe;
+  const aktiv = !!k.hit?.inListe;
   const seite = k.hit?.seite ?? k.seite;
-
-  const grund =
-    seite === "long" ? "bg-good-tint text-good-bright"
-      : seite === "short" ? "bg-bad-tint text-bad-bright"
-        : "bg-sand/40 text-ink-faint";
-
-  const ring =
-    wartet ? "ring-2 ring-warn ring-offset-2 ring-offset-card"
-      : beobachtet ? "ring-1 ring-accent-deep"
-        : "";
-
-  const klassen = cx(
-    "flex h-[74px] flex-col items-center justify-center gap-1 rounded-xl px-1 text-center",
-    grund, ring,
-  );
+  const linie = k.hit?.level ?? k.linie;
+  const nachkomma = k.paar.includes("JPY") ? 3 : 5;
 
   const inhalt = (
     <>
-      <span className="font-display text-[13px] font-bold leading-none tracking-tight">
-        {k.paar.slice(0, 3)}<span className="opacity-45">/</span>{k.paar.slice(3, 6)}
+      {/* Der Marker links — dieselbe Rolle wie die Fahne in TradingView. */}
+      <span className={cx("h-full w-[3px] rounded-full",
+        wartet ? "bg-warn" : aktiv ? "bg-accent-deep" : "bg-transparent")} />
+
+      <span className={cx("truncate pl-2 font-medium",
+        k.hit ? "text-ink" : seite ? "text-ink-soft" : "text-ink-faint")}>
+        {k.paar}
       </span>
-      <span className="flex h-4 items-center gap-1">
-        {k.zeitrahmen && (
-          <span className="rounded bg-black/25 px-1.5 py-0.5 text-[10px] font-medium leading-none">
-            {k.zeitrahmen}
-          </span>
-        )}
-        {wartet && (
-          <span className="text-[10px] font-medium leading-none text-warn">Hit</span>
-        )}
-        {beobachtet && (
-          <span className="text-[10px] leading-none text-accent-soft">aktiv</span>
-        )}
+
+      <span className={cx("text-right text-[12px]",
+        seite === "long" ? "text-good-bright"
+          : seite === "short" ? "text-bad-bright" : "text-ink-faint")}>
+        {seite === "long" ? "Long" : seite === "short" ? "Short" : "—"}
+      </span>
+
+      <span className="text-right text-[11px] text-ink-muted">{k.zeitrahmen ?? ""}</span>
+
+      <span className="tabular hidden text-right text-[12px] text-ink-soft sm:block">
+        {linie !== null ? linie.toFixed(nachkomma) : ""}
+      </span>
+
+      <span className={cx("tabular hidden text-right text-[12px] sm:block",
+        wartet ? "text-warn" : "text-ink-muted")}>
+        {k.hit ? "getroffen" : k.distanz !== null ? `${Math.round(k.distanz)} P` : ""}
       </span>
     </>
   );
 
-  if (!k.hit) return <div className={klassen} title={k.paar}>{inhalt}</div>;
+  const klassen = cx(RASTER,
+    "items-center border-t border-line/40 py-1.5 text-sm first:border-t-0");
+
+  if (!k.hit) return <div className={klassen}>{inhalt}</div>;
 
   return (
-    <button type="button" onClick={onOeffnen} title={`${k.paar} — Hit ansehen`}
-      className={cx(klassen,
-        "transition duration-150 ease-tactile hover:brightness-125 active:scale-95")}>
+    <button type="button" onClick={onOeffnen} title={`${k.paar} — Treffer ansehen`}
+      className={cx(klassen, "w-full text-left transition hover:bg-sand/50 active:scale-[0.997]",
+        wartet && "bg-warn-tint/30")}>
       {inhalt}
     </button>
   );
