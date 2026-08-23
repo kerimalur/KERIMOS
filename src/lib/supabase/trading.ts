@@ -281,6 +281,32 @@ export interface RankingCurrency {
   ccy: string;
   score: number;
   strength_quintile: number;
+  /**
+   * Die drei stärksten Faktor-Beiträge zum Score, wie sie das Modell selbst
+   * ausgerechnet hat (`ml_weekly_rankings.top_features`). Positiv heisst: der
+   * Faktor hat den Score nach oben gezogen.
+   *
+   * Ohne sie ist der Q-Score eine Zahl ohne Begründung — man sieht, dass eine
+   * Währung stark ist, aber nicht woran es liegt. Leeres Array, wenn die
+   * Spalte fehlt oder das Modell nichts geschrieben hat.
+   */
+  topFeatures: FaktorBeitrag[];
+}
+
+export interface FaktorBeitrag {
+  /** Technischer Feature-Name aus dem Panel, z.B. "rates_score". */
+  feature: string;
+  /** Beitrag zum Score. Vorzeichen = Richtung, Betrag = Gewicht. */
+  value: number;
+}
+
+/** Die Roh-JSON-Spalte in eine geprüfte Liste verwandeln. */
+function zuBeitraegen(roh: unknown): FaktorBeitrag[] {
+  if (!Array.isArray(roh)) return [];
+  return roh
+    .map((x) => x as Record<string, unknown>)
+    .filter((x) => typeof x?.feature === "string" && Number.isFinite(Number(x.value)))
+    .map((x) => ({ feature: String(x.feature), value: Number(x.value) }));
 }
 
 export type FundamentalUrteil = "bestaetigt" | "dagegen" | "neutral" | "unbekannt";
@@ -379,18 +405,26 @@ const rankingCached = unstable_cache(
     const weekStart: string | undefined = latest?.[0]?.week_start;
     if (!weekStart) return { weekStart: null, currencies: [] };
 
-    const { data } = await supabase
+    // `top_features` steht nicht in jeder Fassung der Tabelle. Fehlt die
+    // Spalte, laesst PostgREST die GANZE Abfrage scheitern — dann lieber ein
+    // Ranking ohne Begruendung als gar keins.
+    const hole = (spalten: string) => supabase
       .from("ml_weekly_rankings")
-      .select("ccy, score, strength_quintile")
+      .select(spalten)
       .eq("week_start", weekStart)
       .eq("model", "champion");
 
+    const SPALTEN = "ccy, score, strength_quintile";
+    let { data, error } = await hole(SPALTEN + ", top_features");
+    if (error) ({ data } = await hole(SPALTEN));
+
     return {
       weekStart,
-      currencies: (data ?? []).map((r) => ({
+      currencies: ((data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
         ccy: r.ccy as string,
         score: Number(r.score ?? 0),
         strength_quintile: Number(r.strength_quintile ?? 3),
+        topFeatures: zuBeitraegen(r.top_features),
       })),
     };
   },

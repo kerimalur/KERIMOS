@@ -334,6 +334,128 @@ export async function buchungLoeschen(fd: FormData) {
  * `Backend/supabase_signals.py`) genau sie liest — ein fünfter Wert würde
  * dort still ignoriert.
  */
+/**
+ * Herkunftsmarke für Zeilen, die aus einem GVA-Hit entstanden sind.
+ *
+ * Es gibt bewusst keine eigene Spalte dafür: die Liste auf /trading ist EINE
+ * Liste, und ein Eintrag aus dem Cockpit ist darin nichts anderes als eine von
+ * Hand eingetragene Linie — nur bequemer entstanden. Die Marke dient allein
+ * der Anzeige („kam aus dem Screener") und dem Wiederfinden beim Verwerfen.
+ */
+export const GVA_NOTIZ = "GVA-Hit";
+
+const ddmm = (iso: string | null) =>
+  iso && /^\d{4}-\d{2}-\d{2}/.test(iso) ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}.` : null;
+
+/** Alles, was eine Änderung an der aktiven Liste sehen muss. */
+function listenAktualisieren() {
+  revalidatePath("/trading");
+  revalidatePath("/trading/cockpit");
+  revalidatePath("/");
+}
+
+/**
+ * Aus einem GVA-Hit einen aktiven Trade machen.
+ *
+ * **Warum das früher nicht funktioniert hat:** Diese Aktion legte einen
+ * `outlooks`-Eintrag an und setzte das Signal auf „watchlist". Die sichtbare
+ * Liste auf /trading liest aber `trading_watchlist` — eine andere Tabelle.
+ * Der übernommene Hit landete damit in einem Topf, den keine Seite anzeigt:
+ * Das Cockpit sagte „steht schon in Beobachtung", und zu sehen war nirgends
+ * etwas. Man konnte ihn weder ansehen noch löschen noch zu einem Trade machen.
+ *
+ * Jetzt schreibt sie in dieselbe Tabelle wie das Formular auf /trading. Eine
+ * Liste, ein Ort zum Löschen, ein Ort zum Weiterarbeiten — egal ob die Zeile
+ * von Hand entstanden ist oder aus dem Screener.
+ */
+export async function signalUebernehmen(fd: FormData) {
+  const supabase = createTradingClient();
+  if (!supabase) throw new Error("Trading-Datenbank nicht verbunden");
+
+  const id = txt(fd, "id");
+  const pair = txt(fd, "pair").toUpperCase().replace(/[^A-Z]/g, "");
+  const richtung = txt(fd, "lineType") === "short" ? "short" : "long";
+  const level = num(fd, "lineLevel");
+  const formiert = ddmm(txt(fd, "formiert") || null);
+  if (!id || !pair) return;
+
+  const zeile = {
+    pair,
+    side: richtung,
+    line_level: level,
+    note: formiert ? `${GVA_NOTIZ}, Linie vom ${formiert}` : GVA_NOTIZ,
+    // Voreinstellungen wie im Formular auf /trading. Wer sie anders will,
+    // ändert sie dort — hier zählt, dass die Zeile überhaupt entsteht.
+    alarm_pips: 30,
+    alarm_on_hit: true,
+    alarm_time: null,
+    show_until: null,
+    archived: false,
+  };
+
+  // Gleiches Paar UND gleiches Level gilt als dieselbe Linie — sonst legt ein
+  // zweiter Klick eine Karteileiche daneben. Dieselbe Regel wie in
+  // `addWatchlistPair`; `null` braucht `is` statt `eq`.
+  const suche = supabase
+    .from("trading_watchlist").select("id")
+    .eq("pair", pair).eq("archived", false);
+  const { data: gleiche } = level === null
+    ? await suche.is("line_level", null).limit(1)
+    : await suche.eq("line_level", level).limit(1);
+
+  const treffer = ((gleiche ?? []) as { id: string }[])[0];
+  const { error } = treffer
+    ? await supabase.from("trading_watchlist").update(zeile).eq("id", treffer.id)
+    : await supabase.from("trading_watchlist").insert(zeile);
+  if (error) throw new Error(`Aktive Trades: ${error.message}`);
+
+  await supabase
+    .from("signals")
+    .update({ status: "watchlist", updated_at: new Date().toISOString() })
+    .eq("id", id);
+
+  listenAktualisieren();
+}
+
+/**
+ * Einen Hit verwerfen — auch dann, wenn er vorher übernommen wurde.
+ *
+ * Der zweite Teil ist der wichtige: Solange „verwerfen" nur das Signal
+ * umgesetzt hat, blieb eine bereits übernommene Zeile in der aktiven Liste
+ * stehen, und umgekehrt liess sich ein übernommener Hit im Cockpit gar nicht
+ * mehr anfassen — dort stand nur noch „hier gibt es nichts mehr zu
+ * entscheiden". Eine Entscheidung, die man nicht zurücknehmen kann, ist eine
+ * Falle, keine Entscheidung.
+ */
+export async function signalVerwerfen(fd: FormData) {
+  const supabase = createTradingClient();
+  if (!supabase) throw new Error("Trading-Datenbank nicht verbunden");
+
+  const id = txt(fd, "id");
+  const pair = txt(fd, "pair").toUpperCase().replace(/[^A-Z]/g, "");
+  const level = num(fd, "lineLevel");
+  if (!id) return;
+
+  await supabase
+    .from("signals")
+    .update({ status: "dismissed", updated_at: new Date().toISOString() })
+    .eq("id", id);
+
+  // Die zugehörige Zeile in der aktiven Liste mitnehmen, falls es sie gibt.
+  // Verknüpft wird über Paar und Level — dieselbe Kennung, unter der sie
+  // angelegt wurde. Eine eigene Spalte dafür wäre eine Verknüpfung, die man
+  // pflegen muss, für eine Zeile, die man ohnehin von Hand löschen kann.
+  if (pair && level !== null) {
+    await supabase
+      .from("trading_watchlist")
+      .delete()
+      .eq("pair", pair).eq("line_level", level).eq("archived", false);
+  }
+
+  listenAktualisieren();
+}
+
+/** Rohen Statuswechsel setzen — für Aufrufer ohne Paar-Kontext. */
 export async function signalStatusSetzen(fd: FormData) {
   const supabase = createTradingClient();
   if (!supabase) throw new Error("Trading-Datenbank nicht verbunden");
@@ -347,46 +469,5 @@ export async function signalStatusSetzen(fd: FormData) {
     .update({ status, updated_at: new Date().toISOString() })
     .eq("id", id);
 
-  journalAktualisieren();
-}
-
-/**
- * Aus einem GVA-Hit eine These machen: Outlook anlegen und das Signal auf
- * "watchlist" setzen. Das ist der Übergang von „der Screener hat etwas
- * gesehen" zu „ich habe eine Meinung dazu".
- */
-export async function signalUebernehmen(fd: FormData) {
-  const { supabase, userId } = await zugang();
-
-  const id = txt(fd, "id");
-  const pair = txt(fd, "pair").toUpperCase();
-  const richtung = txt(fd, "lineType") === "short" ? "short" : "long";
-  const level = num(fd, "lineLevel");
-  if (!id || !pair) return;
-
-  // Höchstens ein Outlook je Signal (partieller Unique-Index in der DB) —
-  // ein zweiter Klick soll deshalb nichts kaputtmachen, sondern nichts tun.
-  const { data: vorhanden } = await supabase
-    .from("outlooks").select("id").eq("signal_id", id).limit(1);
-
-  if (!vorhanden?.length) {
-    await supabase.from("outlooks").insert([{
-      user_id: userId,
-      symbol: pair,
-      direction: richtung,
-      thesis: `GVA-Hit ${richtung === "long" ? "Long" : "Short"} bei ${level ?? "?"}`,
-      confidence: 3,
-      status: "observation",
-      target_entry: level,
-      source: "gva",
-      signal_id: id,
-    }]);
-  }
-
-  await supabase
-    .from("signals")
-    .update({ status: "watchlist", updated_at: new Date().toISOString() })
-    .eq("id", id);
-
-  journalAktualisieren();
+  listenAktualisieren();
 }

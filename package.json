@@ -18,7 +18,6 @@
     "check:pine": "npx -y tsx tools/checks/pine.mts",
     "check:vorwaerts": "npx -y tsx tools/checks/vorwaerts.mts",
     "check:cot-gruppen": "npx -y tsx tools/checks/cot-gruppen.mts",
-    "check:beobachtung": "npx -y tsx tools/checks/beobachtung.mts",
     "check:kalibrierung": "npx -y tsx tools/checks/kalibrierung.mts",
     "check:heute": "npx -y tsx tools/checks/heute.mts",
     "check:kerzen": "npx -y tsx tools/checks/kerzen.mts"

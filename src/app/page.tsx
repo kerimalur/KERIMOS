@@ -5,7 +5,6 @@ import { AppointmentsCard } from "@/components/appointments-card";
 import { Tagessatz } from "@/components/tagessatz";
 import { GewichtHeute } from "@/components/gewicht-heute";
 import { GvaLinienKarte } from "@/components/gva-linien-karte";
-import { BeobachtungKarte } from "@/components/beobachtung-karte";
 import { HeuteWichtig } from "@/components/heute-wichtig";
 import { DisplayModeToggle } from "@/components/display-mode-toggle";
 import { Logo } from "@/components/logo";
@@ -133,7 +132,6 @@ export default async function Start() {
         <HeuteWichtig />
         <AppointmentsCard />
         <GvaLinienKarte />
-        <BeobachtungKarte kompakt />
         <GewichtHeute />
 
         {reviewFehlt && (

@@ -4,8 +4,8 @@ import {
   type ScreenerPair, type WatchlistPair,
 } from "@/lib/supabase/trading";
 import { addWatchlistPair, removeWatchlistPair } from "@/lib/trading-actions";
+import { GVA_NOTIZ } from "@/lib/journal-actions";
 import { Card, CardTitle, Badge, Empty, Input, Select, Label, Button } from "@/components/ui";
-import { BeobachtungKarte } from "@/components/beobachtung-karte";
 import { KopierFeld } from "@/components/alarm/kopierfeld";
 import { WATCHLIST_MIGRATION_SQL } from "@/lib/trading/watchlist-migration";
 import { dateLabel } from "@/lib/format";
@@ -13,16 +13,22 @@ import { dateLabel } from "@/lib/format";
 export const dynamic = "force-dynamic";
 
 /**
- * Übersicht — ausschliesslich die selbst gepflegte Watchlist.
+ * Übersicht — **eine** Liste: die aktiven Trades.
  *
- * Vorher stand hier alles gleichzeitig: Watchlist, GVA-Board, Wochen-News,
- * Engine-Backtest, Sessions, Hit-Historie. Die eigene Liste ging darin unter,
- * und genau sie ist der Punkt.
+ * Vorher standen hier zwei Listen nebeneinander: „Meine GVA-Linien" aus
+ * `trading_watchlist` und darunter eine Karte „Beobachtung", die aus zwei
+ * ganz anderen Quellen kam (im Screener auf `pending` markierte Paare und
+ * Watchlist-Zeilen OHNE Level). Dazu legte das Cockpit beim Übernehmen eines
+ * Hits einen `outlooks`-Eintrag an — eine dritte Tabelle, die keine Seite
+ * anzeigte. Ergebnis: ein übernommener Hit war nirgends zu sehen, nicht zu
+ * löschen und nicht weiterzuverarbeiten, während das Cockpit „steht schon in
+ * Beobachtung" meldete.
  *
- * Der Sinn dieser Seite ist, dass Kerim selbst arbeitet: Sonntagabend und
- * Mittwoch die Charts durchgehen, die Linien von Hand eintragen, Alarm
- * setzen — fertig. Automatik ist bequem, aber sie ersetzt das Hinschauen
- * nicht. Was der Screener von sich aus findet, steht im Cockpit.
+ * Jetzt gilt: Was Kerim aktiv verfolgt, steht in `trading_watchlist` und
+ * nirgends sonst. Zwei Wege führen hinein — das Formular unten und der Knopf
+ * „In aktive Trades" im Cockpit — und beide landen in derselben Zeile, die man
+ * an einer Stelle ändern und löschen kann. Kategorien kommen später, wenn sie
+ * gebraucht werden; erst muss die Liste stimmen.
  */
 
 /** Live-Preis eines Paares aus dem Screener, falls vorhanden. */
@@ -56,22 +62,23 @@ export default async function TradingPage() {
     <div className="space-y-5">
       <div>
         <div className="flex flex-wrap items-center gap-2">
-          <h1 className="font-display text-xl font-bold text-ink">Meine GVA-Linien</h1>
+          <h1 className="font-display text-xl font-bold text-ink">Aktive Trades</h1>
           {erreicht > 0 && <Badge tone="bad">{erreicht} erreicht</Badge>}
           {nah > 0 && <Badge tone="warn">{nah} nah dran</Badge>}
         </div>
         <p className="mt-1 max-w-2xl text-sm text-ink-muted">
-          Deine Watchlist — von Hand eingetragen, mit eigenem Alarm. Was der
-          Screener selbst findet, steht im{" "}
+          Alles, was du gerade verfolgst — von Hand eingetragen oder aus einem
+          Treffer im{" "}
           <Link href="/trading/cockpit" className="text-accent-soft hover:underline">
             Cockpit
-          </Link>.
+          </Link>{" "}
+          übernommen. Eine Liste, ein Ort zum Ändern und Löschen.
         </p>
       </div>
 
       <Card>
         <div className="mb-3 flex items-baseline justify-between gap-2">
-          <CardTitle className="mb-0">Linien</CardTitle>
+          <CardTitle className="mb-0">Was gerade läuft</CardTitle>
           <Link href="/trading/einstellungen" className="text-xs text-accent-soft hover:underline">
             Alarme einstellen ↗
           </Link>
@@ -79,9 +86,10 @@ export default async function TradingPage() {
 
         {watchlist.length === 0 ? (
           <Empty>
-            Noch keine Linie gesetzt. Geh die Charts durch, trag die Level ein,
-            die du beobachten willst, und setz den Alarm — dann meldet sich
-            KerimOS, statt dass du nachsehen musst.
+            Nichts aktiv. Geh die Charts durch, trag die Level ein, die du
+            verfolgen willst, und setz den Alarm — dann meldet sich KerimOS,
+            statt dass du nachsehen musst. Treffer aus dem Cockpit landen
+            über „In aktive Trades" ebenfalls hier.
           </Empty>
         ) : (
           <ul className="mb-4 space-y-1.5">
@@ -125,14 +133,22 @@ export default async function TradingPage() {
                       bis {dateLabel(w.show_until)}
                     </span>
                   )}
-                  {w.note && <span className="text-xs text-ink-muted">{w.note}</span>}
+                  {w.note?.startsWith(GVA_NOTIZ)
+                    ? <Badge tone="accent" title={w.note}>aus dem Cockpit</Badge>
+                    : w.note && <span className="text-xs text-ink-muted">{w.note}</span>}
 
-                  <form action={removeWatchlistPair} className="ml-auto">
-                    <input type="hidden" name="id" value={w.id} />
-                    <button className="text-xs text-ink-faint transition hover:text-bad">
-                      entfernen
-                    </button>
-                  </form>
+                  <span className="ml-auto flex items-center gap-3">
+                    <Link href={`/trading/journal/trades?paar=${w.pair}`}
+                      className="text-xs text-accent-soft transition hover:underline">
+                      Trade eintragen →
+                    </Link>
+                    <form action={removeWatchlistPair}>
+                      <input type="hidden" name="id" value={w.id} />
+                      <button className="text-xs text-ink-faint transition hover:text-bad">
+                        entfernen
+                      </button>
+                    </form>
+                  </span>
                 </li>
               );
             })}
@@ -179,11 +195,9 @@ export default async function TradingPage() {
             <Label htmlFor="wl-note">Notiz</Label>
             <Input id="wl-note" name="note" placeholder="optional" />
           </div>
-          <Button type="submit" variant="ghost">Linie speichern</Button>
+          <Button type="submit" variant="ghost">Aufnehmen</Button>
         </form>
       </Card>
-
-      <BeobachtungKarte />
 
       <details className="rounded-xl border border-line/60 bg-sand/40 px-4 py-3">
         <summary className="cursor-pointer text-sm font-medium text-ink">

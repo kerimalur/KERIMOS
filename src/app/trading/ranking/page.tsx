@@ -3,7 +3,8 @@ import {
   fetchRankingMitWoche, fetchScreener, rankingPairBias, tradingConfigured,
   G8, type RankingCurrency, type ScreenerPair,
 } from "@/lib/supabase/trading";
-import { Card, CardTitle, Stat, Badge, Empty } from "@/components/ui";
+import { Rangliste, PaarIdeenListe, type PaarIdee } from "@/components/trading/ranking-liste";
+import { Card, CardTitle, Stat, Empty } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -21,77 +22,23 @@ export const dynamic = "force-dynamic";
  * Richtung geben nur die Extreme Q5 und Q1. Q2–Q4 sind neutral. Das ist
  * bewusst streng: ein Ranking, das für jedes Paar eine Meinung hat, hat für
  * kein Paar eine.
+ *
+ * Zeilen und Paar-Ideen sind anklickbar — dahinter stehen die Faktor-Beiträge
+ * des Modells. Ohne sie wäre der Score eine Zahl, die man glauben oder
+ * ignorieren kann, aber nicht prüfen.
  */
-
-const Q_TON: Record<number, "good" | "warn" | "bad" | "neutral"> = {
-  5: "good", 4: "neutral", 3: "neutral", 2: "neutral", 1: "bad",
-};
-
-const Q_TEXT: Record<number, string> = {
-  5: "stark", 4: "leicht stark", 3: "neutral", 2: "leicht schwach", 1: "schwach",
-};
-
-/** Score-Balken: 0 in der Mitte, negativ nach links, positiv nach rechts. */
-function ScoreBalken({ score, max }: { score: number; max: number }) {
-  const spanne = max > 0 ? max : 1;
-  const anteil = Math.min(100, (Math.abs(score) / spanne) * 100);
-  const positiv = score >= 0;
-  return (
-    <div className="flex h-[7px] w-full items-stretch overflow-hidden rounded-full bg-sand">
-      <div className="flex w-1/2 justify-end">
-        {!positiv && (
-          <div className="h-full rounded-l-full bg-bad" style={{ width: `${anteil}%` }} />
-        )}
-      </div>
-      <div className="flex w-1/2 justify-start">
-        {positiv && (
-          <div className="h-full rounded-r-full bg-good" style={{ width: `${anteil}%` }} />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function WaehrungsZeile({
-  c, platz, max,
-}: { c: RankingCurrency; platz: number; max: number }) {
-  const q = c.strength_quintile;
-  return (
-    <div className="flex items-center gap-4 border-t border-line/70 py-3 first:border-t-0">
-      <span className="tabular w-6 shrink-0 text-xs text-ink-faint">
-        {String(platz).padStart(2, "0")}
-      </span>
-      <span className="w-12 shrink-0 font-display text-base font-bold text-ink">{c.ccy}</span>
-      <div className="min-w-0 flex-1">
-        <ScoreBalken score={c.score} max={max} />
-      </div>
-      <span className="tabular w-16 shrink-0 text-right text-sm text-ink-soft">
-        {c.score >= 0 ? "+" : ""}{c.score.toFixed(2)}
-      </span>
-      <span className="w-28 shrink-0 text-right">
-        <Badge tone={Q_TON[q] ?? "neutral"} title={`Stärke-Quintil ${q} von 5`}>
-          Q{q} · {Q_TEXT[q] ?? "—"}
-        </Badge>
-      </span>
-    </div>
-  );
-}
 
 /**
  * Was das Ranking für die 28 Paare bedeutet — aber nur dort, wo es etwas
  * bedeutet. Paare ohne Extremwährung tauchen gar nicht erst auf.
  */
-function PaarIdeen({
-  ranking, pairs,
-}: { ranking: RankingCurrency[]; pairs: ScreenerPair[] }) {
+function baueIdeen(ranking: RankingCurrency[], pairs: ScreenerPair[]): PaarIdee[] {
   const qOf = new Map(ranking.map((r) => [r.ccy, r.strength_quintile]));
   const statusOf = new Map(
     pairs.map((p) => [p.pair.replace(/[^A-Za-z]/g, "").toUpperCase(), p]),
   );
 
-  const ideen: {
-    pair: string; seite: "LONG" | "SHORT"; grund: string; live: ScreenerPair | null;
-  }[] = [];
+  const ideen: PaarIdee[] = [];
 
   for (let i = 0; i < G8.length; i++) {
     for (let j = 0; j < G8.length; j++) {
@@ -113,38 +60,13 @@ function PaarIdeen({
         pair: base + quote,
         seite,
         grund: teile.join(" · "),
-        live: statusOf.get(base + quote) ?? null,
+        status: statusOf.get(base + quote)?.status ?? null,
       });
     }
   }
 
   // Erst die Paare, bei denen beide Seiten extrem sind (zwei Gründe), dann der Rest.
-  ideen.sort((a, b) => b.grund.length - a.grund.length || a.pair.localeCompare(b.pair));
-
-  if (ideen.length === 0) {
-    return (
-      <Empty>
-        Diese Woche steht keine Währung im obersten oder untersten Fünftel.
-        Das Ranking gibt damit für kein Paar eine Richtung vor — das ist ein
-        gültiges Ergebnis, kein fehlender Wert.
-      </Empty>
-    );
-  }
-
-  return (
-    <div className="grid gap-2 sm:grid-cols-2">
-      {ideen.map((i) => (
-        <div key={i.pair}
-          className="flex items-center gap-3 rounded-xl bg-sand/60 px-3 py-2.5">
-          <span className="font-display text-sm font-bold text-ink">{i.pair}</span>
-          <Badge tone={i.seite === "LONG" ? "good" : "bad"}>{i.seite}</Badge>
-          <span className="min-w-0 flex-1 truncate text-xs text-ink-muted">{i.grund}</span>
-          {i.live?.status === "HIT" && <Badge tone="accent">GVA-Hit</Badge>}
-          {i.live?.status === "PREPARE" && <Badge tone="warn">nah</Badge>}
-        </div>
-      ))}
-    </div>
-  );
+  return ideen.sort((a, b) => b.grund.length - a.grund.length || a.pair.localeCompare(b.pair));
 }
 
 export default async function RankingSeite() {
@@ -169,7 +91,6 @@ export default async function RankingSeite() {
   ]);
 
   const sortiert = [...currencies].sort((a, b) => b.score - a.score);
-  const max = Math.max(...sortiert.map((c) => Math.abs(c.score)), 0.01);
   const stark = sortiert.filter((c) => c.strength_quintile === 5);
   const schwach = sortiert.filter((c) => c.strength_quintile === 1);
 
@@ -228,16 +149,13 @@ export default async function RankingSeite() {
 
           <Card>
             <CardTitle>Rangliste</CardTitle>
-            <div>
-              {sortiert.map((c, i) => (
-                <WaehrungsZeile key={c.ccy} c={c} platz={i + 1} max={max} />
-              ))}
-            </div>
+            <Rangliste waehrungen={sortiert} />
           </Card>
 
           <Card>
             <CardTitle>Was das für Paare heisst</CardTitle>
-            <PaarIdeen ranking={currencies} pairs={screener?.data ?? []} />
+            <PaarIdeenListe ideen={baueIdeen(currencies, screener?.data ?? [])}
+              waehrungen={currencies} />
           </Card>
 
           <Card flat>
