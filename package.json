@@ -26,16 +26,19 @@
     "check:tagesrueckblick": "npx -y tsx tools/checks/tagesrueckblick.mts",
     "check:abgleich": "npx -y tsx tools/checks/abgleich.mts",
     "check:wochenrueckblick": "npx -y tsx tools/checks/wochenrueckblick.mts",
-    "check:naehrwerte": "npx -y tsx tools/checks/naehrwerte.mts"
+    "check:naehrwerte": "npx -y tsx tools/checks/naehrwerte.mts",
+    "check:muskel-analyse": "npx -y tsx tools/checks/muskel-analyse.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.45.4",
+    "@types/three": "^0.160.0",
     "next": "^15.5.22",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "recharts": "^2.13.3",
     "server-only": "^0.0.1",
+    "three": "^0.160.1",
     "web-push": "^3.6.7"
   },
   "devDependencies": {

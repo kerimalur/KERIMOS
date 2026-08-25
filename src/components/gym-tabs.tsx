@@ -19,6 +19,7 @@ import { cx } from "@/components/ui";
  */
 const TABS = [
   { href: "/gym", label: "Übersicht" },
+  { href: "/gym/analyse", label: "Analyse" },
   { href: "/gym/trainingstage", label: "Tage" },
   { href: "/gym/verlauf", label: "Verlauf" },
   { href: "/gym/garmin", label: "Garmin" },
@@ -28,6 +29,7 @@ const TABS = [
 /** Unterseiten, die unter "Mehr" einsortiert sind. */
 const UNTER_MEHR = [
   "/gym/uebungen", "/gym/fortschritt", "/gym/kalender", "/gym/workout",
+  "/gym/balance",
 ];
 
 /**

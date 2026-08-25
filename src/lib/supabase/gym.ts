@@ -958,3 +958,128 @@ export interface MuskelWert {
   zuletzt: string | null;
   uebungen: MuskelUebung[];
 }
+
+export async function fetchMuskelAnalyse(tage = 28): Promise<MuskelWert[]> {
+  const supabase = createGymClient();
+  if (!supabase) return [];
+
+  const seit = new Date(Date.now() - tage * 86400000).toISOString();
+
+  const [{ data: sessions }, uebungen, gruppen] = await Promise.all([
+    supabase.from("workout_sessions")
+      .select("id, completed_at").not("completed_at", "is", null)
+      .gte("completed_at", seit),
+    fetchExercises(),
+    fetchMuscleGroups(),
+  ]);
+
+  const sessionIds = (sessions ?? []).map((s) => s.id as string);
+  const abschluss = new Map(
+    (sessions ?? []).map((s) => [s.id as string, s.completed_at as string]),
+  );
+  const uebungById = new Map(uebungen.map((u) => [u.id, u]));
+
+  const direkt = new Map<string, number>();
+  const indirekt = new Map<string, number>();
+  const zuletzt = new Map<string, string>();
+  const tageJeGruppe = new Map<string, Set<string>>();
+  // Gruppe -> Übung -> Zählung
+  const jeUebung = new Map<string, Map<string, MuskelUebung>>();
+
+  function merke(gruppe: string, u: GymExercise, wann: string | undefined, haupt: boolean) {
+    const zaehler = haupt ? direkt : indirekt;
+    zaehler.set(gruppe, (zaehler.get(gruppe) ?? 0) + 1);
+
+    if (wann) {
+      const bisher = zuletzt.get(gruppe);
+      if (!bisher || wann > bisher) zuletzt.set(gruppe, wann);
+      // Der TAG, nicht der Zeitstempel: zwei Einheiten am selben Tag sind
+      // ein Trainingstag. Sonst zählt ein Doppeltag als zwei und die
+      // Häufigkeit sieht besser aus, als sie ist.
+      const set = tageJeGruppe.get(gruppe) ?? new Set<string>();
+      set.add(wann.slice(0, 10));
+      tageJeGruppe.set(gruppe, set);
+    }
+
+    const liste = jeUebung.get(gruppe) ?? new Map<string, MuskelUebung>();
+    const eintrag = liste.get(u.id) ?? { id: u.id, name: u.name, direkt: 0, indirekt: 0 };
+    if (haupt) eintrag.direkt++; else eintrag.indirekt++;
+    liste.set(u.id, eintrag);
+    jeUebung.set(gruppe, liste);
+  }
+
+  // In Hunderterblöcken, wie bei fetchMuscleBalance: PostgREST setzt der
+  // Länge eines `in`-Filters eine Grenze, und drei Monate Training reissen
+  // sie sonst irgendwann.
+  for (let i = 0; i < sessionIds.length; i += 100) {
+    const { data: logs } = await supabase.from("exercise_logs")
+      .select("exercise_id, workout_session_id")
+      .in("workout_session_id", sessionIds.slice(i, i + 100));
+
+    for (const l of logs ?? []) {
+      const u = uebungById.get(l.exercise_id as string);
+      if (!u) continue;
+      const wann = abschluss.get(l.workout_session_id as string);
+
+      merke(u.primary_muscle_id, u, wann, true);
+      // Eine Übung kann dieselbe Gruppe nicht zweimal zählen: stünde die
+      // Hauptgruppe versehentlich auch in den Nebenmuskeln, gäbe es 1.5
+      // Sätze für einen.
+      for (const s of new Set(u.secondary_muscle_ids)) {
+        if (s && s !== u.primary_muscle_id) merke(s, u, wann, false);
+      }
+    }
+  }
+
+  return gruppen.map((g) => ({
+    id: g.id,
+    name: g.name,
+    direkt: direkt.get(g.id) ?? 0,
+    indirekt: indirekt.get(g.id) ?? 0,
+    tage: tageJeGruppe.get(g.id)?.size ?? 0,
+    zuletzt: zuletzt.get(g.id) ?? null,
+    uebungen: [...(jeUebung.get(g.id)?.values() ?? [])]
+      .sort((a, b) => (b.direkt + b.indirekt) - (a.direkt + a.indirekt)),
+  }));
+}
+
+/**
+ * Eigene Grenzen je Muskelgruppe, als JSON in `gym_settings`.
+ *
+ * Eigene Tabelle wäre sauberer und hier trotzdem falsch: es sind elf Zeilen
+ * für einen Nutzer, die sich fast nie ändern. Eine Spalte auf der Zeile, die
+ * es schon gibt, spart Tabelle, Policy und einen zweiten Roundtrip.
+ */
+export type MuskelGrenzen = Record<string, { min: number; max: number }>;
+
+export interface GrenzenStand {
+  grenzen: MuskelGrenzen;
+  /** True, wenn die Spalte noch fehlt — dann zeigt die Seite die SQL. */
+  spalteFehlt: boolean;
+}
+
+export async function fetchMuskelGrenzen(): Promise<GrenzenStand> {
+  const supabase = createGymClient();
+  if (!supabase) return { grenzen: {}, spalteFehlt: false };
+
+  const { data, error } = await supabase.from("gym_settings")
+    .select("muscle_targets").limit(1).maybeSingle();
+
+  // „Spalte fehlt" von „nichts gesetzt" trennen: sonst steht der
+  // Einrichtungshinweis für immer da, auch wenn alles bereit ist — und man
+  // lernt, ihn zu überblättern.
+  if (error) {
+    const fehlt = error.code === "42703" || error.code === "PGRST204"
+      || /column .* does not exist/i.test(error.message);
+    return { grenzen: {}, spalteFehlt: fehlt };
+  }
+
+  const w = (data as { muscle_targets?: MuskelGrenzen } | null)?.muscle_targets;
+  return {
+    grenzen: w && typeof w === "object" ? w : {},
+    spalteFehlt: false,
+  };
+}
+
+export const MUSKEL_GRENZEN_SQL = `alter table gym_settings
+  add column if not exists muscle_targets jsonb not null default '{}'::jsonb;`;
