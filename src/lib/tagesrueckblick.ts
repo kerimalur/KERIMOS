@@ -21,12 +21,18 @@ export const LEER: Omit<Rueckblick, "datum"> = {
   erreicht: "", liegengeblieben: "", morgen: "",
 };
 
+/**
+ * Was noch frei geschrieben wird.
+ *
+ * „Was habe ich erreicht?" ist seit dem 24.08.2026 raus. Die Frage bekam
+ * immer eine Antwort — abends findet man irgendetwas, das nach Ertrag
+ * aussieht — und prüfte damit nichts. An ihrer Stelle steht der **Abgleich**
+ * (`lib/abgleich.ts`): die Zeilen von gestern Abend, einzeln abgefragt.
+ *
+ * Das Feld `erreicht` bleibt in der Datenbank, damit die alten Einträge
+ * lesbar bleiben. Gefragt wird danach nicht mehr.
+ */
 export const FRAGEN = [
-  {
-    feld: "erreicht" as const,
-    titel: "Was habe ich erreicht?",
-    hinweis: "Auch Kleines — sechs Backtest-Trades zählen.",
-  },
   {
     feld: "liegengeblieben" as const,
     titel: "Was ist liegengeblieben?",
@@ -44,10 +50,11 @@ export function hatInhalt(r: Omit<Rueckblick, "datum">): boolean {
   return [r.erreicht, r.liegengeblieben, r.morgen].some((t) => t.trim().length > 0);
 }
 
-/** Wie vollständig — für die Anzeige „1 von 3 beantwortet". */
+/** Wie viele Fragen beantwortet sind — für die Anzeige „1 von 2". */
+export const ANZAHL_FRAGEN = FRAGEN.length;
+
 export function beantwortet(r: Omit<Rueckblick, "datum">): number {
-  return [r.erreicht, r.liegengeblieben, r.morgen]
-    .filter((t) => t.trim().length > 0).length;
+  return FRAGEN.filter((f) => r[f.feld].trim().length > 0).length;
 }
 
 /**
@@ -75,9 +82,11 @@ export function ausFormular(
 export function zusammenfassung(r: Rueckblick | null): string {
   if (!r || !hatInhalt(r)) return "Heute noch nichts festgehalten.";
   const n = beantwortet(r);
-  const erste = r.erreicht.trim() || r.morgen.trim() || r.liegengeblieben.trim();
+  // Reihenfolge: erst der Vorsatz für morgen, dann was liegenblieb. `erreicht`
+  // ist Altbestand und wird nur noch gezeigt, wenn sonst nichts dasteht.
+  const erste = r.morgen.trim() || r.liegengeblieben.trim() || r.erreicht.trim();
   const kurz = erste.length > 80 ? `${erste.slice(0, 77)}…` : erste;
-  return `${n} von 3 beantwortet · ${kurz}`;
+  return `${n} von ${ANZAHL_FRAGEN} beantwortet · ${kurz}`;
 }
 
 /**

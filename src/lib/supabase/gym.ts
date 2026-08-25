@@ -66,6 +66,13 @@ export interface GymExercise {
   description: string | null;
   primary_muscle_id: string;
   muscleName: string;
+  /**
+   * Muskelgruppen, die mitarbeiten, ohne die Hauptgruppe zu sein — beim
+   * Bankdrücken Trizeps und Schultern. Stand seit jeher in der Datenbank und
+   * wurde nirgends gelesen; die Analyse-Seite braucht sie, sonst sehen Arme
+   * und Schultern unterversorgt aus, obwohl sie bei jedem Drücken mitgehen.
+   */
+  secondary_muscle_ids: string[];
   equipment_needed: string | null;
   is_cardio: boolean;
 }
@@ -111,7 +118,7 @@ export const fetchExercises = unstable_cache(
 
   const [{ data: ex }, gruppen] = await Promise.all([
     supabase.from("exercises")
-      .select("id, name, description, primary_muscle_id, equipment_needed, is_cardio")
+      .select("id, name, description, primary_muscle_id, secondary_muscle_ids, equipment_needed, is_cardio")
       .order("name"),
     fetchMuscleGroups(),
   ]);
@@ -123,11 +130,13 @@ export const fetchExercises = unstable_cache(
     description: (e.description as string | null) ?? null,
     primary_muscle_id: e.primary_muscle_id as string,
     muscleName: namen.get(e.primary_muscle_id as string) ?? "Ohne Gruppe",
+    secondary_muscle_ids: Array.isArray(e.secondary_muscle_ids)
+      ? (e.secondary_muscle_ids as string[]) : [],
     equipment_needed: (e.equipment_needed as string | null) ?? null,
     is_cardio: Boolean(e.is_cardio),
   }));
   },
-  ["gym-exercises"],
+  ["gym-exercises-v2"],
   { revalidate: STAMMDATEN_TTL, tags: ["gym-stammdaten"] },
 );
 
@@ -911,4 +920,41 @@ export function buildSeries(rows: GymTopSet[]): Record<string, ExerciseSeries[]>
   }
 
   return result;
+}
+
+
+/* ------------------------------------------------------- Muskel-Analyse */
+
+/**
+ * Wie oft welcher Muskel drankam — die Grundlage der Analyse-Seite.
+ *
+ * Der Unterschied zu `fetchMuscleBalance`: dort geht es um das Verhältnis
+ * zwischen Gegenspielern, hier um die Menge je Gruppe, die Trainingstage und
+ * die Übungen dahinter. Und es zählt **Nebenmuskeln mit**: ein Satz
+ * Bankdrücken ist ein Satz Brust und ein halber Satz Trizeps. Ohne das sehen
+ * Arme und Schultern unterversorgt aus, obwohl sie bei jedem Drücken mitgehen
+ * — und man trainiert nach einer Zahl nach, die zu klein ist.
+ *
+ * Gezählt werden Zeilen in `exercise_logs`, also Sätze. Nicht Gewicht: ein
+ * Satz Bizeps und ein Satz Kniebeugen belasten unterschiedlich viel, kosten
+ * den Muskel aber je einen Reiz.
+ */
+export interface MuskelUebung {
+  id: string;
+  name: string;
+  /** Sätze, in denen diese Gruppe der Hauptmuskel war. */
+  direkt: number;
+  /** Sätze, in denen sie nur mitgearbeitet hat. */
+  indirekt: number;
+}
+
+export interface MuskelWert {
+  id: string;
+  name: string;
+  direkt: number;
+  indirekt: number;
+  /** Verschiedene Tage, an denen die Gruppe drankam — direkt oder indirekt. */
+  tage: number;
+  zuletzt: string | null;
+  uebungen: MuskelUebung[];
 }

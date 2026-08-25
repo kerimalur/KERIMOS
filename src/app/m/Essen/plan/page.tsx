@@ -1,12 +1,8 @@
 import Link from "next/link";
-import { PlanDay } from "@/components/plan-day";
-import { Card, CardTitle, Empty, cx } from "@/components/ui";
+import { redirect } from "next/navigation";
+import { Card, CardTitle, cx } from "@/components/ui";
 import { TagMenue } from "@/components/essen/tag-menue";
-import { ladeBudget } from "@/lib/supabase/essen-bonus-db";
-import {
-  fetchDayView, fetchRangeTotals, fetchRangeMeals, fetchFoods, fetchRecipes,
-  fetchDayTemplates, fetchPrepStock,
-} from "@/lib/supabase/menu";
+import { fetchRangeTotals, fetchRangeMeals } from "@/lib/supabase/menu";
 import { heuteISO, addDays, weekStart, dayNameShort, toISODate } from "@/lib/time";
 import { dateLabel } from "@/lib/format";
 
@@ -21,13 +17,14 @@ export default async function EssenPlanPage({
   searchParams: Promise<{ ansicht?: string; d?: string }>;
 }) {
   const sp = await searchParams;
+  // Standard ist die Woche. Vorher war es der Tag — den zeigt jetzt die
+  // Heute-Seite, und ein Tab, der sofort woanders hin umleitet, wäre kein Tab.
   const ansicht: Ansicht =
-    sp.ansicht === "woche" || sp.ansicht === "monat" ? sp.ansicht : "tag";
+    sp.ansicht === "tag" || sp.ansicht === "monat" ? sp.ansicht : "woche";
   const datum = ISO.test(sp.d ?? "") ? sp.d! : heuteISO();
   const heute = heuteISO();
 
   const tabs: { key: Ansicht; label: string }[] = [
-    { key: "tag", label: "Tag" },
     { key: "woche", label: "Woche" },
     { key: "monat", label: "Monat" },
   ];
@@ -50,53 +47,11 @@ export default async function EssenPlanPage({
     </div>
   );
 
-  /* ------------------------------- Tag ------------------------------- */
-  if (ansicht === "tag") {
-    // ladeBudget statt einer eigenen Rechnung: es ist dieselbe Funktion, die
-    // die Bonus-Karte unter „Heute" benutzt. Zwei Stellen, die das Tagesziel
-    // bestimmen, hiessen zwei Zahlen — und genau das stand vorher da.
-    const [tag, foods, rezepte, vorlagen, prepBestand, bonus] = await Promise.all([
-      fetchDayView(datum), fetchFoods(), fetchRecipes(), fetchDayTemplates(),
-      fetchPrepStock(), ladeBudget(datum),
-    ]);
-    const wochentag = new Date(datum + "T12:00:00")
-      .toLocaleDateString("de-CH", { weekday: "long" });
-
-    return (
-      <>
-        {umschalter}
-
-        <div className="flex items-center justify-between gap-3">
-          <Link href={`/m/Essen/plan?ansicht=tag&d=${addDays(datum, -1)}`}
-            className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-soft transition hover:border-line-strong">
-            ←
-          </Link>
-          <div className="text-center">
-            <div className="font-medium text-ink">{wochentag}</div>
-            <div className="text-xs text-ink-muted">{dateLabel(datum)}</div>
-          </div>
-          <Link href={`/m/Essen/plan?ansicht=tag&d=${addDays(datum, 1)}`}
-            className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-soft transition hover:border-line-strong">
-            →
-          </Link>
-        </div>
-
-        {!tag ? (
-          <Empty>Menü-Datenbank nicht verbunden.</Empty>
-        ) : (
-          <PlanDay tag={tag} foods={foods} vorlagen={vorlagen} prepBestand={prepBestand}
-            budget={bonus.budget}
-            rezepte={rezepte.map((r) => ({
-              id: r.id, name: r.name, meal_type: r.meal_type,
-              items: r.items.map((i) => ({
-                food_id: i.food_id, food_name: i.food_name,
-                amount_per_portion: i.amount_per_portion, unit: i.unit,
-              })),
-            }))} />
-        )}
-      </>
-    );
-  }
+  // Die Tagesansicht lebt seit dem 24.08.2026 auf der Heute-Seite: dort
+  // stehen die Ringe darüber, und über die Pfeile ist sie für jeden Tag
+  // zuständig. Zwei Tagesansichten hiessen zwei Stellen zum Pflegen — und
+  // alte Lesezeichen sollen trotzdem ankommen, deshalb Umleitung statt 404.
+  if (ansicht === "tag") redirect(`/m/Essen?d=${datum}`);
 
   /* ------------------------------ Woche ------------------------------ */
   if (ansicht === "woche") {
@@ -148,7 +103,7 @@ export default async function EssenPlanPage({
                     Inhalt, nicht als Klammer darum. Ein Knopf innerhalb eines
                     Links wäre ungültiges Markup, und ein Tipp auf die drei
                     Pünktchen würde zusätzlich navigieren. */}
-                <Link href={`/m/Essen/plan?ansicht=tag&d=${d}`}
+                <Link href={`/m/Essen?d=${d}`}
                   aria-label={`${dayNameShort(d)} ${Number(d.slice(8, 10))}. öffnen`}
                   className="absolute inset-0 rounded-xl" />
 
@@ -228,7 +183,7 @@ export default async function EssenPlanPage({
             const teilweise = kcal > 0 && !voll;
             return (
               <div key={iso} className="relative">
-                <Link href={`/m/Essen/plan?ansicht=tag&d=${iso}`}
+                <Link href={`/m/Essen?d=${iso}`}
                   className={cx(
                     "grid aspect-square place-items-center rounded-lg text-xs transition",
                     iso === heute ? "bg-accent text-ink-on"

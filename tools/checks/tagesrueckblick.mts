@@ -17,7 +17,12 @@ check("nur Leerzeichen zaehlen nicht",
   hatInhalt({ erreicht: "   ", liegengeblieben: "", morgen: "" }), false);
 check("eine Antwort reicht",
   hatInhalt({ ...LEER, morgen: "Backtest" }), true);
-check("Zaehlung", beantwortet({ erreicht: "a", liegengeblieben: "", morgen: "c" }), 2);
+// Seit dem 24.08.2026 wird nach `erreicht` nicht mehr gefragt - der Abgleich
+// hat die Frage ersetzt. Gezaehlt werden nur noch die zwei offenen Fragen.
+check("erreicht zaehlt nicht mehr mit",
+  beantwortet({ erreicht: "a", liegengeblieben: "", morgen: "c" }), 1);
+check("beide offenen Fragen",
+  beantwortet({ erreicht: "", liegengeblieben: "b", morgen: "c" }), 2);
 
 const f = (e: Record<string, string>) => ausFormular((n) => (n in e ? e[n] : null));
 check("fehlende Felder werden leer", f({}), LEER);
@@ -27,15 +32,18 @@ check("gekuerzt", f({ morgen: "x".repeat(900) }).morgen.length, MAX_ZEICHEN);
 check("ohne Rueckblick", zusammenfassung(null), "Heute noch nichts festgehalten.");
 check("leerer Rueckblick zaehlt als nichts",
   zusammenfassung({ datum: "2026-08-16", ...LEER }), "Heute noch nichts festgehalten.");
-check("Zusammenfassung nennt Zahl und Text",
+check("Zusammenfassung nennt Zahl und Vorsatz",
   zusammenfassung({ datum: "2026-08-16", erreicht: "10 km gelaufen", liegengeblieben: "", morgen: "Backtest" }),
-  "2 von 3 beantwortet · 10 km gelaufen");
+  "1 von 2 beantwortet · Backtest");
 check("langer Text wird gekuerzt",
   zusammenfassung({ datum: "2026-08-16", erreicht: "y".repeat(200), liegengeblieben: "", morgen: "" })
     .endsWith("…"), true);
-check("faellt auf morgen zurueck, wenn erreicht leer ist",
-  zusammenfassung({ datum: "2026-08-16", erreicht: "", liegengeblieben: "", morgen: "Backtest" }),
-  "1 von 3 beantwortet · Backtest");
+check("faellt auf liegengeblieben zurueck, wenn morgen leer ist",
+  zusammenfassung({ datum: "2026-08-16", erreicht: "", liegengeblieben: "Journal", morgen: "" }),
+  "1 von 2 beantwortet · Journal");
+check("Altbestand bleibt lesbar, wenn sonst nichts dasteht",
+  zusammenfassung({ datum: "2026-08-16", erreicht: "10 km gelaufen", liegengeblieben: "", morgen: "" }),
+  "0 von 2 beantwortet · 10 km gelaufen");
 
 // Serie
 check("keine Tage", serie([], "2026-08-16"), 0);

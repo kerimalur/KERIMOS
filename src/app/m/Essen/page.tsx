@@ -1,141 +1,135 @@
 import Link from "next/link";
-import { Card, Empty, cx } from "@/components/ui";
-import { Launcher } from "@/components/launcher";
-import { createClient } from "@/lib/supabase/server";
-import {
-  fetchEssenOverview, fetchEssenWoche, MEAL_LABEL, type EssenTag,
-} from "@/lib/supabase/menu";
-import { EssenWhiteboard } from "@/components/essen-whiteboard";
+import { Card, Empty } from "@/components/ui";
+import { PlanDay } from "@/components/plan-day";
+import { NaehrwertRinge } from "@/components/essen/naehrwert-ringe";
 import { BonusKarte } from "@/components/essen/bonus-karte";
-import { weekStart, heuteISO } from "@/lib/time";
-import type { NavLink } from "@/lib/types";
+import { ladeBudget } from "@/lib/supabase/essen-bonus-db";
+import { zieleAus } from "@/lib/naehrwerte";
+import {
+  fetchDayView, fetchFoods, fetchRecipes, fetchDayTemplates,
+  fetchPrepStock, fetchPrepStand, fetchMenuSettings, menuConfigured,
+} from "@/lib/supabase/menu";
+import { heuteISO, addDays } from "@/lib/time";
+import { dateLabel } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
-/** "300 g Reis" — Menge weggelassen, wenn sie fehlt. */
-function zutatText(i: { name: string; amount: number | null; unit: string | null }) {
-  if (i.amount === null || Number(i.amount) === 0) return i.name;
-  const m = Number(i.amount);
-  const wert = Number.isInteger(m) ? String(m) : m.toFixed(1);
-  return `${wert} ${i.unit ?? ""} ${i.name}`.replace(/\s+/g, " ").trim();
-}
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
-function TagSpalte({ titel, tag, mitZutaten }: {
-  titel: string; tag: EssenTag | null; mitZutaten: boolean;
+/**
+ * Der Tag im Essen-Bereich — das Tagebuch.
+ *
+ * **Umgebaut am 24.08.2026.** Vorher stand hier das weisse Wochen-Board, und
+ * ganz unten die Kachelleiste mit Suchfeld. Beides ist raus, und zwar aus dem
+ * einfachsten Grund, den Kerim selbst genannt hat: er landet beim Öffnen
+ * jedes Mal unten bei einer Suche, die ihn dorthin bringen soll, wo er schon
+ * ist. Die Wochenansicht gibt es unter `Plan → Woche`, die Verwaltung unter
+ * `Mehr`.
+ *
+ * Was stattdessen hier steht: die Ringe (gegessen gegen Ziel), dann der Tag
+ * selbst mit seinen Mahlzeiten-Slots zum Abhaken und Ergänzen. Über die
+ * Pfeile oben ist derselbe Bildschirm auch für morgen zuständig — deshalb
+ * braucht `Plan → Tag` nicht mehr zu existieren und leitet hierher um.
+ *
+ * Die Kalorienzahl im Ring kommt aus `ladeBudget`, also inklusive
+ * Aktivitätsbonus. Sie MUSS aus derselben Quelle kommen wie die Bonus-Karte
+ * darunter — zwei Stellen, die das Tagesziel bestimmen, hiessen schon einmal
+ * zwei verschiedene Zahlen auf einem Bildschirm.
+ */
+export default async function EssenHeutePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ d?: string }>;
 }) {
-  const offen = tag?.meals.filter((m) => !m.eaten) ?? [];
-  const offenKcal = offen.reduce((s, m) => s + Number(m.kcal_total ?? 0), 0);
+  if (!menuConfigured()) return <Empty>Menü-Datenbank nicht verbunden.</Empty>;
 
-  return (
-    <div className="min-w-0">
-      <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted">
-        {titel}
-      </div>
+  const sp = await searchParams;
+  const heute = heuteISO();
+  const datum = ISO.test(sp.d ?? "") ? sp.d! : heute;
 
-      {!tag ? (
-        <p className="mt-2 text-sm text-ink-muted">Nichts geplant.</p>
-      ) : (
-        <>
-          <ul className="mt-2 space-y-2">
-            {tag.meals.map((m, i) => (
-              <li key={i}>
-                <div className="flex items-baseline gap-2 text-sm">
-                  <span className="w-16 shrink-0 text-xs text-ink-muted">
-                    {MEAL_LABEL[m.meal_type] ?? m.meal_type}
-                  </span>
-                  <span className={cx("truncate",
-                    m.eaten ? "text-ink-faint line-through" : "text-ink")}>
-                    {m.name}
-                  </span>
-                  {m.eaten && <span className="text-xs text-good">✓</span>}
-                </div>
+  const [tag, foods, rezepte, vorlagen, prepBestand, prepStand, settings, bonus] =
+    await Promise.all([
+      fetchDayView(datum), fetchFoods(), fetchRecipes(), fetchDayTemplates(),
+      fetchPrepStock(), fetchPrepStand(), fetchMenuSettings(), ladeBudget(datum),
+    ]);
 
-                {mitZutaten && m.items && m.items.length > 0 && (
-                  <ul className="ml-[4.5rem] mt-0.5 space-y-0.5">
-                    {m.items.map((it, j) => (
-                      <li key={j} className={cx("text-xs",
-                        it.eaten || m.eaten
-                          ? "text-ink-faint line-through" : "text-ink-muted")}>
-                        {zutatText(it)}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </li>
-            ))}
-          </ul>
+  if (!tag) return <Empty>Menü-Datenbank nicht verbunden.</Empty>;
 
-          <p className="tabular mt-2 text-xs text-ink-muted">
-            {Math.round(tag.kcal)} kcal · {Math.round(tag.protein)} g Protein
-            {offen.length > 0 && offen.length < tag.meals.length && (
-              <span className="text-ink-soft">
-                {" "}· noch {offen.length} offen
-                {offenKcal > 0 ? ` (${Math.round(offenKcal)} kcal)` : ""}
-              </span>
-            )}
-          </p>
-        </>
-      )}
-    </div>
-  );
-}
-
-export default async function EssenHeutePage() {
-  const supabase = await createClient();
-  const [uebersicht, woche, { data: linkRows }] = await Promise.all([
-    fetchEssenOverview(),
-    fetchEssenWoche(weekStart(heuteISO())),
-    supabase.from("links").select("*").eq("archived", false)
-      .eq("group_name", "Essen").order("sort_order"),
-  ]);
-
-  const links = (linkRows ?? []) as NavLink[];
-
-  if (!uebersicht) {
-    return <Empty>Menü-Datenbank nicht verbunden.</Empty>;
-  }
+  const ziele = zieleAus(settings, bonus.budget.gesamt);
+  const wochentag = new Date(datum + "T12:00:00")
+    .toLocaleDateString("de-CH", { weekday: "long" });
 
   return (
     <>
-      {/* Das Board zuerst: der Blick auf die ganze Woche ist der Grund,
-          warum man diese Seite öffnet. Heute und morgen stehen darunter,
-          weil sie im Board schon enthalten sind - nur ohne Zutaten. */}
-      {woche && <EssenWhiteboard woche={woche} />}
+      {/* Datum oben, nicht unten: was man liest, gilt für einen Tag, und
+          welcher das ist, muss vor allem anderen dastehen. */}
+      <div className="flex items-center justify-between gap-3">
+        <Link href={`/m/Essen?d=${addDays(datum, -1)}`}
+          className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-soft transition hover:border-line-strong">
+          ←
+        </Link>
+        <div className="text-center">
+          <div className="font-medium text-ink">
+            {datum === heute ? "Heute" : wochentag}
+          </div>
+          <div className="text-xs text-ink-muted">{dateLabel(datum)}</div>
+        </div>
+        <Link href={`/m/Essen?d=${addDays(datum, 1)}`}
+          className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-soft transition hover:border-line-strong">
+          →
+        </Link>
+      </div>
+
+      <NaehrwertRinge ziele={ziele}
+        gegessen={{
+          kcal: tag.gegessenKcal, protein: tag.gegessenProtein,
+          kh: tag.gegessenKh, fett: tag.gegessenFett,
+        }}
+        geplant={{ kcal: tag.kcal, protein: tag.protein, kh: tag.kh, fett: tag.fett }} />
 
       {/* Wie viel darf ich heute essen? Nach einem langen Lauf ist die
-          Antwort eine andere als sonst - deshalb steht sie hier und nicht
-          nur als feste Zahl in den Einstellungen. */}
-      <BonusKarte datum={heuteISO()} />
+          Antwort eine andere als sonst. */}
+      <BonusKarte datum={datum} />
 
-      <Card>
-        <div className="grid gap-5 sm:grid-cols-2">
-          <TagSpalte titel="Heute" tag={uebersicht.heute} mitZutaten />
-          <TagSpalte titel="Morgen" tag={uebersicht.morgen} mitZutaten={false} />
-        </div>
+      <PlanDay tag={tag} foods={foods} vorlagen={vorlagen} prepBestand={prepBestand}
+        budget={bonus.budget}
+        rezepte={rezepte.map((r) => ({
+          id: r.id, name: r.name, meal_type: r.meal_type,
+          items: r.items.map((i) => ({
+            food_id: i.food_id, food_name: i.food_name,
+            amount_per_portion: i.amount_per_portion, unit: i.unit,
+          })),
+        }))} />
 
-        <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1.5 border-t border-line/70 pt-3 text-xs">
-          <Link href="/m/Essen/einkauf"
-            className={uebersicht.offeneEinkaeufe > 0 ? "text-ink-soft" : "text-ink-faint"}>
-            Einkaufsliste: {uebersicht.offeneEinkaeufe === 0
-              ? "nichts offen"
-              : `${uebersicht.offeneEinkaeufe} offen`}
-          </Link>
-          <Link href="/m/Essen/plan?ansicht=woche"
-            className={uebersicht.ungeplant.length > 0 ? "text-warn" : "text-ink-faint"}>
-            Nächste 7 Tage: {uebersicht.ungeplant.length === 0
-              ? "alles geplant"
-              : `${uebersicht.ungeplant.length} ungeplant (${uebersicht.ungeplant.join(", ")})`}
-          </Link>
-          {uebersicht.schnitt && (
-            <span className="tabular text-ink-faint">
-              Ø letzte {uebersicht.schnitt.tage} Tage: {Math.round(uebersicht.schnitt.kcal)} kcal /{" "}
-              {uebersicht.ziele.kcal}
+      {/* Der Kühlschrank-Stand stand bis zum 24.08. im Prep-Tab. Der Tab ist
+          weg — Tage kopieren erledigt das Planen, und die Rezeptideen stehen
+          unter Rezepte. Diese eine Zeile war das Nützliche daran und bleibt. */}
+      <Card flat>
+        <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs">
+          {prepStand && (
+            <span className="text-ink-soft">
+              {prepStand.tage === null
+                ? "Keine Boxen einem Tag zugeordnet."
+                : prepStand.tage === 0
+                  ? "Die letzte Box ist für heute."
+                  : `Boxen reichen noch ${prepStand.tage} ${prepStand.tage === 1 ? "Tag" : "Tage"}`}
             </span>
           )}
+          <Link href="/m/Essen/einkauf"
+            className={prepStand && prepStand.offeneEinkaeufe > 0 ? "text-ink-soft" : "text-ink-faint"}>
+            Einkaufsliste: {!prepStand || prepStand.offeneEinkaeufe === 0
+              ? "nichts offen" : `${prepStand.offeneEinkaeufe} offen`}
+          </Link>
+          <Link href="/m/Essen/plan?ansicht=woche"
+            className={prepStand && prepStand.ungeplant > 0 ? "text-warn" : "text-ink-faint"}>
+            Nächste 7 Tage: {!prepStand || prepStand.ungeplant === 0
+              ? "alles geplant" : `${prepStand.ungeplant} ungeplant`}
+          </Link>
+          <Link href="/m/Essen/kochen" className="text-ink-faint hover:text-ink-muted">
+            Kochliste →
+          </Link>
         </div>
       </Card>
-
-      {links.length > 0 && <Launcher links={links} />}
     </>
   );
 }

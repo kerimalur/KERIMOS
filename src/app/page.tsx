@@ -14,8 +14,9 @@ import { seedLinks } from "@/lib/actions";
 import { fetchModusKennzahlen } from "@/lib/modus-kennzahlen";
 import { fetchWeeklyGoals } from "@/lib/weekly-goals";
 import { ladeWochenziele } from "@/lib/wochenziele";
+import { wochenpaar } from "@/lib/wochenrueckblick";
 import { MODE_ORDER, MODE_DIRECT, MODE_AUS } from "@/lib/modes";
-import { addDays, weekStart as toWeekStart, heuteISO, heuteWochentag } from "@/lib/time";
+import { weekStart as toWeekStart, heuteISO, heuteWochentag } from "@/lib/time";
 import type { NavLink } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -47,7 +48,11 @@ export default async function Start() {
   // dieselben Möglichkeiten haben wie der Rechner. /heute bleibt als
   // schlanke Erfassungsansicht erreichbar.
   const supabase = await createClient();
-  const vorwoche = addDays(toWeekStart(heuteISO()), -7);
+  // Welche Woche der Rückblick gerade meint, entscheidet `wochenpaar()`:
+  // am Wochenende die endende Woche, Mo-Fr die davor. Vorher stand hier fest
+  // „die Vorwoche" — sonntags war das die falsche und der Hinweis zeigte auf
+  // ein Formular, das gar nicht dran war.
+  const faelligeWoche = wochenpaar(heuteISO()).rueckblick;
 
   const laufendeWoche = toWeekStart(heuteISO());
 
@@ -56,7 +61,7 @@ export default async function Start() {
   ] = await Promise.all([
     supabase.from("links").select("*").eq("archived", false)
       .order("group_name").order("sort_order"),
-    supabase.from("weekly_reviews").select("id").eq("week_start", vorwoche).maybeSingle(),
+    supabase.from("weekly_reviews").select("id").eq("week_start", faelligeWoche).maybeSingle(),
     fetchModusKennzahlen(),
     fetchWeeklyGoals(),
     ladeWochenziele(laufendeWoche),
@@ -83,7 +88,9 @@ export default async function Start() {
 
   // Sonntag (0) und Montag (1): sanft erinnern, solange der Rückblick fehlt
   const wochentag = heuteWochentag();
-  const reviewFehlt = !lastReview && (wochentag === 0 || wochentag === 1);
+  // Samstag bis Dienstag. Danach bleibt das Nachholfenster offen, aber ein
+  // Banner, das die ganze Woche steht, liest niemand mehr.
+  const reviewFehlt = !lastReview && [6, 0, 1, 2].includes(wochentag);
 
   const gruppen = new Map<string, NavLink[]>();
   for (const l of links) {
@@ -135,11 +142,11 @@ export default async function Start() {
         <GewichtHeute />
 
         {reviewFehlt && (
-          <Link href={`/rueckblick?w=${vorwoche}`}
+          <Link href="/rueckblick"
             className="block rounded-2xl border border-warn/30 bg-warn-tint px-5 py-3
                        text-sm text-ink-soft transition hover:border-warn/60">
-            Der Wochenrückblick für letzte Woche fehlt noch — 5 Minuten, die Felder
-            sind schon vorbefüllt. →
+            Der Wochenrückblick fehlt noch — fünf Minuten, und dabei stehen
+            gleich die Ziele für die nächste Woche. →
           </Link>
         )}
 

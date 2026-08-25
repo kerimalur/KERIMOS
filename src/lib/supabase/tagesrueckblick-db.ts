@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { LEER, type Rueckblick } from "@/lib/tagesrueckblick";
+import { haengeAn } from "@/lib/abgleich";
 
 /**
  * Der Tagesrückblick in der KerimOS-Hauptdatenbank.
@@ -155,3 +156,85 @@ export async function schalteErledigt(
 /** SQL für die Spalte — steht zum Kopieren auf der Startseite. */
 export const ERLEDIGT_SQL = `alter table day_review
   add column if not exists tomorrow_done text[] not null default '{}';`;
+
+
+/* ------------------------------------------------- Gründe und Verschieben */
+
+/**
+ * Warum eine Zeile NICHT erledigt wurde — Zeilentext → Grund.
+ *
+ * Gleiche Überlegung wie bei `tomorrow_done`: der Schlüssel ist der Text der
+ * Zeile, nicht ihre Nummer. Schiebt Kerim abends eine Zeile dazwischen,
+ * verrutschen Nummern und die Gründe hingen an den falschen Vorsätzen.
+ */
+export interface Gruende {
+  gruende: Record<string, string>;
+  /** True, wenn die Spalte `tomorrow_reasons` noch fehlt. */
+  spalteFehlt: boolean;
+}
+
+export async function ladeGruende(datum: string): Promise<Gruende> {
+  const db = await createClient();
+  const { data, error } = await db.from(TABELLE)
+    .select("tomorrow_reasons").eq("date", datum).maybeSingle();
+
+  // Fehlende Spalte von „nichts eingetragen" unterscheiden: sonst sieht ein
+  // vergessener Migrationsschritt aus wie ein leerer Abend, und der Abgleich
+  // vergisst lautlos jeden Grund, den Kerim eintippt.
+  if (error) {
+    const fehlt = error.code === "42703" || error.code === "PGRST204"
+      || /column .* does not exist/i.test(error.message);
+    return { gruende: {}, spalteFehlt: fehlt };
+  }
+  if (!data) return { gruende: {}, spalteFehlt: false };
+
+  const w = (data as { tomorrow_reasons: Record<string, string> | null }).tomorrow_reasons;
+  return { gruende: w && typeof w === "object" ? w : {}, spalteFehlt: false };
+}
+
+/** Grund setzen. Leerer Grund heisst: Eintrag weg, die Zeile ist wieder offen. */
+export async function setzeGrund(
+  datum: string, zeile: string, grund: string,
+): Promise<string | null> {
+  const { gruende: vorher } = await ladeGruende(datum);
+  const nachher = { ...vorher };
+  if (grund.trim()) nachher[zeile] = grund.slice(0, 200);
+  else delete nachher[zeile];
+
+  const db = await createClient();
+  const { error } = await db.from(TABELLE).upsert({
+    date: datum, tomorrow_reasons: nachher, updated_at: new Date().toISOString(),
+  }, { onConflict: "date" });
+
+  if (!error) return null;
+  if (istTabelleFehlt(error.code, error.message)) {
+    return "Die Spalte tomorrow_reasons fehlt noch — die SQL steht auf der Rückblick-Seite.";
+  }
+  return `Speichern fehlgeschlagen: ${error.message}`;
+}
+
+/**
+ * Eine Zeile in den Vorsatz eines anderen Tages schreiben.
+ *
+ * „Auf morgen schieben" heisst wörtlich das: die Zeile landet im Feld
+ * „Was ist morgen das Wichtigste?" von HEUTE und steht damit morgen früh
+ * wieder auf der Startseite. Ein Verschieben, das nur einen Status setzt,
+ * würde die Absicht aus dem Blick nehmen — genau das soll es nicht.
+ */
+export async function schiebeInVorsatz(
+  zielDatum: string, zeile: string,
+): Promise<string | null> {
+  const { rueckblick } = await ladeRueckblick(zielDatum);
+  const neu = haengeAn(rueckblick?.morgen ?? "", zeile);
+  if (neu === (rueckblick?.morgen ?? "")) return null;
+
+  return speichereRueckblick(zielDatum, {
+    erreicht: rueckblick?.erreicht ?? "",
+    liegengeblieben: rueckblick?.liegengeblieben ?? "",
+    morgen: neu,
+  });
+}
+
+/** SQL für die Grund-Spalte — steht zum Kopieren auf der Rückblick-Seite. */
+export const GRUENDE_SQL = `alter table day_review
+  add column if not exists tomorrow_reasons jsonb not null default '{}'::jsonb;`;

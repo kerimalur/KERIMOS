@@ -9,11 +9,17 @@ import { cx } from "@/components/ui";
  * Auf dem Handy klebt sie unten am Rand - dort liegt der Daumen. Am Computer
  * sitzt sie oben als normale Reiterzeile.
  */
+/**
+ * „Prep" ist am 24.08.2026 aus der Leiste geflogen. Seit Tage kopiert und
+ * verschoben werden können, macht das Kopieren die Arbeit, die vorher der
+ * Prep-Planer gemacht hat; die Rezeptideen stehen unter Rezepte, und wie oft
+ * ein Gericht gekocht werden muss, sagt der Kochen-Tab. Der Kühlschrank-Stand
+ * — das eine Nützliche daran — steht jetzt unten auf der Heute-Seite.
+ */
 const TABS = [
   { href: "/m/Essen", label: "Heute" },
   { href: "/m/Essen/plan", label: "Plan" },
   { href: "/m/Essen/kochen", label: "Kochen" },
-  { href: "/m/Essen/prep", label: "Prep" },
   { href: "/m/Essen/mehr", label: "Mehr" },
 ];
 

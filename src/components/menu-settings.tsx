@@ -99,6 +99,22 @@ function Tagesziele({
         <Feld label="Kosten" name="kosten_ziel" unit="CHF"
           value={settings.kosten_ziel} onSave={speichern} />
       </div>
+
+      {/* Optional, seit dem 24.08.2026. Leer heisst: kein Ring auf der
+          Essen-Seite. Absicht — ein Ring ohne Ziel kann nur „0 von 0" zeigen,
+          und vier Ringe, von denen zwei nichts sagen, bringen einem bei, alle
+          vier zu überblättern. */}
+      <div className="mt-4 flex flex-col gap-3 border-t border-line/70 pt-4">
+        <p className="text-xs text-ink-muted">
+          Kohlenhydrate und Fett sind freiwillig. Steht hier eine Zahl, bekommt
+          der Wert einen eigenen Ring auf der Essen-Seite; bleibt das Feld
+          leer, gibt es keinen.
+        </p>
+        <Feld label="Kohlenhydrate" name="kh_ziel" unit="g"
+          value={settings.kh_ziel ?? ""} onSave={speichern} />
+        <Feld label="Fett" name="fett_ziel" unit="g"
+          value={settings.fett_ziel ?? ""} onSave={speichern} />
+      </div>
     </Card>
   );
 }

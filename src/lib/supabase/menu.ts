@@ -858,6 +858,9 @@ export interface PlanMeal {
   name: string;
   kcal_total: number;
   protein_total: number;
+  /** Aus den Positionen summiert — `meals` führt dafür keine Spalte. */
+  kh_total: number;
+  fett_total: number;
   eaten: boolean;
   items: { id: string; food_name: string; amount: number; unit: string; eaten: boolean }[];
 }
@@ -869,15 +872,21 @@ export interface PlanPortion {
   name: string;
   kcal: number;
   protein: number;
+  kh: number;
+  fett: number;
 }
 
 export interface DayView {
   date: string;
   kcal: number;
   protein: number;
+  kh: number;
+  fett: number;
   /** Bereits abgehakt. */
   gegessenKcal: number;
   gegessenProtein: number;
+  gegessenKh: number;
+  gegessenFett: number;
   meals: PlanMeal[];
   portions: PlanPortion[];
   marker: { training: boolean; eingeladen: boolean; is_free: boolean } | null;
@@ -911,9 +920,11 @@ export async function fetchDayView(date: string): Promise<DayView | null> {
       .in("plan_id", planIds);
     const ids = (mealRows ?? []).map((m) => m.id as string);
     const itemsByMeal = new Map<string, PlanMeal["items"]>();
+    const makroJeMeal = new Map<string, { kh: number; fett: number }>();
     if (ids.length > 0) {
       const { data: itemRows } = await supabase.from("meal_items")
-        .select("id, meal_id, food_name, amount, unit, eaten").in("meal_id", ids);
+        .select("id, meal_id, food_name, amount, unit, eaten, carbs, fat")
+        .in("meal_id", ids);
       for (const i of itemRows ?? []) {
         const list = itemsByMeal.get(i.meal_id as string) ?? [];
         list.push({
@@ -922,12 +933,23 @@ export async function fetchDayView(date: string): Promise<DayView | null> {
           eaten: Boolean(i.eaten),
         });
         itemsByMeal.set(i.meal_id as string, list);
+
+        // KH und Fett hat nur die Position, nicht die Mahlzeit: `meals` führt
+        // Summen für kcal und Protein, für die anderen zwei nicht. Statt eine
+        // Spalte nachzurüsten, die Trigger füllen müssten, wird hier summiert.
+        const bisher = makroJeMeal.get(i.meal_id as string) ?? { kh: 0, fett: 0 };
+        makroJeMeal.set(i.meal_id as string, {
+          kh: bisher.kh + Number(i.carbs ?? 0),
+          fett: bisher.fett + Number(i.fat ?? 0),
+        });
       }
     }
     for (const m of mealRows ?? []) {
+      const makro = makroJeMeal.get(m.id as string) ?? { kh: 0, fett: 0 };
       meals.push({
         id: m.id as string, meal_type: m.meal_type as string, name: m.name as string,
         kcal_total: Number(m.kcal_total ?? 0), protein_total: Number(m.protein_total ?? 0),
+        kh_total: makro.kh, fett_total: makro.fett,
         eaten: Boolean(m.eaten), items: itemsByMeal.get(m.id as string) ?? [],
       });
     }
@@ -938,7 +960,8 @@ export async function fetchDayView(date: string): Promise<DayView | null> {
   const batchIds = [...new Set((portionRows ?? []).map((p) => p.batch_id as string))];
   if (batchIds.length > 0) {
     const { data: batches } = await supabase.from("prep_batches")
-      .select("id, recipe_id, kcal_per_portion, protein_per_portion").in("id", batchIds);
+      .select("id, recipe_id, kcal_per_portion, protein_per_portion, carbs_per_portion, fat_per_portion")
+      .in("id", batchIds);
     const byId = new Map((batches ?? []).map((b) => [b.id as string, b]));
     const recipeIds = [...new Set((batches ?? []).map((b) => b.recipe_id as string))];
     const namen = new Map<string, string>();
@@ -955,6 +978,8 @@ export async function fetchDayView(date: string): Promise<DayView | null> {
         name: (b && namen.get(b.recipe_id as string)) ?? "Box",
         kcal: Number(b?.kcal_per_portion ?? 0),
         protein: Number(b?.protein_per_portion ?? 0),
+        kh: Number(b?.carbs_per_portion ?? 0),
+        fett: Number(b?.fat_per_portion ?? 0),
       });
     }
   }
@@ -966,12 +991,16 @@ export async function fetchDayView(date: string): Promise<DayView | null> {
   const kcal = Math.max(0, ...(plans ?? []).map((p) => Number(p.kcal_total ?? 0)));
   const protein = Math.max(0, ...(plans ?? []).map((p) => Number(p.protein_total ?? 0)));
 
-  const gegessenKcal =
-    meals.filter((m) => m.eaten).reduce((s, m) => s + m.kcal_total, 0) +
-    portions.filter((p) => p.consumed).reduce((s, p) => s + p.kcal, 0);
-  const gegessenProtein =
-    meals.filter((m) => m.eaten).reduce((s, m) => s + m.protein_total, 0) +
-    portions.filter((p) => p.consumed).reduce((s, p) => s + p.protein, 0);
+  const gegessen = <T,>(
+    ausMeal: (m: PlanMeal) => number, ausPortion: (p: PlanPortion) => number,
+  ) =>
+    meals.filter((m) => m.eaten).reduce((s, m) => s + ausMeal(m), 0) +
+    portions.filter((p) => p.consumed).reduce((s, p) => s + ausPortion(p), 0);
+
+  const gegessenKcal = gegessen((m) => m.kcal_total, (p) => p.kcal);
+  const gegessenProtein = gegessen((m) => m.protein_total, (p) => p.protein);
+  const gegessenKh = gegessen((m) => m.kh_total, (p) => p.kh);
+  const gegessenFett = gegessen((m) => m.fett_total, (p) => p.fett);
 
   return {
     date,
@@ -979,7 +1008,11 @@ export async function fetchDayView(date: string): Promise<DayView | null> {
       + portions.reduce((s, p) => s + p.kcal, 0),
     protein: protein || meals.reduce((s, m) => s + m.protein_total, 0)
       + portions.reduce((s, p) => s + p.protein, 0),
-    gegessenKcal, gegessenProtein,
+    // KH und Fett kommen IMMER aus der Summe der Positionen — anders als bei
+    // kcal/Protein gibt es dafür keine Trigger-Spalte in `meal_plans`.
+    kh: meals.reduce((s, m) => s + m.kh_total, 0) + portions.reduce((s, p) => s + p.kh, 0),
+    fett: meals.reduce((s, m) => s + m.fett_total, 0) + portions.reduce((s, p) => s + p.fett, 0),
+    gegessenKcal, gegessenProtein, gegessenKh, gegessenFett,
     meals: meals.sort(
       (a, b) => MEAL_ORDER.indexOf(a.meal_type) - MEAL_ORDER.indexOf(b.meal_type)
     ),
@@ -1134,6 +1167,13 @@ export const SETTING_DEFAULTS = {
   kcal_ziel: "2000",
   protein_ziel: "150",
   kosten_ziel: "20",
+  /**
+   * Kohlenhydrat- und Fettziel in Gramm. Leer heisst: nicht angelegt, und
+   * dann zeigt der Tag dafür auch keinen Ring. Kein Standardwert — ein
+   * erfundenes Ziel wäre schlimmer als keins, man würde sich daran messen.
+   */
+  kh_ziel: "",
+  fett_ziel: "",
   /** Rezept, das automatisch als Frühstück gesetzt wird. Leer = keins. */
   default_breakfast_recipe_id: "",
   /** Optional dasselbe für einen Standard-Snack. */

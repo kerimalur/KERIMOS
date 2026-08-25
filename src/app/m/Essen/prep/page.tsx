@@ -1,61 +1,18 @@
-import Link from "next/link";
-import { PrepPlanner } from "@/components/prep-planner";
-import { Card, CardTitle, Empty } from "@/components/ui";
-import {
-  fetchCycles, fetchRecipes, fetchPrepStand, fetchFoods, menuConfigured,
-} from "@/lib/supabase/menu";
-import { heuteISO } from "@/lib/time";
-import { dateLabel } from "@/lib/format";
+import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-
-export default async function EssenPrepPage() {
-  if (!menuConfigured()) return <Empty>Menü-Datenbank nicht verbunden.</Empty>;
-
-  const [cycles, rezepte, stand, foods] = await Promise.all([
-    fetchCycles(), fetchRecipes(), fetchPrepStand(), fetchFoods(),
-  ]);
-
-  return (
-    <>
-      {stand && (
-        <Card>
-          <CardTitle>Kühlschrank</CardTitle>
-          <p className="text-sm text-ink">
-            {stand.tage === null
-              ? "Keine Boxen einem Tag zugeordnet."
-              : stand.tage === 0
-                ? "Die letzte Box ist für heute."
-                : `Boxen reichen noch ${stand.tage} ${stand.tage === 1 ? "Tag" : "Tage"}`}
-            {stand.bis && stand.tage !== null && stand.tage > 0 && (
-              <span className="text-ink-muted"> — bis {dateLabel(stand.bis)}</span>
-            )}
-          </p>
-          <p className="mt-1 text-xs text-ink-muted">
-            {stand.ungeplant > 0
-              ? `${stand.ungeplant} von 7 Tagen ungeplant`
-              : "Die nächsten 7 Tage sind geplant"}
-            {stand.offeneEinkaeufe > 0 && (
-              <>
-                {" · "}
-                <Link href="/m/Essen/einkauf" className="text-accent-soft hover:underline">
-                  {stand.offeneEinkaeufe} Posten offen
-                </Link>
-              </>
-            )}
-          </p>
-        </Card>
-      )}
-
-      <PrepPlanner
-        cycles={cycles}
-        heute={heuteISO()}
-        foods={foods}
-        rezepte={rezepte.map((r) => ({
-          id: r.id, name: r.name, meal_type: r.meal_type,
-          default_portions: r.default_portions,
-        }))}
-      />
-    </>
-  );
+/**
+ * Der Prep-Tab ist am 24.08.2026 entfallen.
+ *
+ * Grund von Kerim: seit Tage kopiert und verschoben werden können, ersetzt
+ * das Kopieren den Prep-Planer, und die Rezeptideen erfüllen denselben Zweck.
+ * Was wirklich gefehlt hätte — wie oft ein Gericht gekocht werden muss —
+ * rechnet der Kochen-Tab.
+ *
+ * Die Seite bleibt als Umleitung stehen, damit Lesezeichen und der alte
+ * `revalidatePath("/m/Essen/prep")` nicht ins Leere laufen. Die Daten
+ * (`prep_batches`, `batch_portions`) sind unangetastet — sie tragen den
+ * Kühlschrank-Stand auf der Heute-Seite und die Boxen im Tagesplan.
+ */
+export default function EssenPrepPage() {
+  redirect("/m/Essen/kochen");
 }

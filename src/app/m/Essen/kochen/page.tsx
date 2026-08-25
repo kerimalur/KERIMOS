@@ -2,7 +2,7 @@ import { fetchKochliste } from "@/lib/kochliste";
 import { PrintButton } from "@/components/print-button";
 import { Card, CardTitle, Empty, Badge } from "@/components/ui";
 import { MEAL_LABEL } from "@/lib/supabase/menu";
-import { heuteISO, addDays } from "@/lib/time";
+import { heuteISO, addDays, weekStart } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
@@ -37,8 +37,12 @@ export default async function KochenPage({
 }) {
   const sp = await searchParams;
   const heute = heuteISO();
-  const von = sp.von || heute;
-  const bis = sp.bis || addDays(heute, 6);
+  // Standard ist die laufende Planwoche, nicht „heute plus sechs". Geplant
+  // wird in Wochen, gekocht auch — ein Zeitraum, der mitten in der Woche
+  // anfängt, zerschneidet genau die Wiederholungen, die hier zusammengehören.
+  const wocheVon = weekStart(heute);
+  const von = sp.von || wocheVon;
+  const bis = sp.bis || addDays(wocheVon, 6);
 
   const gerichte = await fetchKochliste(von, bis);
   const tageImZeitraum =
@@ -52,8 +56,10 @@ export default async function KochenPage({
         <div>
           <h1 className="font-display text-xl font-bold text-ink">Kochen</h1>
           <p className="mt-1 max-w-2xl text-sm text-ink-muted">
-            Was im gewählten Zeitraum insgesamt anfällt — je Gericht die
-            Gesamtmenge und daneben, wie viel davon in eine Box gehört.
+            Wie oft der Herd angeht — nicht wie viele Mahlzeiten es gibt.
+            Steht dasselbe Gericht dreimal in der Woche, ist das ein Topf mit
+            drei Portionen. Je Gericht die Gesamtmenge und daneben, wie viel
+            davon in eine Box gehört.
           </p>
           {/* Nur im Druck sichtbar: sonst weiss man auf dem Ausdruck nicht,
               für welchen Zeitraum die Mengen gelten. */}
@@ -93,6 +99,28 @@ export default async function KochenPage({
         </form>
       </Card>
 
+      {gerichte.length > 0 && (
+        <Card>
+          <p className="text-sm text-ink">
+            <span className="font-display text-2xl font-bold text-accent-soft">
+              {gerichte.length}
+            </span>{" "}
+            {gerichte.length === 1 ? "Topf" : "Töpfe"} für{" "}
+            <span className="tabular font-medium">
+              {gerichte.reduce((s, g) => s + g.anzahl, 0)}
+            </span>{" "}
+            Portionen
+          </p>
+          {gerichte.filter((g) => g.anzahl > 1).length > 0 && (
+            <p className="mt-1 text-xs text-ink-muted">
+              Mehrfach geplant:{" "}
+              {gerichte.filter((g) => g.anzahl > 1)
+                .map((g) => `${g.name} (${g.anzahl})`).join(" · ")}
+            </p>
+          )}
+        </Card>
+      )}
+
       {gerichte.length === 0 ? (
         <Empty>
           Für diesen Zeitraum ist nichts geplant. Erst im Plan Mahlzeiten
@@ -109,8 +137,13 @@ export default async function KochenPage({
                   {g.kcalProPortion} kcal · {g.proteinProPortion} g Protein je Portion
                 </p>
               </div>
+              {/* „3× kochen" war falsch und hat genau die Frage nicht
+                  beantwortet, für die es diese Seite gibt: Kerim kocht das
+                  Gericht EINMAL und füllt drei Boxen ab. */}
               <Badge tone={g.anzahl > 1 ? "accent" : "neutral"}>
-                {g.anzahl}× kochen
+                {g.anzahl > 1
+                  ? `1× kochen · ${g.anzahl} Portionen`
+                  : "1 Portion"}
               </Badge>
             </div>
 
