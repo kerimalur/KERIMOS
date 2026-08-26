@@ -8,7 +8,7 @@
 import { plusTage, type Punkt } from "../../src/lib/confluence/reihen";
 import { cotStatistik, HAEUFIG_AB } from "../../src/lib/confluence/monty-cot";
 import {
-  cotPaarZeilen, type CotBild, type CotRohdaten,
+  cotPaarZeilen, cotSpanne, paarSpanne, type CotBild, type CotRohdaten,
 } from "../../src/lib/confluence/cot-divergenz";
 
 let fails = 0;
@@ -127,14 +127,49 @@ check("gegenlaeufige Beine sind einig",
 check("Paar ohne Bilder faellt raus",
   cotPaarZeilen(karte([["EUR", 1]]), ["EURUSD"]).length, 0);
 
-// Reihenfolge: Widersprueche zuerst, dann Staerke.
+/* ------------------------------------------------- Spanne (24.08.2026) */
+//
+// Die stetige Groesse. `divergenz` ist ein Ja/Nein und an einem normalen Tag
+// bei zwanzig von achtundzwanzig Paaren null — dann sieht man nicht, ob dort
+// nichts los ist oder ob es knapp war. Die Spanne zeigt genau das.
+
+// Die Hilfsbilder oben setzen 90/10 bei +1 und 10/90 bei -1.
+check("Spanne einer gestuetzten Waehrung", cotSpanne(bild("EUR", 1)), 80);
+check("Spanne einer belasteten Waehrung", cotSpanne(bild("EUR", -1)), -80);
+check("neutrale Waehrung hat Spanne null", cotSpanne(bild("EUR", 0)), 0);
+// Beide Raenge einzeln pruefen: mit nur einer der zwei Bedingungen bliebe
+// eine halbe Null-Pruefung unbemerkt — genau das ist beim Kaputtmachen
+// aufgefallen, nicht beim Schreiben.
+check("ohne Commercials-Rang keine Spanne",
+  cotSpanne({ ...bild("EUR", 0), kommRang: null }), null);
+check("ohne Retail-Rang auch nicht",
+  cotSpanne({ ...bild("EUR", 0), retailRang: null }), null);
+
+check("gegenlaeufige Beine geben die volle Spanne",
+  paarSpanne(bild("EUR", 1), bild("USD", -1)), 80);
+// Der Fall, um den es geht: gleich gestreckte Beine ergeben null — und genau
+// das soll man SEHEN koennen, statt eine leere Zeile vorzufinden.
+check("gleich gestreckte Beine loeschen sich zu null aus",
+  paarSpanne(bild("EUR", 1), bild("USD", 1)), 0);
+check("halbiert, damit das Ende bei 100 liegt",
+  paarSpanne(bild("EUR", 1), bild("USD", -1)) === 80, true);
+check("eine Seite ohne Historie zieht nicht, sie traegt nur nichts bei",
+  paarSpanne(bild("EUR", 1), { ...bild("USD", 0), kommRang: null, retailRang: null }), 40);
+check("ganz ohne Historie gar keine Spanne",
+  paarSpanne(
+    { ...bild("EUR", 0), kommRang: null, retailRang: null },
+    { ...bild("USD", 0), kommRang: null, retailRang: null },
+  ), null);
+
+// Reihenfolge: staerkste Spanne zuerst, bei Gleichstand alphabetisch.
 const sortiert = cotPaarZeilen(
   karte([["EUR", 1], ["USD", 1], ["GBP", 1], ["JPY", -1], ["AUD", 0], ["CHF", 0]]),
   ["AUDCHF", "USDJPY", "GBPUSD", "EURUSD"],
 ).map((z) => z.paar);
-check("Strittige stehen ganz oben, alphabetisch", sortiert.slice(0, 2), ["EURUSD", "GBPUSD"]);
-check("dann das volle Signal", sortiert[2], "USDJPY");
-check("Paare ohne Aussage zuletzt", sortiert[sortiert.length - 1], "AUDCHF");
+check("staerkste Spanne steht oben", sortiert[0], "USDJPY");
+check("bei gleicher Spanne alphabetisch",
+  sortiert.slice(1), ["AUDCHF", "EURUSD", "GBPUSD"]);
+check("alle 28 bleiben drin — nichts wird weggefiltert", sortiert.length, 4);
 
 console.log(fails === 0 ? "\nAlle Kontrollwerte gruen." : `\n${fails} Kontrollwert(e) FAIL.`);
 process.exitCode = fails === 0 ? 0 : 1;

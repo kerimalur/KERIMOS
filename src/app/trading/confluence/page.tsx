@@ -5,7 +5,8 @@ import { heuteISO } from "@/lib/time";
 import { baueMontyCot, baueSaisonZeile, MONTY_PAARE } from "@/lib/confluence/monty";
 import { FENSTER, MAX_JAHRE, MIN_JAHRE, type Fenster } from "@/lib/confluence/saison";
 import {
-  CotPaarTabelle, CotStatistikTabelle, SaisonKopf, SaisonZeile, SaisonZeileLaedt,
+  CotPaarGrafik, CotPaarTabelle, CotStatistikTabelle,
+  SaisonKopf, SaisonZeile, SaisonZeileLaedt,
 } from "@/components/confluence/monty-teile";
 import { Card, CardTitle, Empty, cx } from "@/components/ui";
 
@@ -103,14 +104,28 @@ export default async function ConfluencePage({ searchParams }: { searchParams: P
       </Card>
 
       <Card>
-        <CardTitle>Commercials gegen Retail — je Paar</CardTitle>
+        <CardTitle>Commercials gegen Retail — alle 28 Paare</CardTitle>
         <p className="mb-3 text-[11px] leading-relaxed text-ink-faint">
-          Dieselbe Lage wie oben, nur auf Paarebene. Der Screener rechnet
-          Basis minus Quote, dein Pine-Indikator nur die Basiswährung — hier
-          stehen beide nebeneinander, damit sich der Unterschied nicht im Kopf
-          abspielt.
+          Dieselbe Lage wie oben, nur auf Paarebene und stetig statt als
+          Ja/Nein. Jedes Paar bekommt einen Balken, auch die ohne Signal —
+          sonst sieht man nicht, ob dort nichts los ist oder ob es knapp war.
         </p>
-        <CotPaarTabelle zeilen={cot.paare} />
+        <CotPaarGrafik zeilen={cot.paare} />
+
+        {/* Der Vergleich mit TradingView ist eine andere Frage als die Lage
+            und steht deshalb zugeklappt darunter: man öffnet ihn, wenn man
+            zweifelt, nicht jeden Morgen. */}
+        <details className="mt-4 border-t border-line/70 pt-3">
+          <summary className="cursor-pointer list-none text-sm font-medium text-ink">
+            Beide Beine gegen nur Basis
+            <span className="ml-2 text-xs font-normal text-ink-faint">
+              für den Vergleich mit TradingView
+            </span>
+          </summary>
+          <div className="mt-3">
+            <CotPaarTabelle zeilen={cot.paare} />
+          </div>
+        </details>
       </Card>
 
       <Card>

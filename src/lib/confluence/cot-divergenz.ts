@@ -175,11 +175,51 @@ export function cotPaarUrteil(basis: CotBild, quote: CotBild): CotPaarUrteil {
   };
 }
 
+/* --------------------------------------------------------------- Spanne */
+
+/**
+ * Die **Spanne** einer Währung: Commercials-Rang minus Retail-Rang.
+ *
+ * −100 bis +100. Positiv heisst: Commercials stehen hoch, Retail tief — das
+ * spricht für die Währung. Negativ umgekehrt.
+ *
+ * Der Unterschied zu `divergenz` ist der Punkt: `divergenz` ist ein Ja/Nein
+ * und nur dann ungleich null, wenn BEIDE Seiten über 75 bzw. unter 25 stehen.
+ * Damit sind an einem normalen Tag zwanzig der achtundzwanzig Paare schlicht
+ * leer, und man sieht nicht, ob dort gar nichts los ist oder ob es knapp war.
+ * Die Spanne zeigt die Lage auch dazwischen — sie ist der Abstand, nicht das
+ * Urteil.
+ */
+export function cotSpanne(b: CotBild): number | null {
+  if (b.kommRang === null || b.retailRang === null) return null;
+  return b.kommRang - b.retailRang;
+}
+
+/**
+ * Die Spanne eines Paares: Basis minus Quote, halbiert.
+ *
+ * Halbiert, damit das Ergebnis wieder in −100…+100 liegt: zwei Spannen von
+ * je ±100 ergäben sonst ±200, und eine Skala, deren Enden nie erreicht
+ * werden, macht jede Zeichnung in der Mitte flach.
+ *
+ * Null, wenn eine Seite keine Historie hat — nicht `null`: eine Währung ohne
+ * COT-Daten zieht das Paar nicht in eine Richtung, sie trägt nur nichts bei.
+ * Ganz ohne beide Seiten kommt `null` zurück, und dann wird nichts gezeichnet.
+ */
+export function paarSpanne(basis: CotBild, quote: CotBild): number | null {
+  const b = cotSpanne(basis);
+  const q = cotSpanne(quote);
+  if (b === null && q === null) return null;
+  return ((b ?? 0) - (q ?? 0)) / 2;
+}
+
 /* ------------------------------------------------- Alle Paare auf einmal */
 
 export interface CotPaarZeile {
   paar: string;
   urteil: CotPaarUrteil;
+  /** Stetige Lage, −100…+100. Null nur ohne jede Historie. */
+  spanne: number | null;
   /** Nur das Basis-Bein — die Sicht des Pine-Indikators und von TradingView. */
   nurBasis: -1 | 0 | 1;
   /** True, wenn beide Sichten verschiedene Richtungen sagen. */
@@ -209,7 +249,7 @@ export function cotPaarZeilen(
     const urteil = cotPaarUrteil(basis, quote);
     const nurBasis = basis.divergenz;
     return [{
-      paar, urteil, nurBasis,
+      paar, urteil, nurBasis, spanne: paarSpanne(basis, quote),
       /*
        * Strittig heisst schlicht: die zwei Sichten sagen nicht dasselbe.
        *
@@ -229,9 +269,16 @@ export function cotPaarZeilen(
       widerspruch: urteil.dir !== nurBasis,
     }];
   }).sort((a, b) =>
-    // Widersprüche ganz nach oben: sie sind der Grund für diese Ansicht.
-    Number(b.widerspruch) - Number(a.widerspruch)
+    /*
+     * Nach dem Betrag der Spanne, stärkste zuerst.
+     *
+     * Bis zum 24.08. standen die strittigen Zeilen oben — richtig, solange
+     * die Ansicht eine Tabelle war, die nur Paare mit Signal zeigte. Seit sie
+     * alle 28 zeichnet, ist die Stärke die natürliche Ordnung: man sucht,
+     * wo etwas los ist. „Strittig" ist weiter markiert, nur nicht mehr
+     * Sortierkriterium.
+     */
+    Math.abs(b.spanne ?? 0) - Math.abs(a.spanne ?? 0)
     || b.urteil.staerke - a.urteil.staerke
-    || Math.abs(b.nurBasis) - Math.abs(a.nurBasis)
     || a.paar.localeCompare(b.paar));
 }

@@ -2,6 +2,7 @@ import { Badge, cx } from "@/components/ui";
 import { Intervall } from "@/components/confluence/bilanz-teile";
 import { MONATS_KURZ, MIN_JAHRE, type SaisonBild } from "@/lib/confluence/saison";
 import { HAEUFIG_AB, type CotStatistik } from "@/lib/confluence/monty-cot";
+import type { CotPaarZeile } from "@/lib/confluence/cot-divergenz";
 
 /**
  * Anzeigebausteine für Monty.
@@ -274,6 +275,159 @@ export function CotPaarTabelle({ zeilen }: {
         098662. Weichen die Perzentile trotzdem ab, liegt es fast immer an
         einer der drei Stellen: anderes Fenster als drei Jahre, netto statt
         Anteil am Open Interest, oder ein Bericht Versatz.
+      </p>
+    </>
+  );
+}
+
+/* ------------------------------------------- COT je Paar, gezeichnet */
+
+/**
+ * Alle 28 Paare als Balken — Commercials gegen Retail, stetig.
+ *
+ * Die Tabelle daneben zeigt nur Paare mit Signal. An einem normalen Tag sind
+ * das zwei oder drei, und die anderen 25 sieht man gar nicht. Man weiss dann
+ * nicht, ob dort nichts los ist oder ob es knapp war — und das ist ein
+ * Unterschied, der beim Suchen nach einem Setup zählt.
+ *
+ * Gezeichnet wird die **Spanne**: Commercials-Rang minus Retail-Rang, für
+ * Basis und Quote verrechnet. −100 bis +100, Mitte ist null.
+ *
+ * **Zur Kodierung.** Die Länge trägt die Stärke, die Richtung trägt das
+ * Vorzeichen — links kurz, rechts lang. Die Farbe sagt dasselbe noch einmal
+ * und ist damit Zugabe, nicht Träger: Grün und Rot liegen bei Rot-Grün-
+ * Schwäche mit ΔE 7.1 dicht beieinander, und ein Balken, den man nur an der
+ * Farbe lesen kann, ist für einen Teil der Leute leer. Deshalb steht die Zahl
+ * daneben und das Wort dahinter.
+ *
+ * Sortiert nach Betrag, stärkste zuerst: man sucht, wo etwas los ist.
+ */
+const LANG = "#5FC2A6";
+const KURZ = "#E28B72";
+
+export function CotPaarGrafik({ zeilen }: { zeilen: CotPaarZeile[] }) {
+  const mitSpanne = zeilen.filter((z) => z.spanne !== null);
+
+  if (mitSpanne.length === 0) {
+    return (
+      <p className="text-sm text-ink-muted">
+        Keine COT-Historie geladen — dann ist hier nichts zu zeichnen. Die
+        Ursache steht in der Tabelle darüber.
+      </p>
+    );
+  }
+
+  return (
+    <>
+      <ul className="space-y-0.5">
+        {mitSpanne.map((z) => {
+          const v = z.spanne as number;
+          const links = v < 0;
+          const farbe = links ? KURZ : LANG;
+          // Halbe Breite je Seite: die Mitte ist null, das Ende ±100.
+          const breite = Math.min(50, Math.abs(v) / 2);
+          const rang = (n: number | null) => (n === null ? "·" : n.toFixed(0));
+          const b = z.urteil.basis, q = z.urteil.quote;
+          const legenden =
+            `${b.ccy} ${rang(b.kommRang)}/${rang(b.retailRang)} · ` +
+            `${q.ccy} ${rang(q.kommRang)}/${rang(q.retailRang)}`;
+
+          return (
+            <li key={z.paar}
+              title={`${z.paar} — Commercials/Retail: ${legenden}. ${z.urteil.text}`}
+              className="grid grid-cols-[64px_minmax(0,1fr)_58px] items-center gap-2
+                         rounded-lg px-1.5 py-1 hover:bg-sand/40
+                         sm:grid-cols-[64px_150px_minmax(0,1fr)_58px_60px]">
+              <span className="truncate text-xs font-medium text-ink">
+                {z.paar}
+                {z.widerspruch && <span className="ml-1 text-warn" title="strittig">*</span>}
+              </span>
+
+              <span className="num hidden text-[11px] text-ink-faint sm:block">
+                {legenden}
+              </span>
+
+              {/* Der Balken. Nullpunkt in der Mitte, damit long und short
+                  auf einen Blick auseinandergehen — eine Skala von links
+                  nach rechts würde „schwach short" neben „schwach long"
+                  legen und sie gleich aussehen lassen. */}
+              <span className="relative block h-3 rounded bg-sand">
+                {/* Über dem Balken, nicht darunter: die Null ist der
+                    Bezugspunkt der ganzen Zeile und muss auch dann zu sehen
+                    sein, wenn ein langer Balken sie überdeckt. */}
+                <span aria-hidden
+                  className="absolute inset-y-0 left-1/2 z-10 w-px -translate-x-1/2 bg-ink-faint/70" />
+                <span className="absolute inset-y-0.5 rounded-sm transition-[width]"
+                  style={{
+                    background: farbe,
+                    width: `${breite}%`,
+                    left: links ? `${50 - breite}%` : "50%",
+                    // Eine Spanne von 2 wäre sonst unsichtbar und sähe aus
+                    // wie gar keine Angabe.
+                    minWidth: Math.abs(v) > 0.5 ? 2 : 0,
+                  }} />
+                {/* Das Signal, wenn die 75/25-Regel wirklich greift. Ein
+                    Punkt am Balkenende statt einer zweiten Farbe: sonst
+                    trüge die Farbe zwei Bedeutungen gleichzeitig. */}
+                {z.urteil.dir !== 0 && (
+                  <span aria-hidden
+                    className="absolute top-1/2 h-2 w-2 -translate-y-1/2 rounded-full ring-2 ring-card"
+                    style={{
+                      background: farbe,
+                      left: links ? `${50 - breite}%` : `${50 + breite}%`,
+                      marginLeft: links ? -4 : -4,
+                    }} />
+                )}
+              </span>
+
+              <span className="num text-right text-xs"
+                style={{ color: Math.abs(v) < 8 ? undefined : farbe }}>
+                {v > 0 ? "+" : ""}{v.toFixed(0)}
+              </span>
+
+              <span className="hidden text-right text-[11px] sm:block">
+                {z.urteil.dir === 0
+                  ? <span className="text-ink-faint">—</span>
+                  : <span style={{ color: farbe }}>
+                      {z.urteil.dir > 0 ? "long" : "short"}
+                      {z.urteil.staerke < 1 && <span className="text-ink-faint"> halb</span>}
+                    </span>}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-ink-muted">
+        <span className="flex items-center gap-1.5">
+          <span className="h-2.5 w-4 rounded-sm" style={{ background: KURZ }} />
+          short — Commercials tief, Retail hoch
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-2.5 w-4 rounded-sm" style={{ background: LANG }} />
+          long — Commercials hoch, Retail tief
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-ink-muted" />
+          Punkt = 75/25-Regel greift
+        </span>
+        <span><span className="text-warn">*</span> = strittig</span>
+      </div>
+
+      <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+        Die Zahl ist die <strong>Spanne</strong>: Commercials-Rang minus
+        Retail-Rang, für Basis und Quote verrechnet, −100 bis +100. Sie zeigt
+        die Lage auch dort, wo kein Signal steht — das ist der Unterschied zur
+        Tabelle darüber, die nur Paare mit Signal kennt. Ein Balken ohne Punkt
+        heisst: es geht in diese Richtung, aber mindestens eine Seite steht
+        noch nicht am Rand.
+      </p>
+      <p className="mt-2 rounded-xl bg-warn-tint px-3 py-2.5 text-[11px] leading-relaxed text-ink-soft">
+        <strong>Was die Spanne nicht ist:</strong> ein Mass dafür, wie gut der
+        Trade wird. Sie sagt, wie weit Commercials und Retail auseinanderstehen
+        — nicht, ob das je etwas vorhergesagt hat. Diese Frage beantwortet nur
+        die Messung über zwanzig Jahre, und die steht im Backtest unter{" "}
+        <em>Rückblick → Faktor &amp; Grenze</em>.
       </p>
     </>
   );
