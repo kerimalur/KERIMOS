@@ -7,7 +7,9 @@
 // "Commercials im 80. Perzentil" wenig.
 import { plusTage, type Punkt } from "../../src/lib/confluence/reihen";
 import { cotStatistik, HAEUFIG_AB } from "../../src/lib/confluence/monty-cot";
-import type { CotRohdaten } from "../../src/lib/confluence/cot-divergenz";
+import {
+  cotPaarZeilen, type CotBild, type CotRohdaten,
+} from "../../src/lib/confluence/cot-divergenz";
 
 let fails = 0;
 function check(name: string, actual: unknown, expected: unknown) {
@@ -87,6 +89,52 @@ check("und die spaete Streckung ist nicht dabei", frueher.gestreckt, 0);
 
 check("Fenster laesst sich begrenzen",
   cotStatistik(daten(999, -999, 3), "EUR", STICHTAG, 10).termine, 10);
+
+/* ------------------------------------------------- Paar-Ansicht (24.08.2026) */
+
+// Ein Waehrungsbild von Hand, nur mit dem, worauf die Paar-Rechnung schaut.
+const bild = (ccy: string, divergenz: -1 | 0 | 1): CotBild => ({
+  ccy, kommRang: divergenz > 0 ? 90 : divergenz < 0 ? 10 : 50,
+  retailRang: divergenz > 0 ? 10 : divergenz < 0 ? 90 : 50,
+  kommN: 156, retailN: 156, datum: "2026-08-18", frische: "frisch",
+  divergenz, text: "",
+});
+const karte = (eintraege: [string, -1 | 0 | 1][]) =>
+  new Map<string, CotBild>(eintraege.map(([c, d]) => [c, bild(c, d)]));
+
+const eur_usd = (b: -1 | 0 | 1, q: -1 | 0 | 1) =>
+  cotPaarZeilen(karte([["EUR", b], ["USD", q]]), ["EURUSD"])[0];
+
+check("beide gestreckt, gegeneinander → volles Long", eur_usd(1, -1).urteil.dir, 1);
+check("und das ist volle Staerke", eur_usd(1, -1).urteil.staerke, 1);
+check("nur die Basis gestreckt → halbe Staerke", eur_usd(1, 0).urteil.staerke, 0.5);
+// Der Fall, um den es Kerim geht: gleich gestreckte Beine loeschen sich aus.
+check("gleiche Richtung hebt sich im Paar auf", eur_usd(1, 1).urteil.dir, 0);
+check("aber die Basis allein sagt weiter etwas", eur_usd(1, 1).nurBasis, 1);
+check("und genau das ist ein Widerspruch", eur_usd(1, 1).widerspruch, true);
+
+// Widerspruch heisst NICHT „ungleich".
+check("beide einig, obwohl nur die Basis spricht → kein Widerspruch",
+  eur_usd(1, 0).widerspruch, false);
+check("sagt keine Sicht etwas, ist nichts strittig", eur_usd(0, 0).widerspruch, false);
+// Das Signal kommt allein vom Gegenbein — TradingView zeigt dann nichts.
+check("stille Basis bei sprechendem Paar ist strittig",
+  eur_usd(0, -1).widerspruch, true);
+check("gegenlaeufige Beine sind einig", 
+  cotPaarZeilen(karte([["EUR", 1], ["USD", -1]]), ["EURUSD"])[0].widerspruch, false);
+
+// Unbekannte Waehrung faellt lautlos raus statt eine halbe Zeile zu bauen.
+check("Paar ohne Bilder faellt raus",
+  cotPaarZeilen(karte([["EUR", 1]]), ["EURUSD"]).length, 0);
+
+// Reihenfolge: Widersprueche zuerst, dann Staerke.
+const sortiert = cotPaarZeilen(
+  karte([["EUR", 1], ["USD", 1], ["GBP", 1], ["JPY", -1], ["AUD", 0], ["CHF", 0]]),
+  ["AUDCHF", "USDJPY", "GBPUSD", "EURUSD"],
+).map((z) => z.paar);
+check("Strittige stehen ganz oben, alphabetisch", sortiert.slice(0, 2), ["EURUSD", "GBPUSD"]);
+check("dann das volle Signal", sortiert[2], "USDJPY");
+check("Paare ohne Aussage zuletzt", sortiert[sortiert.length - 1], "AUDCHF");
 
 console.log(fails === 0 ? "\nAlle Kontrollwerte gruen." : `\n${fails} Kontrollwert(e) FAIL.`);
 process.exitCode = fails === 0 ? 0 : 1;

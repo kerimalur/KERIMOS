@@ -1,11 +1,12 @@
 import Link from "next/link";
 import {
   createGymClient, gymConfigured, buildSeries,
-  fetchCalendarEntries, fetchTrainingDays,
+  fetchCalendarEntries, fetchTrainingDays, fetchEinheiten,
   fetchWeeklyGoal, countWeeklyTrainingBreakdown,
   type GymTopSet, type BodyWeightEntry,
 } from "@/lib/supabase/gym";
 import { GymCockpit } from "@/components/gym-cockpit";
+import { SchnellKarte } from "@/components/gym/schnell-karte";
 import { GymProgress } from "@/components/gym-progress";
 import { GymWeight } from "@/components/gym-weight";
 import { GymCalendar } from "@/components/gym-calendar";
@@ -55,7 +56,7 @@ export default async function GymPage() {
 
   const [
     { data, error }, { data: weightData },
-    entries, days, wochenZiel, woche,
+    entries, days, wochenZiel, woche, letzteEinheiten,
   ] = await Promise.all([
     supabase!.from("v_exercise_progress").select("*").order("day", { ascending: true }),
     supabase!.from("body_weight_entries")
@@ -64,6 +65,9 @@ export default async function GymPage() {
     fetchTrainingDays(),
     fetchWeeklyGoal(),
     countWeeklyTrainingBreakdown(weekStart(heute)),
+    // 60 Tage: genug für „letzter Split" auch nach einer Pause, wenig genug,
+    // dass es eine kleine Abfrage bleibt.
+    fetchEinheiten(addDays(heute, -60)),
   ]);
 
   // Was wurde an welchem Tag tatsächlich trainiert? Zwei Dinge hängen daran:
@@ -75,6 +79,13 @@ export default async function GymPage() {
   for (const r of ((data ?? []) as GymTopSet[])) {
     if (!proTag.has(r.day)) proTag.set(r.day, r.split ?? "Training");
   }
+  // Angetippte Einheiten haben keine Sätze und stehen deshalb nicht in
+  // `v_exercise_progress`. Ohne diese Schleife wären sie hier unsichtbar und
+  // der Vorschlag „als Nächstes Pull" änderte sich nie, egal wie oft Kerim
+  // Pull drückt. Erfasste Sätze haben Vorrang — sie sind die genauere Quelle.
+  for (const e of letzteEinheiten) {
+    if (e.split && !proTag.has(e.datum)) proTag.set(e.datum, e.split);
+  }
   const trainierteTage = [...proTag.keys()].sort();
   const letzterTag = trainierteTage[trainierteTage.length - 1] ?? null;
   const letzterSplit = letzterTag ? proTag.get(letzterTag) ?? null : null;
@@ -84,6 +95,14 @@ export default async function GymPage() {
     letzterSplit?.toLowerCase() === "pull" ? "Push"
       : letzterSplit?.toLowerCase() === "push" ? "Pull"
         : null;
+
+  const schnell = (
+    <SchnellKarte heute={heute} gestern={addDays(heute, -1)}
+      naechsterSplit={naechsterSplit}
+      einheiten={letzteEinheiten.filter(
+        (e) => e.datum === heute || e.datum === addDays(heute, -1),
+      )} />
+  );
 
   const cockpit = (
     <GymCockpit
@@ -109,6 +128,7 @@ export default async function GymPage() {
   if (error) {
     return (
       <>
+        {schnell}
         {cockpit}
         <Card>
           <p className="text-sm text-bad">Die Verlaufsdaten liessen sich nicht laden.</p>
@@ -136,6 +156,17 @@ export default async function GymPage() {
     trainedDays[r.day] = list;
   }
 
+  // Angetippte Einheiten gehören in den Kalender, sonst drückt Kerim Push und
+  // der Tag bleibt leer — das sieht kaputt aus, obwohl der Eintrag steht.
+  // In die Fortschrittszahlen darunter gehören sie NICHT: dort geht es um
+  // Gewichte, und die hat eine angetippte Einheit nicht.
+  for (const e of letzteEinheiten) {
+    if (!e.split || e.quelle !== "schnell") continue;
+    const list = trainedDays[e.datum] ?? [];
+    if (!list.includes(e.split)) list.push(e.split);
+    trainedDays[e.datum] = list;
+  }
+
   const alleTage = [...new Set(rows.map((r) => r.day))].sort();
   const einheiten = new Set(rows.map((r) => r.session_id)).size;
   const uebungen = new Set(rows.map((r) => r.exercise)).size;
@@ -146,6 +177,7 @@ export default async function GymPage() {
 
   return (
     <>
+      {schnell}
       {cockpit}
 
       {rows.length === 0 ? (

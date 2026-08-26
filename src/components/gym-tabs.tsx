@@ -19,7 +19,6 @@ import { cx } from "@/components/ui";
  */
 const TABS = [
   { href: "/gym", label: "Übersicht" },
-  { href: "/gym/analyse", label: "Analyse" },
   { href: "/gym/trainingstage", label: "Tage" },
   { href: "/gym/verlauf", label: "Verlauf" },
   { href: "/gym/garmin", label: "Garmin" },

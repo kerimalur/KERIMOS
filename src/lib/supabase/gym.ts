@@ -922,164 +922,75 @@ export function buildSeries(rows: GymTopSet[]): Record<string, ExerciseSeries[]>
   return result;
 }
 
-
-/* ------------------------------------------------------- Muskel-Analyse */
+/* ------------------------------------------------------ Schnell erfassen */
 
 /**
- * Wie oft welcher Muskel drankam — die Grundlage der Analyse-Seite.
+ * `log_source` einer Einheit, die nur angetippt wurde.
  *
- * Der Unterschied zu `fetchMuscleBalance`: dort geht es um das Verhältnis
- * zwischen Gegenspielern, hier um die Menge je Gruppe, die Trainingstage und
- * die Übungen dahinter. Und es zählt **Nebenmuskeln mit**: ein Satz
- * Bankdrücken ist ein Satz Brust und ein halber Satz Trizeps. Ohne das sehen
- * Arme und Schultern unterversorgt aus, obwohl sie bei jedem Drücken mitgehen
- * — und man trainiert nach einer Zahl nach, die zu klein ist.
- *
- * Gezählt werden Zeilen in `exercise_logs`, also Sätze. Nicht Gewicht: ein
- * Satz Bizeps und ein Satz Kniebeugen belasten unterschiedlich viel, kosten
- * den Muskel aber je einen Reiz.
+ * Es gibt drei Quellen: `null` heisst Satz für Satz erfasst, `"garmin"`
+ * kommt von der Uhr, `"schnell"` ist ein Fingertipp. Sie stehen bewusst in
+ * derselben Tabelle und zählen gleich — für „habe ich diese Woche viermal
+ * trainiert?" ist es egal, wie es aufgeschrieben wurde. Unterscheidbar
+ * müssen sie trotzdem sein: eine Einheit ohne Sätze taucht in keiner
+ * Fortschrittskurve auf, und wer das nicht weiss, hält die Lücke für einen
+ * Fehler.
  */
-export interface MuskelUebung {
+export const SCHNELL = "schnell";
+
+export interface Einheit {
   id: string;
-  name: string;
-  /** Sätze, in denen diese Gruppe der Hauptmuskel war. */
-  direkt: number;
-  /** Sätze, in denen sie nur mitgearbeitet hat. */
-  indirekt: number;
+  /** Tag aus `completed_at`, ISO. */
+  datum: string;
+  /** Name des Trainingstags — „Push", „Pull". Null, wenn keiner hängt. */
+  split: string | null;
+  quelle: "tracked" | "garmin" | "schnell";
+  /** True, wenn Sätze oder Cardio dranhängen — dann nicht löschbar. */
+  hatLogs: boolean;
 }
 
-export interface MuskelWert {
-  id: string;
-  name: string;
-  direkt: number;
-  indirekt: number;
-  /** Verschiedene Tage, an denen die Gruppe drankam — direkt oder indirekt. */
-  tage: number;
-  zuletzt: string | null;
-  uebungen: MuskelUebung[];
-}
-
-export async function fetchMuskelAnalyse(tage = 28): Promise<MuskelWert[]> {
+/**
+ * Abgeschlossene Einheiten seit einem Datum — alle drei Quellen.
+ *
+ * Gebraucht an zwei Stellen, und die zweite ist der Grund für diese Funktion:
+ * die Übersicht leitete „letzter Split" bisher aus `v_exercise_progress` ab,
+ * also aus den **Sätzen**. Eine nur angetippte Einheit hat keine — sie wäre
+ * dort unsichtbar geblieben, und der Vorschlag „als Nächstes Pull" hätte sich
+ * nie geändert, egal wie oft Kerim Pull drückt.
+ */
+export async function fetchEinheiten(seit: string): Promise<Einheit[]> {
   const supabase = createGymClient();
   if (!supabase) return [];
 
-  const seit = new Date(Date.now() - tage * 86400000).toISOString();
+  const { data: sessions } = await supabase.from("workout_sessions")
+    .select("id, training_day_id, completed_at, log_source")
+    .not("completed_at", "is", null)
+    .gte("completed_at", `${seit}T00:00:00`)
+    .order("completed_at", { ascending: false });
 
-  const [{ data: sessions }, uebungen, gruppen] = await Promise.all([
-    supabase.from("workout_sessions")
-      .select("id, completed_at").not("completed_at", "is", null)
-      .gte("completed_at", seit),
-    fetchExercises(),
-    fetchMuscleGroups(),
+  const liste = sessions ?? [];
+  if (liste.length === 0) return [];
+
+  const ids = liste.map((s) => s.id as string);
+  const [{ data: saetze }, { data: cardio }, tage] = await Promise.all([
+    supabase.from("exercise_logs").select("workout_session_id").in("workout_session_id", ids),
+    supabase.from("cardio_logs").select("workout_session_id").in("workout_session_id", ids),
+    fetchTrainingDays(),
   ]);
 
-  const sessionIds = (sessions ?? []).map((s) => s.id as string);
-  const abschluss = new Map(
-    (sessions ?? []).map((s) => [s.id as string, s.completed_at as string]),
-  );
-  const uebungById = new Map(uebungen.map((u) => [u.id, u]));
+  const mitLogs = new Set([
+    ...(saetze ?? []).map((r) => r.workout_session_id as string),
+    ...(cardio ?? []).map((r) => r.workout_session_id as string),
+  ]);
+  const namen = new Map(tage.map((t) => [t.id, t.name]));
 
-  const direkt = new Map<string, number>();
-  const indirekt = new Map<string, number>();
-  const zuletzt = new Map<string, string>();
-  const tageJeGruppe = new Map<string, Set<string>>();
-  // Gruppe -> Übung -> Zählung
-  const jeUebung = new Map<string, Map<string, MuskelUebung>>();
-
-  function merke(gruppe: string, u: GymExercise, wann: string | undefined, haupt: boolean) {
-    const zaehler = haupt ? direkt : indirekt;
-    zaehler.set(gruppe, (zaehler.get(gruppe) ?? 0) + 1);
-
-    if (wann) {
-      const bisher = zuletzt.get(gruppe);
-      if (!bisher || wann > bisher) zuletzt.set(gruppe, wann);
-      // Der TAG, nicht der Zeitstempel: zwei Einheiten am selben Tag sind
-      // ein Trainingstag. Sonst zählt ein Doppeltag als zwei und die
-      // Häufigkeit sieht besser aus, als sie ist.
-      const set = tageJeGruppe.get(gruppe) ?? new Set<string>();
-      set.add(wann.slice(0, 10));
-      tageJeGruppe.set(gruppe, set);
-    }
-
-    const liste = jeUebung.get(gruppe) ?? new Map<string, MuskelUebung>();
-    const eintrag = liste.get(u.id) ?? { id: u.id, name: u.name, direkt: 0, indirekt: 0 };
-    if (haupt) eintrag.direkt++; else eintrag.indirekt++;
-    liste.set(u.id, eintrag);
-    jeUebung.set(gruppe, liste);
-  }
-
-  // In Hunderterblöcken, wie bei fetchMuscleBalance: PostgREST setzt der
-  // Länge eines `in`-Filters eine Grenze, und drei Monate Training reissen
-  // sie sonst irgendwann.
-  for (let i = 0; i < sessionIds.length; i += 100) {
-    const { data: logs } = await supabase.from("exercise_logs")
-      .select("exercise_id, workout_session_id")
-      .in("workout_session_id", sessionIds.slice(i, i + 100));
-
-    for (const l of logs ?? []) {
-      const u = uebungById.get(l.exercise_id as string);
-      if (!u) continue;
-      const wann = abschluss.get(l.workout_session_id as string);
-
-      merke(u.primary_muscle_id, u, wann, true);
-      // Eine Übung kann dieselbe Gruppe nicht zweimal zählen: stünde die
-      // Hauptgruppe versehentlich auch in den Nebenmuskeln, gäbe es 1.5
-      // Sätze für einen.
-      for (const s of new Set(u.secondary_muscle_ids)) {
-        if (s && s !== u.primary_muscle_id) merke(s, u, wann, false);
-      }
-    }
-  }
-
-  return gruppen.map((g) => ({
-    id: g.id,
-    name: g.name,
-    direkt: direkt.get(g.id) ?? 0,
-    indirekt: indirekt.get(g.id) ?? 0,
-    tage: tageJeGruppe.get(g.id)?.size ?? 0,
-    zuletzt: zuletzt.get(g.id) ?? null,
-    uebungen: [...(jeUebung.get(g.id)?.values() ?? [])]
-      .sort((a, b) => (b.direkt + b.indirekt) - (a.direkt + a.indirekt)),
-  }));
+  return liste.map((s) => {
+    const quelle = s.log_source as string | null;
+    return {
+      id: s.id as string,
+      datum: String(s.completed_at).slice(0, 10),
+      split: namen.get(s.training_day_id as string) ?? null,
+      quelle: quelle === "garmin" ? "garmin" : quelle === SCHNELL ? SCHNELL : "tracked",
+      hatLogs: mitLogs.has(s.id as string),
+    };
+  });
 }
-
-/**
- * Eigene Grenzen je Muskelgruppe, als JSON in `gym_settings`.
- *
- * Eigene Tabelle wäre sauberer und hier trotzdem falsch: es sind elf Zeilen
- * für einen Nutzer, die sich fast nie ändern. Eine Spalte auf der Zeile, die
- * es schon gibt, spart Tabelle, Policy und einen zweiten Roundtrip.
- */
-export type MuskelGrenzen = Record<string, { min: number; max: number }>;
-
-export interface GrenzenStand {
-  grenzen: MuskelGrenzen;
-  /** True, wenn die Spalte noch fehlt — dann zeigt die Seite die SQL. */
-  spalteFehlt: boolean;
-}
-
-export async function fetchMuskelGrenzen(): Promise<GrenzenStand> {
-  const supabase = createGymClient();
-  if (!supabase) return { grenzen: {}, spalteFehlt: false };
-
-  const { data, error } = await supabase.from("gym_settings")
-    .select("muscle_targets").limit(1).maybeSingle();
-
-  // „Spalte fehlt" von „nichts gesetzt" trennen: sonst steht der
-  // Einrichtungshinweis für immer da, auch wenn alles bereit ist — und man
-  // lernt, ihn zu überblättern.
-  if (error) {
-    const fehlt = error.code === "42703" || error.code === "PGRST204"
-      || /column .* does not exist/i.test(error.message);
-    return { grenzen: {}, spalteFehlt: fehlt };
-  }
-
-  const w = (data as { muscle_targets?: MuskelGrenzen } | null)?.muscle_targets;
-  return {
-    grenzen: w && typeof w === "object" ? w : {},
-    spalteFehlt: false,
-  };
-}
-
-export const MUSKEL_GRENZEN_SQL = `alter table gym_settings
-  add column if not exists muscle_targets jsonb not null default '{}'::jsonb;`;

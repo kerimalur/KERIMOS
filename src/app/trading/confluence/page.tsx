@@ -2,16 +2,11 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { tradingConfigured } from "@/lib/supabase/trading";
 import { heuteISO } from "@/lib/time";
-import {
-  baueGesamtbild, baueKalibrierung, baueMontyCot, baueSaisonZeile,
-  KALIBRIER_JAHRE, KALIBRIER_PAARE, MONTY_PAARE,
-} from "@/lib/confluence/monty";
-import {
-  PaarUebersicht, PaarUebersichtLaedt, SchwellenTabelle, SchwellenTabelleLaedt,
-} from "@/components/confluence/kalibrier-teile";
-import { VARIANTEN, type Variante } from "@/lib/confluence/kalibrierung";
+import { baueMontyCot, baueSaisonZeile, MONTY_PAARE } from "@/lib/confluence/monty";
 import { FENSTER, MAX_JAHRE, MIN_JAHRE, type Fenster } from "@/lib/confluence/saison";
-import { CotStatistikTabelle, SaisonKopf, SaisonZeile, SaisonZeileLaedt } from "@/components/confluence/monty-teile";
+import {
+  CotPaarTabelle, CotStatistikTabelle, SaisonKopf, SaisonZeile, SaisonZeileLaedt,
+} from "@/components/confluence/monty-teile";
 import { Card, CardTitle, Empty, cx } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -40,9 +35,10 @@ type Params = Promise<Record<string, string | string[] | undefined>>;
 const einer = (v: string | string[] | undefined): string | null =>
   typeof v === "string" ? v : Array.isArray(v) ? v[0] ?? null : null;
 
-/** Adresse dieser Seite mit den drei Einstellungen — an einer Stelle. */
-const hier = (o: { jahre: Fenster; kal: string; variante: Variante }) =>
-  `/trading/confluence?jahre=${o.jahre}&kal=${o.kal}&var=${o.variante}`;
+/** Adresse dieser Seite. Seit dem 24.08. gibt es nur noch eine Einstellung:
+ *  das Saison-Fenster. Paarwahl und Variante sind mit der Kalibrierung in den
+ *  Backtest gezogen. */
+const hier = (jahre: Fenster) => `/trading/confluence?jahre=${jahre}`;
 
 export default async function ConfluencePage({ searchParams }: { searchParams: Params }) {
   if (!tradingConfigured()) {
@@ -60,10 +56,6 @@ export default async function ConfluencePage({ searchParams }: { searchParams: P
   const p = await searchParams;
   const heute = heuteISO();
   const fenster: Fenster = FENSTER.find((f) => String(f) === einer(p.jahre)) ?? 20;
-  // Nicht alle 28 Paare zur Auswahl: jedes kostet zwanzig Jahre Rechnung.
-  const kalPaar: string = KALIBRIER_PAARE.find((x) => x === einer(p.kal)) ?? KALIBRIER_PAARE[0];
-  const variante: Variante = VARIANTEN.find((v) => v.key === einer(p.var))?.key ?? "beide";
-
   const cot = await baueMontyCot(heute);
 
   return (
@@ -111,62 +103,14 @@ export default async function ConfluencePage({ searchParams }: { searchParams: P
       </Card>
 
       <Card>
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <CardTitle className="mb-0">Trägt der Faktor überhaupt?</CardTitle>
-          <span className="ml-auto flex flex-wrap items-center gap-1.5">
-            {VARIANTEN.map((v) => (
-              <Link key={v.key} title={v.hilfe}
-                href={hier({ jahre: fenster, kal: kalPaar, variante: v.key })}
-                className={cx("rounded-lg px-2.5 py-1 text-xs transition duration-150 ease-tactile",
-                  variante === v.key ? "bg-sand text-ink" : "text-ink-muted hover:text-ink")}>
-                {v.label}
-              </Link>
-            ))}
-          </span>
-        </div>
-
-        <Suspense key={variante} fallback={<PaarUebersichtLaedt />}>
-          <GesamtLader heute={heute} variante={variante} />
-        </Suspense>
-
-        <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
-          Dein Pine-Indikator nimmt für USDJPY <strong>eine</strong> Währung —
-          oben rechts steht „Quelle: USD", CFTC 098662, der Dollar-Index. Diese
-          Rechnung nahm bisher <strong>beide</strong> Beine und zog sie
-          voneinander ab. Das sind zwei verschiedene Signale, und sie können
-          sich gegenseitig auslöschen: stehen USD und JPY gleichzeitig gestreckt
-          short, ist die Differenz null und es entsteht gar kein Signal —
-          obwohl der Indikator eines zeigt. „nur Basiswährung" rechnet wie er.
+        <CardTitle>Commercials gegen Retail — je Paar</CardTitle>
+        <p className="mb-3 text-[11px] leading-relaxed text-ink-faint">
+          Dieselbe Lage wie oben, nur auf Paarebene. Der Screener rechnet
+          Basis minus Quote, dein Pine-Indikator nur die Basiswährung — hier
+          stehen beide nebeneinander, damit sich der Unterschied nicht im Kopf
+          abspielt.
         </p>
-      </Card>
-
-      <Card>
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <CardTitle className="mb-0">Wie streng soll die Grenze sein?</CardTitle>
-          <span className="ml-auto flex flex-wrap items-center gap-1.5">
-            {KALIBRIER_PAARE.map((x) => (
-              <Link key={x} href={hier({ jahre: fenster, kal: x, variante })}
-                className={cx("num rounded-lg px-2.5 py-1 text-xs transition duration-150 ease-tactile",
-                  kalPaar === x ? "bg-sand text-ink" : "text-ink-muted hover:text-ink")}>
-                {x}
-              </Link>
-            ))}
-          </span>
-        </div>
-
-        <Suspense key={`${kalPaar}-${variante}`} fallback={<SchwellenTabelleLaedt paar={kalPaar} />}>
-          {/* Eigene Suspense-Grenze: hier werden zwanzig Jahre COT-Historie
-              gerechnet. Der Rest von Monty soll derweil schon dastehen. */}
-          <KalibrierLader paar={kalPaar} heute={heute} variante={variante} />
-        </Suspense>
-
-        <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
-          <code>COT_GRENZE</code> steht auf 75/25, und diese Zahl war bisher eine
-          Überlegung, keine Messung. Hier steht daneben, was die anderen Schwellen
-          über {KALIBRIER_JAHRE} Jahre gebracht hätten. Geändert wird dadurch
-          nichts — die Tabelle ist die Grundlage für die Entscheidung, nicht die
-          Entscheidung.
-        </p>
+        <CotPaarTabelle zeilen={cot.paare} />
       </Card>
 
       <Card>
@@ -174,7 +118,7 @@ export default async function ConfluencePage({ searchParams }: { searchParams: P
           <CardTitle className="mb-0">Saisonalität — alle 28 Paare</CardTitle>
           <span className="ml-auto flex flex-wrap items-center gap-1.5">
             {FENSTER.map((f) => (
-              <Link key={f} href={hier({ jahre: f, kal: kalPaar, variante })}
+              <Link key={f} href={hier(f)}
                 className={cx("num rounded-lg px-2.5 py-1 text-xs transition duration-150 ease-tactile",
                   fenster === f ? "bg-sand text-ink" : "text-ink-muted hover:text-ink")}>
                 {f} Jahre
@@ -214,6 +158,21 @@ export default async function ConfluencePage({ searchParams }: { searchParams: P
           hoechstens 5000 Tageskerzen je Instrument.
         </p>
       </Card>
+
+      {/* Umgezogen am 24.08.2026: „Trägt der Faktor überhaupt?" und die
+          Schwellen-Kalibrierung sind Auswertungsfragen über zwanzig Jahre und
+          gehören nicht auf eine Seite, die die Lage von heute zeigt. Wer
+          morgens auf Monty schaut, will keine Kalibrierung sehen — und wer
+          kalibriert, tut das nicht nebenbei. */}
+      <p className="text-xs text-ink-faint">
+        „Trägt der Faktor überhaupt?" und „Wie streng soll die Grenze sein?"
+        stehen jetzt im Backtest unter{" "}
+        <Link href="/trading/backtest/rueckblick/faktor"
+          className="text-accent-soft hover:underline">
+          Rückblick → Faktor &amp; Grenze
+        </Link>
+        .
+      </p>
     </div>
   );
 }
@@ -224,16 +183,4 @@ async function SaisonZeilenLader({ paar, fenster, heute }: {
 }) {
   const bild = await baueSaisonZeile(paar, fenster, heute);
   return <SaisonZeile bild={bild} />;
-}
-
-async function KalibrierLader(
-  { paar, heute, variante }: { paar: string; heute: string; variante: Variante },
-) {
-  const bild = await baueKalibrierung(paar, heute, variante);
-  return <SchwellenTabelle bild={bild} />;
-}
-
-async function GesamtLader({ heute, variante }: { heute: string; variante: Variante }) {
-  const bild = await baueGesamtbild(heute, variante);
-  return <PaarUebersicht bild={bild} />;
 }

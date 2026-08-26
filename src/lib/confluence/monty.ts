@@ -6,6 +6,9 @@ import {
 } from "./kalibrierung";
 import { G8, PAARE } from "./faktoren";
 import { cotStatistik, type CotStatistik } from "./monty-cot";
+import {
+  cotBildFuer, cotPaarZeilen, type CotBild, type CotPaarZeile,
+} from "./cot-divergenz";
 import { saisonBild, type Fenster, type SaisonBild } from "./saison";
 
 /**
@@ -22,9 +25,29 @@ import { saisonBild, type Fenster, type SaisonBild } from "./saison";
  * deshalb Paar für Paar auf, jede hinter ihrer eigenen Suspense-Grenze.
  */
 
+/**
+ * Ein Paar, beide Beine.
+ *
+ * Der Grund für diese Ansicht ist ein Vergleich, der ohne sie nicht geht:
+ * TradingView zeigt COT **je Paar**, KerimOS zeigte es bisher nur **je
+ * Währung**. Wer die beiden nebeneinanderlegen wollte, musste im Kopf
+ * umrechnen — und beim Umrechnen im Kopf gewinnt immer die Erwartung.
+ *
+ * Deshalb steht hier beides: das Urteil aus **beiden** Beinen (Basis minus
+ * Quote, so rechnet der Screener) und daneben, was **nur die Basiswährung**
+ * sagt — so rechnet Kerims Pine-Indikator, und so zeigt es TradingView.
+ * Die zwei können sich widersprechen, und dass sie es können, ist der
+ * eigentliche Befund: stehen beide Währungen gleich gestreckt, ist die
+ * Differenz null und beide Beine ergeben KEIN Signal, obwohl ein Bein eines
+ * zeigt.
+ */
+export type MontyPaar = CotPaarZeile;
+
 export interface MontyCot {
   stichtag: string;
   waehrungen: CotStatistik[];
+  /** Alle 28 Paare, Paare mit Aussage zuerst. */
+  paare: MontyPaar[];
   /** Wie viele der acht Währungen gerade gestreckt sind. */
   gestreckt: number;
   /**
@@ -42,9 +65,19 @@ export async function baueMontyCot(stichtag: string): Promise<MontyCot> {
     .sort((a, b) => Math.abs(b.jetzt.divergenz) - Math.abs(a.jetzt.divergenz)
       || a.ccy.localeCompare(b.ccy));
 
+  // Die Währungsbilder EINMAL rechnen und für alle 28 Paare wiederverwenden.
+  // Je Paar neu zu rechnen wäre dieselbe Arbeit 56-mal — und schlimmer: ein
+  // zweiter Rechenweg, der irgendwann von der Tabelle darüber abweicht.
+  const bilder = new Map<string, CotBild>(
+    G8.map((c) => [c as string, cotBildFuer(daten, c, stichtag)]),
+  );
+
+  const paare = cotPaarZeilen(bilder, PAARE);
+
   return {
     stichtag,
     waehrungen,
+    paare,
     gestreckt: waehrungen.filter((w) => w.jetzt.divergenz !== 0).length,
     gruppen: bericht.cotGruppen ?? {},
   };

@@ -143,3 +143,138 @@ export function SaisonZeile({ bild }: { bild: SaisonBild }) {
     </tr>
   );
 }
+
+/* ------------------------------------------------- COT je Paar */
+
+/**
+ * Dieselbe Lage, nur auf Paarebene.
+ *
+ * Zwei Spalten mit einem Urteil, und das ist Absicht: **beide Beine** rechnet
+ * der Screener (Basis minus Quote), **nur Basis** rechnet Kerims
+ * Pine-Indikator — und so zeigt es TradingView, weil es kein
+ * „EURUSD"-Terminkontrakt gibt, sondern nur den auf den Euro.
+ *
+ * Strittige Zeilen stehen oben und sind markiert. Sie sind kein Fehler,
+ * sondern der Grund für diese Tabelle: stehen beide Währungen gleich
+ * gestreckt, hebt sich die Differenz auf und der Screener sagt nichts,
+ * während der Indikator ein Signal zeigt. Wer das nicht weiss, hält eines
+ * von beiden für kaputt.
+ */
+export function CotPaarTabelle({ zeilen }: {
+  zeilen: {
+    paar: string;
+    urteil: { dir: -1 | 0 | 1; staerke: number; text: string;
+      basis: { ccy: string; kommRang: number | null; retailRang: number | null; divergenz: -1 | 0 | 1 };
+      quote: { ccy: string; kommRang: number | null; retailRang: number | null; divergenz: -1 | 0 | 1 } };
+    nurBasis: -1 | 0 | 1;
+    widerspruch: boolean;
+  }[];
+}) {
+  const rang = (v: number | null) => (v === null ? "·" : v.toFixed(0));
+  const seite = (d: -1 | 0 | 1) =>
+    d === 0 ? <span className="text-ink-faint">–</span>
+      : <Badge tone={d > 0 ? "good" : "bad"}>{d > 0 ? "long" : "short"}</Badge>;
+
+  const mitAussage = zeilen.filter((z) => z.urteil.dir !== 0 || z.nurBasis !== 0);
+  const strittig = zeilen.filter((z) => z.widerspruch).length;
+
+  if (mitAussage.length === 0) {
+    return (
+      <p className="text-sm text-ink-muted">
+        Kein einziges der 28 Paare hat gerade eine Aussage — weder über beide
+        Beine noch über die Basiswährung allein. Das ist ein normaler Zustand
+        und keine Datenlücke: die Streckung ist selten, sonst wäre sie keine.
+      </p>
+    );
+  }
+
+  return (
+    <>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[680px] border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-line text-xs text-ink-muted">
+              <th className="px-2 py-2 text-left font-normal">Paar</th>
+              <th className="px-2 py-2 text-right font-normal"
+                title="Commercials / Retail der Basiswährung">Basis C/R</th>
+              <th className="px-2 py-2 text-right font-normal"
+                title="Commercials / Retail der Quotewährung">Quote C/R</th>
+              <th className="px-2 py-2 text-center font-normal"
+                title="Basis minus Quote — so rechnet der Screener">beide Beine</th>
+              <th className="px-2 py-2 text-center font-normal"
+                title="Nur die Basiswährung — so rechnet dein Pine und so zeigt es TradingView">
+                nur Basis
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {mitAussage.map((z) => (
+              <tr key={z.paar}
+                className={cx("border-b border-line/50 last:border-b-0 hover:bg-sand/40",
+                  z.widerspruch && "bg-warn-tint/40")}>
+                <td className="px-2 py-2 font-medium text-ink">
+                  {z.paar}
+                  {z.widerspruch && (
+                    <span className="ml-1.5 text-[10px] uppercase tracking-wide text-warn">
+                      strittig
+                    </span>
+                  )}
+                </td>
+                <td className={cx("num px-2 py-2 text-right",
+                  z.urteil.basis.divergenz !== 0 ? "text-ink" : "text-ink-soft")}>
+                  {rang(z.urteil.basis.kommRang)} / {rang(z.urteil.basis.retailRang)}
+                </td>
+                <td className={cx("num px-2 py-2 text-right",
+                  z.urteil.quote.divergenz !== 0 ? "text-ink" : "text-ink-soft")}>
+                  {rang(z.urteil.quote.kommRang)} / {rang(z.urteil.quote.retailRang)}
+                </td>
+                <td className="px-2 py-2 text-center" title={z.urteil.text}>
+                  {seite(z.urteil.dir)}
+                  {z.urteil.dir !== 0 && z.urteil.staerke < 1 && (
+                    <span className="ml-1 text-[10px] text-ink-faint">halb</span>
+                  )}
+                </td>
+                <td className="px-2 py-2 text-center">{seite(z.nurBasis)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+        {mitAussage.length} von {zeilen.length} Paaren haben überhaupt eine
+        Aussage
+        {strittig > 0 && (
+          <>
+            , davon <strong className="text-warn">{strittig} strittig</strong>
+          </>
+        )}
+        . Paare ohne jede Aussage stehen gar nicht erst da.
+      </p>
+      <p className="mt-2 text-[11px] leading-relaxed text-ink-faint">
+        <strong>strittig</strong> heisst: die zwei Spalten sagen nicht
+        dasselbe. Drei Arten, wie das passiert —
+        {" "}<em>gegenläufig</em> (beide sprechen, in verschiedene Richtungen),
+        {" "}<em>ausgelöscht</em> (beide Währungen gleich gestreckt, die
+        Differenz ist null, nur die Basis spricht) und
+        {" "}<em>nur Quote</em> (das Signal kommt allein vom Gegenbein, die
+        Basis schweigt — dann zeigt TradingView nichts).
+      </p>
+      <p className="mt-2 text-[11px] leading-relaxed text-ink-faint">
+        <strong>halb</strong> heisst: nur eine der beiden Währungen ist
+        gestreckt. Volle Stärke gibt es nur, wenn beide Seiten am Rand stehen
+        und in dieselbe Richtung zeigen.
+      </p>
+      <p className="mt-2 rounded-xl bg-warn-tint px-3 py-2.5 text-[11px] leading-relaxed text-ink-soft">
+        <strong>Für den Vergleich mit TradingView:</strong> nimm die Spalte
+        „nur Basis". TradingView zeigt den Terminkontrakt der Währung, nicht
+        des Paares — einen EURUSD-Kontrakt gibt es nicht. Bei
+        USD-Quote-Paaren ist das die linke Währung, bei USD-Basis-Paaren
+        (USDJPY, USDCAD, USDCHF) der <strong>Dollar-Index</strong>, CFTC
+        098662. Weichen die Perzentile trotzdem ab, liegt es fast immer an
+        einer der drei Stellen: anderes Fenster als drei Jahre, netto statt
+        Anteil am Open Interest, oder ein Bericht Versatz.
+      </p>
+    </>
+  );
+}

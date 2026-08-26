@@ -174,3 +174,64 @@ export function cotPaarUrteil(basis: CotBild, quote: CotBild): CotPaarUrteil {
       : teile.join(" · ") + ".",
   };
 }
+
+/* ------------------------------------------------- Alle Paare auf einmal */
+
+export interface CotPaarZeile {
+  paar: string;
+  urteil: CotPaarUrteil;
+  /** Nur das Basis-Bein — die Sicht des Pine-Indikators und von TradingView. */
+  nurBasis: -1 | 0 | 1;
+  /** True, wenn beide Sichten verschiedene Richtungen sagen. */
+  widerspruch: boolean;
+}
+
+/**
+ * Die Paar-Tabelle für Monty.
+ *
+ * Steht hier und nicht in `monty.ts`, weil `monty.ts` `server-only` ist und
+ * damit von keinem Kontrollskript importiert werden kann. Eine Rechnung, die
+ * sich nicht prüfen lässt, ist eine Behauptung.
+ *
+ * Die Währungsbilder kommen fertig herein: sie werden EINMAL gerechnet und
+ * für alle 28 Paare wiederverwendet. Je Paar neu zu rechnen wäre dieselbe
+ * Arbeit 56-mal — und schlimmer, ein zweiter Rechenweg, der irgendwann von
+ * der Währungstabelle daneben abweicht.
+ */
+export function cotPaarZeilen(
+  bilder: Map<string, CotBild>, paare: readonly string[],
+): CotPaarZeile[] {
+  return paare.flatMap((paar) => {
+    const basis = bilder.get(paar.slice(0, 3));
+    const quote = bilder.get(paar.slice(3, 6));
+    if (!basis || !quote) return [];
+
+    const urteil = cotPaarUrteil(basis, quote);
+    const nurBasis = basis.divergenz;
+    return [{
+      paar, urteil, nurBasis,
+      /*
+       * Strittig heisst schlicht: die zwei Sichten sagen nicht dasselbe.
+       *
+       * Der erste Versuch war enger — „beide sagen etwas, und zwar
+       * Verschiedenes" — und hat den wichtigsten Fall übersehen: stehen
+       * BEIDE Währungen gleich gestreckt, hebt sich die Differenz auf, das
+       * Paar sagt nichts, und die Basiswährung allein sagt trotzdem etwas.
+       * Genau dann zeigt der Pine-Indikator ein Signal und der Screener
+       * keines. Ein Kontrollwert hat das gefunden, nicht das Nachdenken.
+       *
+       * Drei Arten, wie es dazu kommt:
+       *   gegenläufig  — beide sprechen, in verschiedene Richtungen
+       *   ausgelöscht  — Paar schweigt, Basis spricht (der Fall oben)
+       *   nur Quote    — Paar spricht, Basis schweigt; das Signal kommt
+       *                  allein vom Gegenbein
+       */
+      widerspruch: urteil.dir !== nurBasis,
+    }];
+  }).sort((a, b) =>
+    // Widersprüche ganz nach oben: sie sind der Grund für diese Ansicht.
+    Number(b.widerspruch) - Number(a.widerspruch)
+    || b.urteil.staerke - a.urteil.staerke
+    || Math.abs(b.nurBasis) - Math.abs(a.nurBasis)
+    || a.paar.localeCompare(b.paar));
+}
