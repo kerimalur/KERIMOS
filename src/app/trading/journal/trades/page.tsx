@@ -8,6 +8,7 @@ import { tradingConfigured, fetchWatchlistPaar } from "@/lib/supabase/trading";
 import { tradeLoeschen } from "@/lib/journal-actions";
 import { JournalHinweis } from "@/components/journal-hinweis";
 import { TradeForm } from "@/components/trade-form";
+import { duplikatText, PIP_TOLERANZ } from "@/lib/trading/duplikat";
 import { Card, CardTitle, Stat, Badge, Empty } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -104,7 +105,7 @@ function TradeZeile({ t }: { t: Trade }) {
 export default async function TradesSeite({
   searchParams,
 }: {
-  searchParams: Promise<{ paar?: string; ergebnis?: string; neu?: string; bearbeiten?: string }>;
+  searchParams: Promise<Record<string, string | undefined>>;
 }) {
   if (!tradingConfigured()) return <JournalHinweis grund="keine-db" />;
   const userId = await tradingUserId();
@@ -177,7 +178,34 @@ export default async function TradesSeite({
     },
   } : undefined;
 
-  const vorgabe = bearbeitung ?? (beobachtung ? {
+  /*
+   * Zurück aus der Duplikatwarnung: die Eingaben stehen in der Adresszeile,
+   * damit Kerim nicht alles neu tippen muss, nur um „trotzdem" zu drücken.
+   */
+  const zahl = (k: string) => {
+    const v = Number(sp[k]);
+    return sp[k] && Number.isFinite(v) ? v : null;
+  };
+  const ausAdresse = sp.doppelt ? {
+    pair: sp.pair,
+    direction: (sp.direction === "short" ? "short" : "long") as "long" | "short",
+    date: sp.date,
+    result: sp.result ?? "win",
+    rMultiple: zahl("rMultiple") ?? undefined,
+    riskAmount: zahl("riskAmount"),
+    profitAmount: zahl("profitAmount"),
+    entryPrice: zahl("entryPrice"),
+    stopLoss: zahl("stopLoss"),
+    takeProfit: zahl("takeProfit"),
+    notes: sp.notes ?? "",
+    type: (sp.type === "funded" ? "funded" : "ek") as "ek" | "funded",
+    sessionType: "live" as const,
+  } : undefined;
+
+  const doppelter = sp.doppelt
+    ? (alleTrades.find((t) => t.id === sp.doppelt) ?? null) : null;
+
+  const vorgabe = ausAdresse ?? bearbeitung ?? (beobachtung ? {
     pair: beobachtung.pair,
     direction: (beobachtung.side === "short" ? "short" : "long") as "long" | "short",
     sessionType: "live" as const,
@@ -202,8 +230,29 @@ export default async function TradesSeite({
 
   return (
     <div className="space-y-5">
+      {doppelter && (
+        <Card>
+          <CardTitle>Sieht aus, als gäbe es den schon</CardTitle>
+          <p className="text-sm text-ink-soft">
+            {duplikatText({
+              id: doppelter.id, pair: doppelter.pair, direction: doppelter.direction,
+              date: doppelter.date, entryPrice: doppelter.entryPrice,
+              rMultiple: doppelter.rMultiple, status: doppelter.status,
+            })}
+          </p>
+          <p className="mt-2 text-xs text-ink-muted">
+            Gleiches Paar, gleiche Richtung, Datum höchstens einen Tag
+            auseinander und der Einstieg innerhalb von {PIP_TOLERANZ} Pips.
+            Deine Eingaben stehen unten noch — willst du ihn trotzdem anlegen,
+            setz den Haken im Formular. Sonst schliess die Seite; es wurde
+            nichts gespeichert.
+          </p>
+        </Card>
+      )}
+
       <TradeForm
         paare={PAARE}
+        doppeltId={sp.doppelt ?? null}
         strategien={strategien.map((x) => ({ id: x.id, name: x.name }))}
         konfluenzen={KONFLUENZEN}
         vorgabe={vorgabe}

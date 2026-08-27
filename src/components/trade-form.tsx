@@ -31,6 +31,11 @@ export interface TradeVorgabe {
   stopLoss?: number | null;
   takeProfit?: number | null;
   setups?: Record<string, boolean>;
+  /** Risiko in Kontowährung — daraus rechnet das Journal das R. */
+  riskAmount?: number | null;
+  profitAmount?: number | null;
+  /** Kontostand, für den Prozentwert. Nur Anzeige, kein Eingabefeld. */
+  accountBalance?: number | null;
   /**
    * Die Beobachtungs-Zeile, aus der dieser Trade entsteht.
    *
@@ -50,9 +55,14 @@ const SETUP_FELDER = [
 ];
 
 export function TradeForm({
-  paare, strategien, konfluenzen, vorgabe, offenStart = false,
+  paare, strategien, konfluenzen, vorgabe, offenStart = false, doppeltId = null,
 }: {
   paare: readonly string[];
+  /**
+   * Gesetzt, wenn die Duplikatprüfung angeschlagen hat. Dann steht im
+   * Formular ein Haken „trotzdem anlegen" — und nur dann.
+   */
+  doppeltId?: string | null;
   strategien: { id: string; name: string }[];
   konfluenzen: readonly string[];
   vorgabe?: TradeVorgabe;
@@ -94,6 +104,18 @@ export function TradeForm({
 
       <form action={tradeSpeichern} className="space-y-4">
         {vorgabe?.id && <input type="hidden" name="id" value={vorgabe.id} />}
+        {doppeltId && (
+          <label className="mb-3 flex w-full cursor-pointer items-center gap-2
+                            rounded-xl border border-warn/40 bg-warn-tint px-3 py-2.5
+                            text-xs text-ink-soft">
+            <input type="checkbox" name="trotzdem" value="1" className="accent-accent" />
+            <span>
+              <strong className="text-warn">Trotzdem anlegen.</strong>{" "}
+              Nur setzen, wenn es wirklich ein zweiter Einstieg war — sonst
+              steht derselbe Trade zweimal im Journal.
+            </span>
+          </label>
+        )}
         {/* Löst die Beobachtungs-Zeile auf, aus der dieser Trade entstand. */}
         {vorgabe?.watchlistId && (
           <input type="hidden" name="watchlist_id" value={vorgabe.watchlistId} />
@@ -145,11 +167,39 @@ export function TradeForm({
             </Select>
           </div>
           <div>
+            <Label htmlFor="tf-gewinn">Ergebnis (€)</Label>
+            <Input id="tf-gewinn" name="profitAmount" type="number" step="0.01"
+              placeholder="z.B. 187.50"
+              defaultValue={vorgabe?.profitAmount ?? ""} />
+          </div>
+          <div>
+            <Label htmlFor="tf-risiko">Risiko (€)</Label>
+            <Input id="tf-risiko" name="riskAmount" type="number" step="0.01" min="0"
+              placeholder="was der Stop gekostet hätte"
+              defaultValue={vorgabe?.riskAmount ?? ""} />
+          </div>
+          <div>
             <Label htmlFor="tf-r">R-Vielfaches</Label>
-            <Input id="tf-r" name="rMultiple" type="number" step="0.1" min="0"
+            <Input id="tf-r" name="rMultiple" type="number" step="0.1"
               placeholder={ergebnis === "loss" ? "1 (Standard)" : "z.B. 2"}
               defaultValue={vorgabe?.rMultiple ?? ""} />
           </div>
+          <div className="w-full text-[11px] leading-relaxed text-ink-faint">
+            Steht <strong>Ergebnis</strong> und <strong>Risiko</strong> da,
+            wird das R daraus gerechnet und das Feld daneben überschrieben —
+            es ist dann nur noch zum Nachschauen. Nur wenn das Risiko fehlt,
+            zählt der eingetippte Wert.
+            {typeof vorgabe?.accountBalance === "number" && vorgabe.accountBalance > 0
+              && typeof vorgabe?.profitAmount === "number" && (
+              <> Am Konto gemessen sind das{" "}
+                <strong className="text-ink-muted">
+                  {(vorgabe.profitAmount / vorgabe.accountBalance * 100).toFixed(2)} %
+                </strong>{" "}
+                von {vorgabe.accountBalance.toFixed(2)} €.
+              </>
+            )}
+          </div>
+
           <div>
             <Label htmlFor="tf-strategy">Strategie</Label>
             <Select id="tf-strategy" name="strategyId" defaultValue="">

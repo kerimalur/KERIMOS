@@ -1,9 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { createTradingClient } from "@/lib/supabase/trading";
 import { tradingUserId } from "@/lib/trading/journal";
 import { GVA_NOTIZ } from "@/lib/trading/herkunft";
+import { findeDuplikat, type Kandidat, type Neuling } from "@/lib/trading/duplikat";
 
 /**
  * Schreibzugriffe aufs Trading-Journal.
@@ -61,16 +63,78 @@ const flag = (fd: FormData, k: string) => fd.get(k) === "on" || fd.get(k) === "t
 // Trades
 // ---------------------------------------------------------------------------
 
+/**
+ * Kandidaten aus der Datenbank holen und den ersten Treffer suchen.
+ *
+ * Vorgefiltert wird nur auf Paar und Richtung — das Feinurteil (Datum in
+ * Toleranz, Einstieg in Pip-Toleranz) trifft `findeDuplikat`, weil es dort
+ * ohne Datenbank prüfbar ist.
+ */
+async function sucheDuplikat(
+  supabase: NonNullable<ReturnType<typeof createTradingClient>>, neu: Neuling,
+): Promise<Kandidat | null> {
+  if (neu.entryPrice === null) return null;
+
+  const { data } = await supabase.from("trades")
+    .select("id, symbol, side, date, entry_price, r_multiple, status")
+    .eq("symbol", neu.pair).eq("side", neu.direction)
+    .order("date", { ascending: false }).limit(40);
+
+  const kandidaten: Kandidat[] = ((data ?? []) as Record<string, unknown>[]).map((t) => ({
+    id: String(t.id),
+    pair: String(t.symbol ?? ""),
+    direction: String(t.side ?? ""),
+    date: String(t.date ?? "").slice(0, 10),
+    entryPrice: t.entry_price === null ? null : Number(t.entry_price),
+    rMultiple: Number(t.r_multiple ?? 0),
+    status: String(t.status ?? "closed"),
+  }));
+
+  return findeDuplikat(neu, kandidaten);
+}
+
+/** Die Eingaben als Adresszeile, damit das Formular gefüllt zurückkommt. */
+function zurueck(fd: FormData): string {
+  const p = new URLSearchParams();
+  for (const feld of [
+    "pair", "direction", "date", "result", "rMultiple", "riskAmount",
+    "profitAmount", "entryPrice", "stopLoss", "takeProfit", "notes", "type",
+  ]) {
+    const v = txt(fd, feld);
+    if (v) p.set(feld, v);
+  }
+  return p.toString();
+}
+
 export async function tradeSpeichern(fd: FormData) {
   const { supabase, userId } = await zugang();
 
   const id = txt(fd, "id");
   const ergebnis = txt(fd, "result");
   const rRoh = num(fd, "rMultiple");
+  const risiko = num(fd, "riskAmount");
+  const gewinn = num(fd, "profitAmount");
+
+  /*
+   * R aus Risiko und Gewinn, wenn beides dasteht — sonst aus der Eingabe.
+   *
+   * Die Brücke kann das Risiko nur messen, wenn sie den Stop gesehen hat.
+   * Kerim setzt ihn oft erst nach dem Einstieg; sieht sie ihn nie, bleibt
+   * `risk_amount` leer und das R war bis zum 27.08.2026 dauerhaft 0. Jetzt
+   * trägt er das Risiko im Formular nach und das R folgt daraus, statt eine
+   * zweite, von Hand geschätzte Zahl danebenzustellen.
+   *
+   * Vorzeichen: R trägt es, nicht der Betrag. Ein Verlust von 250 auf 250
+   * Risiko ist −1 R, kein +1.
+   */
+  const gerechnet = risiko !== null && risiko > 0 && gewinn !== null
+    ? Math.round((gewinn / risiko) * 100) / 100
+    : null;
 
   // Bei einem Verlust ohne erfassten Wert ist −1R die ehrlichste Annahme:
   // Kerim handelt mit festem Risiko, ein Stop-Out ist genau 1R.
-  const r = ergebnis === "loss" ? Math.abs(rRoh ?? 1) : Math.abs(rRoh ?? 0);
+  const r = gerechnet ?? (
+    ergebnis === "loss" ? -Math.abs(rRoh ?? 1) : Math.abs(rRoh ?? 0));
 
   const zeile: Record<string, unknown> = {
     user_id: userId,
@@ -84,7 +148,8 @@ export async function tradeSpeichern(fd: FormData) {
     session: txt(fd, "session"),
     r_multiple: r,
     risk_percent: num(fd, "riskPercent"),
-    profit_amount: num(fd, "profitAmount"),
+    risk_amount: risiko,
+    profit_amount: gewinn,
     entry_price: num(fd, "entryPrice"),
     exit_price: num(fd, "exitPrice"),
     stop_loss: num(fd, "stopLoss"),
@@ -106,6 +171,33 @@ export async function tradeSpeichern(fd: FormData) {
   if (id) {
     await supabase.from("trades").update(zeile).eq("id", id).eq("user_id", userId);
   } else {
+    /*
+     * Duplikatprüfung — nur beim Anlegen, nie beim Bearbeiten.
+     *
+     * Die MT5-Brücke trägt Trades selbst ein, und Kerim trägt sie manchmal
+     * von Hand nach, weil er nicht sicher ist, ob sie es getan hat. Zwei
+     * Zeilen für denselben Trade verdoppeln die Stichprobe und verfälschen
+     * jede Kennzahl, ohne dass man es der Zahl ansieht.
+     *
+     * Gewarnt wird, nicht blockiert: `trotzdem=1` legt trotzdem an. Eine
+     * Sperre, die man nicht übergehen kann, kostet irgendwann einen echten
+     * zweiten Einstieg am selben Level.
+     */
+    if (!txt(fd, "trotzdem")) {
+      const doppelt = await sucheDuplikat(supabase, {
+        pair: String(zeile.symbol),
+        direction: String(zeile.side),
+        date: String(zeile.date),
+        entryPrice: zeile.entry_price as number | null,
+      });
+      if (doppelt) {
+        // Die Eingaben gehen mit zurück, sonst müsste Kerim alles neu
+        // tippen, nur um „trotzdem" zu drücken. Haken bei Setups und
+        // Konfluenzen sind dabei nicht dabei — der Fall ist selten genug,
+        // dass ein vollständiger Rücktransport den Aufwand nicht lohnt.
+        redirect(`/trading/journal/trades?doppelt=${doppelt.id}&${zurueck(fd)}`);
+      }
+    }
     await supabase.from("trades").insert([zeile]);
   }
 

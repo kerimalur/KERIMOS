@@ -123,6 +123,14 @@ export interface Trade {
   result: Ergebnis | null;
   rMultiple: number;
   riskPercent: number | null;
+  /**
+   * Risiko in Kontowährung. Die Brücke schreibt es aus Stopabstand mal
+   * Punktwert; von Hand nachtragbar, wenn sie keinen Stop gesehen hat.
+   * Null heisst „nicht messbar" — und daraus folgt R = 0.
+   */
+  riskAmount: number | null;
+  /** Kontostand, als der Trade geschrieben wurde. Basis für den Prozentwert. */
+  accountBalance: number | null;
   profitAmount: number | null;
   entryPrice: number | null;
   exitPrice: number | null;
@@ -251,6 +259,8 @@ function zuTrade(r: Row): Trade {
     result: (r.result as Ergebnis) ?? null,
     rMultiple: Number(r.r_multiple ?? 0),
     riskPercent: zahl(r.risk_percent),
+    riskAmount: zahl(r.risk_amount),
+    accountBalance: zahl(r.account_balance),
     profitAmount: zahl(r.profit_amount),
     entryPrice: zahl(r.entry_price),
     exitPrice: zahl(r.exit_price),
@@ -305,10 +315,23 @@ function zuOutlook(r: Row): Outlook {
 // ---------------------------------------------------------------------------
 
 const TRADE_SPALTEN =
-  "id, type, symbol, side, date, result, r_multiple, risk_percent, profit_amount, " +
+  "id, type, symbol, side, date, result, r_multiple, risk_percent, risk_amount, " +
+  "account_balance, profit_amount, " +
   "entry_price, exit_price, stop_loss, take_profit, lot_size, session_type, status, session, " +
   "notes, comment, strategy_id, outlook_id, setup_daily_bos, setup_value_area, " +
   "setup_market_structure, setup_weekly_gva, setup_3day_gva, confluences, created_at";
+
+/**
+ * Derselbe Satz ohne die zwei Nachzügler vom 27.08.2026 — der Rückfall, wenn
+ * die Migration noch nicht gelaufen ist.
+ *
+ * Abgeleitet und nicht abgeschrieben: eine zweite Liste von Hand zu pflegen
+ * hiesse, dass sie beim nächsten Feld auseinanderläuft und der Rückfall
+ * plötzlich andere Daten liefert als der Normalfall.
+ */
+const TRADE_SPALTEN_ALT = TRADE_SPALTEN
+  .replace("risk_amount, ", "")
+  .replace("account_balance, ", "");
 
 export interface TradeFilter {
   sessionType?: SessionTyp;
@@ -324,20 +347,34 @@ export async function fetchTrades(filter: TradeFilter = {}): Promise<Trade[]> {
   const z = await zugang();
   if (!z) return [];
 
-  let q = z.supabase
-    .from("trades")
-    .select(TRADE_SPALTEN)
-    .eq("user_id", z.userId)
-    .order("date", { ascending: false })
-    .order("created_at", { ascending: false });
+  /*
+   * Zwei Anläufe, und der zweite ist kein Luxus.
+   *
+   * `risk_amount` und `account_balance` kamen am 27.08.2026 dazu. Fehlt eine
+   * der Spalten, lässt PostgREST die GANZE Abfrage scheitern — das Journal
+   * wäre schlagartig leer, bis die Migration läuft. Dieselbe Vorsicht wie bei
+   * `kategorie_id` in der Watchlist: lieber ein Journal ohne die zwei neuen
+   * Zahlen als gar keins.
+   */
+  const bauen = (spalten: string) => {
+    let q = z.supabase
+      .from("trades")
+      .select(spalten)
+      .eq("user_id", z.userId)
+      .order("date", { ascending: false })
+      .order("created_at", { ascending: false });
 
-  if (filter.sessionType) q = q.eq("session_type", filter.sessionType);
-  if (filter.pair) q = q.eq("symbol", filter.pair);
-  if (filter.result) q = q.eq("result", filter.result);
-  if (filter.von) q = q.gte("date", filter.von);
-  if (filter.bis) q = q.lte("date", filter.bis);
+    if (filter.sessionType) q = q.eq("session_type", filter.sessionType);
+    if (filter.pair) q = q.eq("symbol", filter.pair);
+    if (filter.result) q = q.eq("result", filter.result);
+    if (filter.von) q = q.gte("date", filter.von);
+    if (filter.bis) q = q.lte("date", filter.bis);
+    return q;
+  };
 
-  const { data } = await q;
+  let { data, error } = await bauen(TRADE_SPALTEN);
+  if (error) ({ data } = await bauen(TRADE_SPALTEN_ALT));
+
   return ((data ?? []) as unknown as Row[]).map(zuTrade);
 }
 
