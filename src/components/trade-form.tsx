@@ -56,7 +56,10 @@ const SETUP_FELDER = [
 
 export function TradeForm({
   paare, strategien, konfluenzen, vorgabe, offenStart = false, doppeltId = null,
+  bilder = null,
 }: {
+  /** Screenshot-Bereich — nur beim Bearbeiten, dann von der Seite gereicht. */
+  bilder?: React.ReactNode;
   paare: readonly string[];
   /**
    * Gesetzt, wenn die Duplikatprüfung angeschlagen hat. Dann steht im
@@ -293,6 +296,8 @@ export function TradeForm({
           )}
         </div>
       </form>
+
+      {bilder}
 
       {bearbeiten && (
         <form action={tradeLoeschen} className="mt-3 border-t border-line/70 pt-3">

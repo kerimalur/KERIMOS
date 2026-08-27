@@ -6,6 +6,7 @@ import { pushConfigured } from "@/lib/push";
 import { tradingConfigured, fetchWatchlist } from "@/lib/supabase/trading";
 import { heuteMinuten } from "@/lib/time";
 import { KategorienKarte } from "@/components/trading/kategorien-karte";
+import { KonfluenzenKarte } from "@/components/trading/konfluenzen-karte";
 import { AlarmUebersichtKarte } from "@/components/alarm/uebersicht-karte";
 import { ladeAlarmUebersicht } from "@/lib/alarm/uebersicht";
 import { Card, CardTitle, Badge, Empty } from "@/components/ui";
@@ -109,6 +110,8 @@ export default async function TradingEinstellungenPage() {
       <AlarmUebersichtKarte zeilen={alarmZeilen} />
 
       <KategorienKarte />
+
+      <KonfluenzenKarte />
 
       <div className="grid gap-2 sm:grid-cols-2">
         <Kachel href="/trading/alarme/einstellungen" titel="Alarm-Setup"

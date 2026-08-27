@@ -18,7 +18,7 @@ import { BacktestBreakdown } from "@/components/backtest-breakdown";
 import { BacktestInsights } from "@/components/backtest-insights";
 import { BacktestEquity } from "@/components/backtest-equity";
 import { BacktestCheckliste } from "@/components/backtest-checkliste";
-import { BacktestTradeForm } from "@/components/backtest-trade-form";
+import { BacktestTradeWizard } from "@/components/backtest-trade-wizard";
 import { DatumWaehler } from "@/components/datum-waehler";
 import { heuteISO } from "@/lib/time";
 import { BacktestTradeListe } from "@/components/backtest-trade-liste";
@@ -258,6 +258,16 @@ function EintragenAnsicht({
     : null;
   const standardDatum = (letztes ?? session.start_date ?? heuteISO()).slice(0, 10);
 
+  // Begründungen früherer Stopouts als Bausteine für die Pflichtnotiz. Neueste
+  // zuerst, doppelte raus — nach zwanzig Trades sind das genau die Sätze, die
+  // er ohnehin wieder schreiben würde.
+  const slNotizen = [...new Set(
+    [...trades]
+      .filter((t) => t.result === "sl" && t.notiz && t.notiz.trim().length > 0)
+      .sort((a, b) => b.occurred_on.localeCompare(a.occurred_on))
+      .map((t) => t.notiz!.trim()),
+  )].slice(0, 6);
+
   return (
     <>
       <BacktestCheckliste punkte={checkliste} />
@@ -270,8 +280,8 @@ function EintragenAnsicht({
             Auswertung ansehen ↗
           </Link>
         </div>
-        <BacktestTradeForm sessionId={session.id} kategorien={kategorien}
-          standardDatum={standardDatum} />
+        <BacktestTradeWizard sessionId={session.id} pair={session.pair}
+          kategorien={kategorien} standardDatum={standardDatum} slNotizen={slNotizen} />
       </Card>
 
       <Card>

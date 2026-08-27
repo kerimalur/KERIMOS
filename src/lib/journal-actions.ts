@@ -6,6 +6,10 @@ import { createTradingClient } from "@/lib/supabase/trading";
 import { tradingUserId } from "@/lib/trading/journal";
 import { GVA_NOTIZ } from "@/lib/trading/herkunft";
 import { findeDuplikat, type Kandidat, type Neuling } from "@/lib/trading/duplikat";
+import { saubereName, STANDARD_KONFLUENZEN } from "@/lib/trading/konfluenzen";
+import {
+  pruefeBild, bildPfad, pfadAusUrl, EIMER,
+} from "@/lib/trading/screenshots";
 
 /**
  * Schreibzugriffe aufs Trading-Journal.
@@ -567,4 +571,150 @@ export async function signalStatusSetzen(fd: FormData) {
     .eq("id", id);
 
   listenAktualisieren();
+}
+
+/* ------------------------------------------ Konfluenzen (27.08.2026) */
+
+/**
+ * Eine eigene Konfluenz anlegen.
+ *
+ * Beim allerersten Anlegen werden die acht Standardwerte **mitgeschrieben**.
+ * Sonst wäre der erste eigene Eintrag zugleich der einzige, und Kerim stünde
+ * mit einer Liste da, aus der sieben gewohnte Haken verschwunden sind — ohne
+ * dass er etwas gelöscht hat.
+ */
+export async function konfluenzAnlegen(fd: FormData) {
+  const { supabase, userId } = await zugang();
+  const name = saubereName(fd.get("name"));
+  if (!name) return;
+
+  const { data: schonDa } = await supabase
+    .from("trading_konfluenzen").select("id, sort_order")
+    .eq("user_id", userId).order("sort_order", { ascending: false });
+  const liste = (schonDa ?? []) as { id: string; sort_order: number }[];
+
+  if (liste.length === 0) {
+    const grund = STANDARD_KONFLUENZEN.map((n, i) => ({
+      user_id: userId, name: n, sort_order: i,
+    }));
+    const { error } = await supabase.from("trading_konfluenzen").insert(grund);
+    if (error) {
+      throw new Error(
+        "Die Tabelle trading_konfluenzen fehlt. Die SQL steht auf dieser Seite: "
+        + error.message,
+      );
+    }
+  }
+
+  const naechste = liste.length === 0
+    ? STANDARD_KONFLUENZEN.length : Number(liste[0]?.sort_order ?? 0) + 1;
+
+  // Doppelte Namen fängt der eindeutige Index ab — ein 23505 ist hier kein
+  // Fehler, sondern die Antwort „gibt es schon".
+  const { error } = await supabase.from("trading_konfluenzen")
+    .insert({ user_id: userId, name, sort_order: naechste });
+  if (error && error.code !== "23505") {
+    throw new Error(`Konfluenz anlegen: ${error.message}`);
+  }
+
+  journalAktualisieren(["/trading/einstellungen"]);
+}
+
+export async function konfluenzLoeschen(fd: FormData) {
+  const { supabase, userId } = await zugang();
+  const id = txt(fd, "id");
+  if (!id) return;
+
+  // Trades behalten den Namen: `confluences` ist ein Textfeld, kein Verweis.
+  // Ein gelöschter Eintrag verschwindet aus dem Formular, nicht aus der
+  // Vergangenheit — und taucht beim Bearbeiten eines alten Trades wieder auf
+  // (siehe `konfluenzListe`).
+  await supabase.from("trading_konfluenzen")
+    .delete().eq("id", id).eq("user_id", userId);
+
+  journalAktualisieren(["/trading/einstellungen"]);
+}
+
+/* ------------------------------------------- Screenshots (27.08.2026) */
+
+/**
+ * Ein Bild an einen Trade hängen.
+ *
+ * Der Eimer wird beim ersten Bild **selbst angelegt**. Sonst wäre der erste
+ * Versuch ein Fehler mit der Aufforderung, im Supabase-Dashboard drei Knöpfe
+ * zu drücken — und die sucht man abends nicht.
+ *
+ * Öffentlich lesbar: die URL steht im Journal und muss ohne Anmeldung
+ * anzeigbar sein. Die Pfade tragen den Trade-Schlüssel und einen Zufall, sind
+ * also nicht zu erraten. Wer die URL hat, sieht das Bild — das ist die
+ * bewusste Abwägung gegen signierte Links, die alle paar Minuten ablaufen.
+ */
+export async function screenshotHochladen(fd: FormData) {
+  const { supabase, userId } = await zugang();
+  const tradeId = txt(fd, "tradeId");
+  const datei = fd.get("datei");
+  if (!tradeId || !(datei instanceof File)) return;
+
+  const { data: trade } = await supabase.from("trades")
+    .select("id, screenshots").eq("id", tradeId).eq("user_id", userId).maybeSingle();
+  if (!trade) return;
+
+  const bisher = Array.isArray((trade as { screenshots?: string[] }).screenshots)
+    ? (trade as { screenshots: string[] }).screenshots : [];
+
+  const urteil = pruefeBild(datei.type, datei.size, bisher.length);
+  if (!urteil.ok) {
+    redirect(`/trading/journal/trades?bearbeiten=${tradeId}&bildfehler=${encodeURIComponent(urteil.grund)}`);
+  }
+
+  // Fehlt der Eimer, anlegen. `createBucket` meldet einen bestehenden Eimer
+  // als Fehler — der wird geschluckt, er ist die Normalantwort ab dem
+  // zweiten Bild.
+  await supabase.storage.createBucket(EIMER, { public: true }).catch(() => undefined);
+
+  const pfad = bildPfad(tradeId, datei.type, Date.now(), Math.random().toString(36).slice(2));
+  const { error: hochFehler } = await supabase.storage.from(EIMER)
+    .upload(pfad, datei, { contentType: datei.type, upsert: false });
+  if (hochFehler) {
+    redirect(`/trading/journal/trades?bearbeiten=${tradeId}&bildfehler=${encodeURIComponent(hochFehler.message)}`);
+  }
+
+  const { data: oeffentlich } = supabase.storage.from(EIMER).getPublicUrl(pfad);
+  await supabase.from("trades")
+    .update({ screenshots: [...bisher, oeffentlich.publicUrl] })
+    .eq("id", tradeId).eq("user_id", userId);
+
+  journalAktualisieren();
+  redirect(`/trading/journal/trades?bearbeiten=${tradeId}`);
+}
+
+/**
+ * Ein Bild wieder wegnehmen.
+ *
+ * Erst aus der Zeile, dann aus dem Speicher. Andersherum bliebe bei einem
+ * Fehler eine URL stehen, hinter der nichts mehr liegt — ein kaputtes Bild im
+ * Journal ist schlimmer als eine verwaiste Datei im Eimer.
+ */
+export async function screenshotEntfernen(fd: FormData) {
+  const { supabase, userId } = await zugang();
+  const tradeId = txt(fd, "tradeId");
+  const url = txt(fd, "url");
+  if (!tradeId || !url) return;
+
+  const { data: trade } = await supabase.from("trades")
+    .select("id, screenshots").eq("id", tradeId).eq("user_id", userId).maybeSingle();
+  if (!trade) return;
+
+  const bisher = Array.isArray((trade as { screenshots?: string[] }).screenshots)
+    ? (trade as { screenshots: string[] }).screenshots : [];
+
+  await supabase.from("trades")
+    .update({ screenshots: bisher.filter((u) => u !== url) })
+    .eq("id", tradeId).eq("user_id", userId);
+
+  const pfad = pfadAusUrl(url);
+  if (pfad) await supabase.storage.from(EIMER).remove([pfad]);
+
+  journalAktualisieren();
+  redirect(`/trading/journal/trades?bearbeiten=${tradeId}`);
 }

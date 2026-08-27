@@ -33,7 +33,14 @@ alter table trades
 alter table trades
   add column if not exists account_balance numeric;
 
+-- Screenshots am Trade. Oeffentliche URLs aus dem Storage-Eimer
+-- `trade-screenshots`; den legt die App beim ersten Bild selbst an.
+alter table trades
+  add column if not exists screenshots text[] not null default '{}';
+
 comment on column trades.risk_amount is
   'Risiko in Kontowaehrung. NULL = nicht messbar (kein Stop gesehen).';
 comment on column trades.account_balance is
   'Kontostand beim Schreiben des Trades. Basis fuer den Prozentwert.';
+comment on column trades.screenshots is
+  'Oeffentliche Bild-URLs, Reihenfolge des Hochladens.';

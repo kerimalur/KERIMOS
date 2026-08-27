@@ -1,5 +1,6 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
+import type { Konfluenz } from "@/lib/trading/konfluenzen";
 import { createTradingClient } from "@/lib/supabase/trading";
 
 /**
@@ -131,6 +132,8 @@ export interface Trade {
   riskAmount: number | null;
   /** Kontostand, als der Trade geschrieben wurde. Basis für den Prozentwert. */
   accountBalance: number | null;
+  /** Öffentliche URLs der angehängten Bilder, in Reihenfolge des Hochladens. */
+  screenshots: string[];
   profitAmount: number | null;
   entryPrice: number | null;
   exitPrice: number | null;
@@ -261,6 +264,7 @@ function zuTrade(r: Row): Trade {
     riskPercent: zahl(r.risk_percent),
     riskAmount: zahl(r.risk_amount),
     accountBalance: zahl(r.account_balance),
+    screenshots: Array.isArray(r.screenshots) ? (r.screenshots as string[]) : [],
     profitAmount: zahl(r.profit_amount),
     entryPrice: zahl(r.entry_price),
     exitPrice: zahl(r.exit_price),
@@ -316,7 +320,7 @@ function zuOutlook(r: Row): Outlook {
 
 const TRADE_SPALTEN =
   "id, type, symbol, side, date, result, r_multiple, risk_percent, risk_amount, " +
-  "account_balance, profit_amount, " +
+  "account_balance, screenshots, profit_amount, " +
   "entry_price, exit_price, stop_loss, take_profit, lot_size, session_type, status, session, " +
   "notes, comment, strategy_id, outlook_id, setup_daily_bos, setup_value_area, " +
   "setup_market_structure, setup_weekly_gva, setup_3day_gva, confluences, created_at";
@@ -331,7 +335,8 @@ const TRADE_SPALTEN =
  */
 const TRADE_SPALTEN_ALT = TRADE_SPALTEN
   .replace("risk_amount, ", "")
-  .replace("account_balance, ", "");
+  .replace("account_balance, ", "")
+  .replace("screenshots, ", "");
 
 export interface TradeFilter {
   sessionType?: SessionTyp;
@@ -717,4 +722,27 @@ export function berechneKontostaende(
       trades: eigeneTrades.length,
     };
   });
+}
+
+/**
+ * Eigene Konfluenzen. Fehlt die Tabelle, kommt eine leere Liste zurück —
+ * `konfluenzListe` fällt dann auf die Standardwerte, und das Formular bleibt
+ * benutzbar, statt ohne einen einzigen Haken dazustehen.
+ */
+export async function fetchKonfluenzen(): Promise<Konfluenz[]> {
+  const z = await zugang();
+  if (!z) return [];
+
+  const { data, error } = await z.supabase
+    .from("trading_konfluenzen")
+    .select("id, name, sort_order")
+    .eq("user_id", z.userId)
+    .order("sort_order", { ascending: true });
+  if (error) return [];
+
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    id: String(r.id),
+    name: String(r.name ?? ""),
+    sortOrder: Number(r.sort_order ?? 0),
+  }));
 }

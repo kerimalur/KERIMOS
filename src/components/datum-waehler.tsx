@@ -26,13 +26,19 @@ import {
  * ausdrücklichen Klick — versehentlich springt hier nichts.
  */
 export function DatumWaehler({
-  id, name, standard, required = true, raster = true,
+  id, name, standard, required = true, raster = true, onChange,
 }: {
   id?: string;
   name: string;
   /** ISO-Datum, mit dem das Feld aufmacht. */
   standard: string;
   required?: boolean;
+  /**
+   * Wird bei jeder gültigen Änderung mit dem ISO-Datum gerufen. Nur nötig, wo
+   * der Wert im React-State weiterverarbeitet wird (Wizard); normale
+   * Formulare lesen ihn über das versteckte Feld und brauchen das nicht.
+   */
+  onChange?: (iso: string) => void;
   /**
    * Das Monats- und Tagesraster. Aus, wo das Datum einmal und nicht fünfzigmal
    * eingegeben wird — beim Anlegen einer Session etwa reicht das Tippfeld.
@@ -68,6 +74,7 @@ export function DatumWaehler({
     setFehler(false);
     setJahr(Number(iso.slice(0, 4)));
     setMonat(Number(iso.slice(5, 7)));
+    onChange?.(iso);
   }
 
   function tippen(roh: string) {
@@ -76,6 +83,7 @@ export function DatumWaehler({
     if (gelesen) {
       setWert(gelesen);
       setFehler(false);
+      onChange?.(gelesen);
       // Das Raster folgt der Eingabe, damit man sieht, wo man gelandet ist.
       setJahr(Number(gelesen.slice(0, 4)));
       setMonat(Number(gelesen.slice(5, 7)));

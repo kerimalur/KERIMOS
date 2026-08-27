@@ -1,6 +1,6 @@
 import Link from "next/link";
 import {
-  fetchTrades, fetchStrategien, computeJournalStats, signiertesR,
+  fetchTrades, fetchStrategien, fetchKonfluenzen, computeJournalStats, signiertesR,
   SETUPS, PAARE, tradingUserId,
   type Trade, type TradeFilter,
 } from "@/lib/trading/journal";
@@ -9,6 +9,8 @@ import { tradeLoeschen } from "@/lib/journal-actions";
 import { JournalHinweis } from "@/components/journal-hinweis";
 import { TradeForm } from "@/components/trade-form";
 import { duplikatText, PIP_TOLERANZ } from "@/lib/trading/duplikat";
+import { konfluenzListe } from "@/lib/trading/konfluenzen";
+import { ScreenshotFeld } from "@/components/trading/screenshot-feld";
 import { Card, CardTitle, Stat, Badge, Empty } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -28,11 +30,6 @@ export const dynamic = "force-dynamic";
  * bringt dafür: einen teilbaren Link, einen funktionierenden Zurück-Knopf und
  * eine Seite, die nach dem Neuladen noch dasselbe zeigt.
  */
-
-const KONFLUENZEN = [
-  "Fundamental", "Technisch", "Saisonal", "COT", "Intermarket",
-  "SMC", "Liquidität", "Imbalance",
-] as const;
 
 function FilterChip({
   aktiv, href, children,
@@ -119,9 +116,10 @@ export default async function TradesSeite({
     filter.result = sp.ergebnis;
   }
 
-  const [trades, strategien, beobachtung] = await Promise.all([
+  const [trades, strategien, eigeneKonfluenzen, beobachtung] = await Promise.all([
     fetchTrades(filter),
     fetchStrategien(),
+    fetchKonfluenzen(),
     // `?neu=<id>` kommt vom Knopf „Trade eintragen" auf der Übersicht.
     sp.neu ? fetchWatchlistPaar(sp.neu) : null,
   ]);
@@ -217,6 +215,15 @@ export default async function TradesSeite({
     watchlistId: beobachtung.id,
   } : undefined);
 
+  /*
+   * Die Haken im Formular: eigene Konfluenzen, sonst die Standardwerte — und
+   * dazu alles, was ein bestehender Trade trägt. Ohne den letzten Teil
+   * verschwände beim Bearbeiten eines alten Trades stillschweigend ein Haken,
+   * und beim Speichern wäre er weg, ohne dass jemand darauf gedrückt hat.
+   */
+  const konfluenzen = konfluenzListe(
+    eigeneKonfluenzen, alleTrades.flatMap((t) => t.confluences));
+
   const offene = trades.filter((t) => t.status === "open");
   const geschlossene = trades.filter((t) => t.status !== "open");
 
@@ -254,9 +261,13 @@ export default async function TradesSeite({
         paare={PAARE}
         doppeltId={sp.doppelt ?? null}
         strategien={strategien.map((x) => ({ id: x.id, name: x.name }))}
-        konfluenzen={KONFLUENZEN}
+        konfluenzen={konfluenzen}
         vorgabe={vorgabe}
         offenStart={Boolean(vorgabe)}
+        bilder={zuBearbeiten ? (
+          <ScreenshotFeld tradeId={zuBearbeiten.id} bilder={zuBearbeiten.screenshots}
+            fehler={sp.bildfehler ?? null} />
+        ) : null}
       />
 
       <Card>
