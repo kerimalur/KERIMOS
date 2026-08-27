@@ -33,10 +33,12 @@ function Knopf({ split, datum, betont }: {
 }
 
 export function SchnellKarte({
-  heute, gestern, einheiten, naechsterSplit,
+  heute, gestern, einheiten, naechsterSplit, fehler = null,
 }: {
   heute: string;
   gestern: string;
+  /** Meldung einer gescheiterten Aktion, aus `?fehler=` auf der Adresse. */
+  fehler?: string | null;
   /** Einheiten von heute und gestern — alle Quellen, nicht nur angetippte. */
   einheiten: Einheit[];
   /** Der logische Gegenpart zur letzten Einheit. Null, wenn nicht ableitbar. */
@@ -60,6 +62,14 @@ export function SchnellKarte({
         Zählt wie eine erfasste Einheit — nur ohne Sätze. Für den Fortschritt
         je Übung brauchst du weiter eine getrackte Einheit.
       </p>
+
+      {fehler && (
+        <p className="mb-3 rounded-xl border border-bad/40 bg-bad-tint px-3 py-2.5
+                      text-xs leading-relaxed text-ink-soft">
+          <strong className="text-bad-bright">Das hat nicht geklappt.</strong>{" "}
+          {fehler}
+        </p>
+      )}
 
       <div className="flex gap-2.5">
         <Knopf split="Push" datum={heute} betont={betont("Push")} />

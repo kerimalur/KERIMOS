@@ -16,7 +16,16 @@ import { heuteISO, addDays, weekStart } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
-export default async function GymPage() {
+export default async function GymPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ fehler?: string }>;
+}) {
+  // Kommt nur, wenn eine Schnell-Aktion gescheitert ist. Sie leitet mit der
+  // Meldung hierher um, statt zu werfen — im Betrieb verschluckt Next die
+  // Nachricht einer geworfenen Ausnahme und übrig bleibt „Da ist etwas
+  // schiefgegangen".
+  const { fehler } = await searchParams;
   if (!gymConfigured()) {
     return (
       <Card>
@@ -97,7 +106,7 @@ export default async function GymPage() {
         : null;
 
   const schnell = (
-    <SchnellKarte heute={heute} gestern={addDays(heute, -1)}
+    <SchnellKarte heute={heute} gestern={addDays(heute, -1)} fehler={fehler ?? null}
       naechsterSplit={naechsterSplit}
       einheiten={letzteEinheiten.filter(
         (e) => e.datum === heute || e.datum === addDays(heute, -1),
