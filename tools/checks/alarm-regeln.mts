@@ -71,8 +71,8 @@ check("kein Kanal an blockiert",
 check("Telegram allein reicht",
   pruefe(e({ push_an: false, telegram_an: true }), lage()).erlaubt, true);
 check("abgewaehlte Art blockiert",
-  pruefe(e({ arten: ["hit"] }), lage({ art: "naehe" })).grund,
-  'Art „Vorwarnung" ist aus');
+  pruefe(e({ arten: ["hit"] }), lage({ art: "zeit" })).grund,
+  'Art „Erinnerung" ist aus');
 check("Paar nicht auf der Liste",
   pruefe(e({ paare: ["EURUSD"] }), lage({ pair: "GBPJPY" })).grund,
   "GBPJPY steht nicht auf der Paarliste");
@@ -91,7 +91,8 @@ check("Treffer nachts still, wenn Ausnahme aus",
   pruefe(e({ ...nachts, ruhe_ausser_hit: false }), lage({ art: "hit", jetztMinuten: 23 * 60 })).erlaubt,
   false);
 check("tagsueber alles frei",
-  pruefe(nachts, lage({ art: "naehe", jetztMinuten: 10 * 60 })).erlaubt, true);
+  pruefe(nachts, lage({ art: "zeit", jetztMinuten: 10 * 60 })).erlaubt, true);
+
 
 // Stumm
 check("stumm heute blockiert",
@@ -133,14 +134,14 @@ check("fehlende Zahl faellt auf Standard",
 
 const vollesFormular = formular({
   push_an: "on", telegram_an: "on", telegram_chat_id: " 12345 ",
-  art_naehe: "on", art_hit: "on",
+  art_hit: "on", art_zeit: "on",
   paare: "eurusd, GBP/JPY;xauusd  eur",
   ruhe_von: "22:00", ruhe_bis: "07:00", ruhe_ausser_hit: "on",
   max_pro_tag: "12", stumm_bis: "2026-09-01",
 });
 check("Kanaele gelesen", [vollesFormular.push_an, vollesFormular.telegram_an], [true, true]);
 check("Chat-ID getrimmt", vollesFormular.telegram_chat_id, "12345");
-check("Arten in fester Reihenfolge", vollesFormular.arten, ["naehe", "hit"]);
+check("Arten in fester Reihenfolge", vollesFormular.arten, ["hit", "zeit"]);
 check("Paare getrennt, normiert, Kurzes verworfen",
   vollesFormular.paare, ["EURUSD", "GBPJPY", "XAUUSD"]);
 check("Zeiten uebernommen",
@@ -161,7 +162,7 @@ check("Text als Zahl faellt auf Standard",
 /* ------------------------------------------------------------- ausZeile */
 const zeile = (p: Record<string, unknown> = {}) => ausZeile({
   push_an: true, telegram_an: false, telegram_chat_id: null,
-  arten: ["naehe", "hit", "zeit"], paare: [], ruhe_von: null, ruhe_bis: null,
+  arten: ["hit", "zeit"], paare: [], ruhe_von: null, ruhe_bis: null,
   ruhe_ausser_hit: true, max_pro_tag: 40, stumm_bis: null, ...p,
 } as Parameters<typeof ausZeile>[0]);
 
@@ -170,6 +171,10 @@ check("arten null faellt auf Standard", zeile({ arten: null }).arten,
 check("arten leer bleibt leer", zeile({ arten: [] }).arten, []);
 check("unbekannte Art wird verworfen",
   zeile({ arten: ["hit", "quatsch", "ZEIT"] }).arten, ["hit", "zeit"]);
+// „naehe" gibt es seit dem 27.08.2026 nicht mehr. Alte Zeilen tragen den Wert
+// weiter — er muss lautlos wegfallen und darf nichts kaputt machen.
+check("die abgeschaffte Art faellt weg",
+  zeile({ arten: ["naehe", "hit"] }).arten, ["hit"]);
 check("Postgres-time wird gekuerzt", zeile({ ruhe_von: "22:00:00" }).ruhe_von, "22:00");
 check("Zeitstempel im Datumsfeld wird gekuerzt",
   zeile({ stumm_bis: "2026-09-01T00:00:00Z" }).stumm_bis, "2026-09-01");

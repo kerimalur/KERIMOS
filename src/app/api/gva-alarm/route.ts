@@ -14,7 +14,7 @@ export const maxDuration = 30;
  * Screeners und schickt Benachrichtigungen.
  *
  * Drei Alarmarten pro Linie, alle einzeln abschaltbar:
- *   naehe - der Preis kommt auf `alarm_pips` Pips heran (Vorlaufzeit,
+ *   (naehe - entfallen am 27.08.2026, siehe lib/alarm/regeln.ts)
  *           um den Chart aufzumachen)
  *   hit   - die Linie ist erreicht oder durchschritten
  *   zeit  - eine frei gesetzte Uhrzeit ist da (z.B. 08:00 Sessionstart)
@@ -55,7 +55,6 @@ interface Linie {
   pair: string;
   line_level: number | null;
   side: string | null;
-  alarm_pips: number | null;
   alarm_on_hit: boolean;
   alarm_time: string | null;
   show_until: string | null;
@@ -96,7 +95,7 @@ export async function GET(request: NextRequest) {
     ladeEinstellungen(),
     supabase
       .from("trading_watchlist")
-      .select("id, pair, line_level, side, alarm_pips, alarm_on_hit, alarm_time, show_until, archived, note")
+      .select("id, pair, line_level, side, alarm_on_hit, alarm_time, show_until, archived, note")
       .eq("archived", false),
   ]);
 
@@ -135,10 +134,28 @@ export async function GET(request: NextRequest) {
   // hinweg gilt und nicht in jedem Lauf bei null anfängt.
   let heuteSchon = await heuteGesendet(heute);
 
-  /** Meldet einmal pro Linie/Art/Tag - wenn die Regeln zustimmen. */
+  /**
+   * Meldet **einmal je Linie und Art — endgültig**, wenn die Regeln zustimmen.
+   *
+   * Bis zum 27.08.2026 galt die Sperre nur für einen Tag. Das klang
+   * vernünftig und war der Grund für die Flut: eine berührte Linie bleibt
+   * berührt, also meldete sie sich jeden Tag aufs Neue, immer im ersten
+   * Lauf nach Mitternacht.
+   */
   async function melde(
     linie: Linie, art: Alarmart, nachricht: Omit<Meldung, "art" | "pair" | "tag">,
   ) {
+    // Gab es diese Meldung je? Der Tag steht in der Zeile, wird hier aber
+    // bewusst NICHT gefiltert — genau darin liegt der Unterschied zu vorher.
+    const { data: schonMal } = await supabase!
+      .from("alarm_log").select("tag")
+      .eq("watchlist_id", linie.id).eq("art", art).limit(1);
+    if ((schonMal ?? []).length > 0) {
+      unterdrueckt.push(
+        `${linie.pair} ${art}: schon gemeldet am ${(schonMal ?? [])[0]?.tag ?? "?"}`);
+      return;
+    }
+
     const urteil = pruefe(einst, {
       art, pair: linie.pair, jetztMinuten, heute, bereitsGesendet: heuteSchon,
     });
@@ -147,8 +164,9 @@ export async function GET(request: NextRequest) {
       return;
     }
 
-    // Erst jetzt den Tagesplatz belegen. Schlägt der Insert fehl, wurde diese
-    // Meldung heute schon verschickt - dann still weiter.
+    // Erst jetzt den Platz belegen. Schlägt der Insert fehl, war ein
+    // paralleler Lauf schneller - dann still weiter. Der `tag` bleibt in der
+    // Zeile, weil die Tagesobergrenze `max_pro_tag` ihn braucht.
     const { error } = await supabase!
       .from("alarm_log")
       .insert({ watchlist_id: linie.id, art, tag: heute });
@@ -209,22 +227,22 @@ export async function GET(request: NextRequest) {
         url: "/trading",
         wichtig: true,
       });
-      continue; // kein zusätzlicher Nähe-Alarm, wenn schon getroffen
-    }
-
-    if (linie.alarm_pips && abstand <= linie.alarm_pips) {
-      await melde(linie, "naehe", {
-        titel: `${linie.pair} — ${Math.round(abstand)} Pips zur GVA`,
-        text: `Preis ${preis}, deine Linie ${level}` +
-          (linie.side ? ` (${linie.side.toUpperCase()})` : "") + ". Chart aufmachen.",
-        url: "/trading",
-      });
     }
   }
 
-  // Aufräumen: Log-Zeilen von gestern und früher wegräumen, damit ein Alarm
-  // morgen wieder auslösen darf und die Tabelle nicht endlos wächst.
-  await supabase.from("alarm_log").delete().lt("tag", heute);
+  /*
+   * Früher stand hier `delete().lt("tag", heute)` — die Sperre galt nur für
+   * einen Tag, damit ein Alarm „morgen wieder auslösen darf".
+   *
+   * Genau das war der Fehler. Eine berührte Linie bleibt berührt, und eine
+   * Linie in Reichweite bleibt in Reichweite: um Mitternacht fiel die Sperre,
+   * der nächste Lauf sah denselben Zustand und meldete ihn erneut. Kerim
+   * bekam dadurch tagelang dieselben vier, fünf Paare, immer um null Uhr.
+   *
+   * Die Sperre ist jetzt endgültig: eine Linie meldet sich EINMAL. Will man
+   * sie wieder scharf, legt man sie mit einem neuen Level an — das ist eine
+   * neue Zeile und damit ein neuer Alarm.
+   */
 
   return NextResponse.json({
     ok: true,

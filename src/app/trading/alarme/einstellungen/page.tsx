@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ladeEinstellungen, MIGRATION_SQL, heuteGesendet } from "@/lib/alarm/einstellungen";
-import { warnungen, inRuhezeit, ART_LABEL } from "@/lib/alarm/regeln";
+import { warnungen, inRuhezeit, ART_LABEL, ALARMARTEN } from "@/lib/alarm/regeln";
 import { telegramKonfiguriert, basisUrl } from "@/lib/alarm/kanaele";
 import { pushConfigured } from "@/lib/push";
 import { tradingConfigured } from "@/lib/supabase/trading";
@@ -201,7 +201,7 @@ export default async function AlarmEinstellungenPage() {
       <Card>
         <CardTitle>Was gerade durchkommt</CardTitle>
         <div className="flex flex-wrap gap-2">
-          {(["naehe", "hit", "zeit"] as const).map((art) => {
+          {ALARMARTEN.map((art) => {
             const an = werte.arten.includes(art);
             const durchRuhe = an && (!ruhtGerade || (art === "hit" && werte.ruhe_ausser_hit));
             return (

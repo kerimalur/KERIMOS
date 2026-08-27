@@ -59,12 +59,6 @@ export default async function TradingPage() {
     return pipsZu(w.pair, live.price, w.line_level) < 1;
   }).length;
 
-  const nah = watchlist.filter((w) => {
-    const live = livePreis(w.pair, pairs);
-    if (!live?.price || w.line_level === null || w.alarm_pips === null) return false;
-    const d = pipsZu(w.pair, live.price, w.line_level);
-    return d >= 1 && d <= w.alarm_pips;
-  }).length;
 
   return (
     <div className="space-y-5">
@@ -72,7 +66,6 @@ export default async function TradingPage() {
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="font-display text-xl font-bold text-ink">Aktive Trades</h1>
           {erreicht > 0 && <Badge tone="bad">{erreicht} erreicht</Badge>}
-          {nah > 0 && <Badge tone="warn">{nah} nah dran</Badge>}
         </div>
         <p className="mt-1 max-w-2xl text-sm text-ink-muted">
           Alles, was du gerade verfolgst — von Hand eingetragen oder aus einem
@@ -145,11 +138,6 @@ export default async function TradingPage() {
             <Label htmlFor="wl-level">Linie</Label>
             <Input id="wl-level" name="line_level" type="number" step="0.00001"
               placeholder="1.0850" className="w-28" />
-          </div>
-          <div>
-            <Label htmlFor="wl-pips">Warnung ab</Label>
-            <Input id="wl-pips" name="alarm_pips" type="number" min="0"
-              defaultValue={30} className="w-24" />
           </div>
           <div>
             <Label htmlFor="wl-zeit">Uhrzeit</Label>
@@ -255,16 +243,13 @@ function TradeZeile({
 
       {abstand !== null ? (
         <span className={"tabular text-xs " +
-          (abstand < 1 ? "text-bad-bright"
-            : w.alarm_pips !== null && abstand <= w.alarm_pips ? "text-accent"
-              : "text-ink-soft")}>
+          (abstand < 1 ? "text-bad-bright" : "text-ink-soft")}>
           {abstand < 1 ? "erreicht" : `${Math.round(abstand)} Pips`}
         </span>
       ) : !live ? (
         <Badge tone="neutral">kein Live-Preis</Badge>
       ) : null}
 
-      {w.alarm_pips !== null && <Badge tone="neutral">Warnung {w.alarm_pips} Pips</Badge>}
       {w.alarm_on_hit && <Badge tone="neutral">bei Treffer</Badge>}
       {w.alarm_time && <Badge tone="neutral">{w.alarm_time.slice(0, 5)}</Badge>}
       {w.show_until && (
@@ -277,7 +262,11 @@ function TradeZeile({
 
       <span className="ml-auto flex items-center gap-3">
         <KategorieWahl id={w.id} aktuell={w.kategorie_id} kategorien={kategorien} />
-        <Link href={`/trading/journal/trades?paar=${w.pair}`}
+        {/* `neu` statt `paar`: das öffnet drüben das Formular vorausgefüllt,
+            statt nur die Liste zu filtern. Bis zum 27.08.2026 landete Kerim
+            hier auf einer gefilterten Tabelle ohne Formular — und musste
+            alles neu eintippen, was hier längst steht. */}
+        <Link href={`/trading/journal/trades?neu=${w.id}`}
           className="text-xs text-accent-soft transition hover:underline">
           Trade eintragen →
         </Link>

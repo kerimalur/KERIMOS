@@ -9,24 +9,32 @@
  * nur im Ernstfall testen kann, merkt man erst dann, wenn es schweigt.
  */
 
-export type Alarmart = "naehe" | "hit" | "zeit";
+/**
+ * Zwei Arten, seit dem 27.08.2026.
+ *
+ * **„naehe" ist entfallen** — die Vorwarnung „16 Pips zur GVA". Kerims Ansage:
+ * *„das mit den 30 Pips vor der GVA möchte ich nicht mehr."* Sie war der
+ * Hauptgrund für die Flut: eine Linie, an die sich der Preis annähert, bleibt
+ * tagelang in Reichweite und meldete sich jeden Tag erneut.
+ *
+ * Alte Zeilen mit `naehe` in `arten` stören nicht: `ausZeile` filtert
+ * unbekannte Werte weg.
+ */
+export type Alarmart = "hit" | "zeit";
 
-export const ALARMARTEN: readonly Alarmart[] = ["naehe", "hit", "zeit"] as const;
+export const ALARMARTEN: readonly Alarmart[] = ["hit", "zeit"] as const;
 
 export const ART_LABEL: Record<Alarmart, string> = {
-  naehe: "Vorwarnung",
   hit: "Treffer",
   zeit: "Erinnerung",
 };
 
 export const ART_BESCHREIBUNG: Record<Alarmart, string> = {
-  naehe: "Der Preis kommt auf die eingestellte Pip-Distanz an deine Linie heran.",
-  hit: "Die Linie ist erreicht oder durchschritten.",
-  zeit: "Eine bei der Linie gesetzte Uhrzeit ist da.",
+  hit: "Die Linie ist erreicht oder durchschritten — einmalig, danach nie wieder.",
+  zeit: "Eine bei der Linie gesetzte Uhrzeit ist da — einmalig.",
 };
 
 export const ART_EMOJI: Record<Alarmart | "test", string> = {
-  naehe: "⚠️",
   hit: "🚨",
   zeit: "⏰",
   test: "🧪",
@@ -65,7 +73,7 @@ export const STANDARD_EINSTELLUNGEN: AlarmEinstellungen = {
   push_an: true,
   telegram_an: false,
   telegram_chat_id: null,
-  arten: ["naehe", "hit", "zeit"],
+  arten: ["hit", "zeit"],
   paare: [],
   ruhe_von: null,
   ruhe_bis: null,

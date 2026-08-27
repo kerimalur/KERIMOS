@@ -94,7 +94,7 @@ export const MIGRATION_SQL = `create table if not exists alarm_einstellungen (
   push_an          boolean     not null default true,
   telegram_an      boolean     not null default false,
   telegram_chat_id text,
-  arten            text[]      not null default '{naehe,hit,zeit}',
+  arten            text[]      not null default '{hit,zeit}',
   paare            text[]      not null default '{}',
   ruhe_von         time,
   ruhe_bis         time,

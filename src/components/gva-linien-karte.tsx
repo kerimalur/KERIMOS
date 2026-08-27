@@ -72,14 +72,12 @@ export async function GvaLinienKarte() {
               {g.zeilen.map((linie) => {
                 const preis = preise.get(linie.pair.toUpperCase()) ?? null;
                 const abstand = preis === null ? null : pips(linie.pair, preis, linie.line_level!);
-                const nah = abstand !== null && linie.alarm_pips !== null
-                  && abstand <= linie.alarm_pips;
                 const getroffen = abstand !== null && abstand < 1;
 
                 return (
                   <li key={linie.id}
                     className={"flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 text-sm " +
-                      (getroffen ? "bg-bad-tint" : nah ? "bg-warn-tint" : "bg-sand/60")}>
+                      (getroffen ? "bg-bad-tint" : "bg-sand/60")}>
                     <span className="font-medium text-ink">{linie.pair}</span>
                     {linie.side && (
                       <Badge tone={linie.side === "long" ? "good" : "bad"}>
@@ -93,7 +91,7 @@ export async function GvaLinienKarte() {
                     ) : getroffen ? (
                       <Badge tone="bad">erreicht</Badge>
                     ) : (
-                      <span className={"tabular text-xs " + (nah ? "text-accent" : "text-ink-soft")}>
+                      <span className="tabular text-xs text-ink-soft">
                         {Math.round(abstand)} Pips
                       </span>
                     )}

@@ -154,12 +154,7 @@ export default async function AlarmePage() {
                       <Input id={`lvl-${l.id}`} name="line_level" type="number" step="0.00001"
                         defaultValue={l.line_level ?? ""} className="w-28" />
                     </div>
-                    <div>
-                      <Label htmlFor={`pips-${l.id}`}>Vorwarnung (Pips)</Label>
-                      <Input id={`pips-${l.id}`} name="alarm_pips" type="number" min="0"
-                        defaultValue={l.alarm_pips ?? ""} placeholder="leer = aus"
-                        className="w-32" />
-                    </div>
+
                     <div>
                       <Label htmlFor={`zeit-${l.id}`}>Uhrzeit</Label>
                       <Input id={`zeit-${l.id}`} name="alarm_time" type="time"

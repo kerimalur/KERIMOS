@@ -4,7 +4,7 @@ import {
   SETUPS, PAARE, SESSIONS, tradingUserId,
   type Trade, type TradeFilter,
 } from "@/lib/trading/journal";
-import { tradingConfigured } from "@/lib/supabase/trading";
+import { tradingConfigured, fetchWatchlistPaar } from "@/lib/supabase/trading";
 import { tradeLoeschen } from "@/lib/journal-actions";
 import { JournalHinweis } from "@/components/journal-hinweis";
 import { TradeForm } from "@/components/trade-form";
@@ -99,7 +99,7 @@ function TradeZeile({ t }: { t: Trade }) {
 export default async function TradesSeite({
   searchParams,
 }: {
-  searchParams: Promise<{ paar?: string; ergebnis?: string }>;
+  searchParams: Promise<{ paar?: string; ergebnis?: string; neu?: string }>;
 }) {
   if (!tradingConfigured()) return <JournalHinweis grund="keine-db" />;
   const userId = await tradingUserId();
@@ -113,10 +113,34 @@ export default async function TradesSeite({
     filter.result = sp.ergebnis;
   }
 
-  const [trades, strategien] = await Promise.all([
+  const [trades, strategien, beobachtung] = await Promise.all([
     fetchTrades(filter),
     fetchStrategien(),
+    // `?neu=<id>` kommt vom Knopf „Trade eintragen" auf der Übersicht.
+    sp.neu ? fetchWatchlistPaar(sp.neu) : null,
   ]);
+
+  /*
+   * Aus der Beobachtungs-Zeile wird die Vorbelegung des Formulars.
+   *
+   * Übernommen wird nur, was dort wirklich steht: Paar, Richtung und das
+   * Linien-Level als Einstieg. Ergebnis, Stop und R bleiben leer — die weiss
+   * die Zeile nicht, und ein vorausgefülltes Ergebnis wäre geraten.
+   *
+   * `watchlistId` geht mit: nach dem Speichern verschwindet die Zeile von der
+   * Übersicht, statt dort stehen zu bleiben.
+   */
+  const vorgabe = beobachtung ? {
+    pair: beobachtung.pair,
+    direction: (beobachtung.side === "short" ? "short" : "long") as "long" | "short",
+    sessionType: "live" as const,
+    entryPrice: beobachtung.line_level,
+    notes: beobachtung.note ?? "",
+    // Die Beobachtung entsteht an einer GVA — das ist der Haken, der bei
+    // jedem dieser Trades sitzt.
+    setups: { dreiTagesGva: true },
+    watchlistId: beobachtung.id,
+  } : undefined;
   const s = computeJournalStats(trades);
 
   // Paar-Filter nur aus dem, was auch wirklich gehandelt wurde — eine Liste
@@ -140,6 +164,8 @@ export default async function TradesSeite({
         sessions={SESSIONS}
         strategien={strategien.map((x) => ({ id: x.id, name: x.name }))}
         konfluenzen={KONFLUENZEN}
+        vorgabe={vorgabe}
+        offenStart={Boolean(vorgabe)}
       />
 
       <Card>

@@ -58,7 +58,7 @@ export default async function TradingEinstellungenPage() {
   const ruhtGerade = inRuhezeit(heuteMinuten(), werte.ruhe_von, werte.ruhe_bis);
   const probleme = warnungen(werte);
   const mitAlarm = linien.filter(
-    (l) => l.alarm_on_hit || l.alarm_pips !== null || l.alarm_time !== null,
+    (l) => l.alarm_on_hit || l.alarm_time !== null,
   ).length;
 
   return (

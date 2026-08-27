@@ -31,6 +31,14 @@ export interface TradeVorgabe {
   stopLoss?: number | null;
   takeProfit?: number | null;
   setups?: Record<string, boolean>;
+  /**
+   * Die Beobachtungs-Zeile, aus der dieser Trade entsteht.
+   *
+   * Steht sie drin, verschwindet die Zeile beim Speichern von der
+   * Trading-Übersicht. Vorher musste Kerim sie von Hand entfernen — und
+   * genau das vergisst man, wenn der Trade schon gelaufen ist.
+   */
+  watchlistId?: string;
 }
 
 const SETUP_FELDER = [
@@ -87,6 +95,10 @@ export function TradeForm({
 
       <form action={tradeSpeichern} className="space-y-4">
         {vorgabe?.id && <input type="hidden" name="id" value={vorgabe.id} />}
+        {/* Löst die Beobachtungs-Zeile auf, aus der dieser Trade entstand. */}
+        {vorgabe?.watchlistId && (
+          <input type="hidden" name="watchlist_id" value={vorgabe.watchlistId} />
+        )}
 
         {/* Zeile 1: was, wann, wohin */}
         <div className="grid gap-3 sm:grid-cols-4">

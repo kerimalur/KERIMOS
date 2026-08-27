@@ -132,7 +132,6 @@ export interface WatchlistPair {
   line_level: number | null;
   side: "long" | "short" | null;
   /** Vorwarnung ab diesem Pip-Abstand. Null = keine Nähe-Meldung. */
-  alarm_pips: number | null;
   alarm_on_hit: boolean;
   /** Freie Uhrzeit "HH:MM:SS" (Zürich). Null = keine Zeit-Erinnerung. */
   alarm_time: string | null;
@@ -144,7 +143,7 @@ export interface WatchlistPair {
 }
 
 const WATCHLIST_SPALTEN =
-  "id, pair, note, created_at, line_level, side, alarm_pips, alarm_on_hit, alarm_time, show_until, archived";
+  "id, pair, note, created_at, line_level, side, alarm_on_hit, alarm_time, show_until, archived";
 
 export async function fetchWatchlist(): Promise<WatchlistPair[]> {
   const supabase = createTradingClient();
@@ -625,4 +624,22 @@ export function baueHeatmap(
       };
     }),
   );
+}
+
+/**
+ * Eine einzelne Beobachtungs-Zeile — für „Trade eintragen".
+ *
+ * Der Knopf auf der Übersicht schickt ihre id mit, damit das Formular im
+ * Journal vorausgefüllt aufgeht und die Zeile nach dem Speichern verschwindet.
+ * Vorher führte er nur auf eine gefilterte Tabelle.
+ */
+export async function fetchWatchlistPaar(id: string): Promise<WatchlistPair | null> {
+  const supabase = createTradingClient();
+  if (!supabase || !id) return null;
+
+  const { data } = await supabase
+    .from("trading_watchlist").select(WATCHLIST_SPALTEN)
+    .eq("id", id).maybeSingle();
+
+  return (data as unknown as WatchlistPair | null) ?? null;
 }

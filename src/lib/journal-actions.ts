@@ -109,6 +109,21 @@ export async function tradeSpeichern(fd: FormData) {
     await supabase.from("trades").insert([zeile]);
   }
 
+  /*
+   * Kam der Trade aus einer Beobachtungs-Zeile, wird sie jetzt aufgelöst.
+   *
+   * Vorher blieb sie stehen, bis Kerim sie von Hand entfernte — und das
+   * vergisst man, wenn der Trade längst gelaufen ist. Die Übersicht zeigte
+   * dann Linien, die keine Beobachtung mehr sind. Erst NACH dem Schreiben:
+   * scheitert der Trade, soll die Zeile bleiben.
+   */
+  const beobachtung = txt(fd, "watchlist_id");
+  if (beobachtung) {
+    await supabase.from("trading_watchlist").delete().eq("id", beobachtung);
+    revalidatePath("/trading");
+    revalidatePath("/");
+  }
+
   journalAktualisieren();
 }
 
@@ -377,7 +392,6 @@ export async function signalUebernehmen(fd: FormData) {
     note: formiert ? `${GVA_NOTIZ}, Linie vom ${formiert}` : GVA_NOTIZ,
     // Voreinstellungen wie im Formular auf /trading. Wer sie anders will,
     // ändert sie dort — hier zählt, dass die Zeile überhaupt entsteht.
-    alarm_pips: 30,
     alarm_on_hit: true,
     alarm_time: null,
     show_until: null,

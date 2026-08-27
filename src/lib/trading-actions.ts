@@ -51,7 +51,6 @@ export async function addWatchlistPair(fd: FormData) {
     kategorie_id: text(fd, "kategorie_id") || null,
     line_level: level,
     side: seite === "long" || seite === "short" ? seite : null,
-    alarm_pips: zahl(fd, "alarm_pips"),
     alarm_on_hit: fd.get("alarm_on_hit") !== null,
     alarm_time: text(fd, "alarm_time") || null,
     show_until: text(fd, "show_until") || null,
@@ -102,7 +101,6 @@ export async function updateWatchlistAlarm(fd: FormData) {
     .from("trading_watchlist")
     .update({
       line_level: zahl(fd, "line_level"),
-      alarm_pips: zahl(fd, "alarm_pips"),
       alarm_on_hit: fd.get("alarm_on_hit") !== null,
       alarm_time: text(fd, "alarm_time") || null,
       show_until: text(fd, "show_until") || null,
