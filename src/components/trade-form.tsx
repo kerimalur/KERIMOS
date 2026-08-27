@@ -50,10 +50,9 @@ const SETUP_FELDER = [
 ];
 
 export function TradeForm({
-  paare, sessions, strategien, konfluenzen, vorgabe, offenStart = false,
+  paare, strategien, konfluenzen, vorgabe, offenStart = false,
 }: {
   paare: readonly string[];
-  sessions: readonly string[];
   strategien: { id: string; name: string }[];
   konfluenzen: readonly string[];
   vorgabe?: TradeVorgabe;
@@ -150,13 +149,6 @@ export function TradeForm({
             <Input id="tf-r" name="rMultiple" type="number" step="0.1" min="0"
               placeholder={ergebnis === "loss" ? "1 (Standard)" : "z.B. 2"}
               defaultValue={vorgabe?.rMultiple ?? ""} />
-          </div>
-          <div>
-            <Label htmlFor="tf-session">Session</Label>
-            <Select id="tf-session" name="session" defaultValue={vorgabe?.session ?? "London"}>
-              <option value="">—</option>
-              {sessions.map((s) => <option key={s} value={s}>{s}</option>)}
-            </Select>
           </div>
           <div>
             <Label htmlFor="tf-strategy">Strategie</Label>

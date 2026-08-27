@@ -92,8 +92,9 @@ from pg_constraint
 where conname = 'workout_sessions_log_source_check';`}</code>
               </pre>
               <p className="mt-2">
-                Steht dort nur <code>manual</code> und <code>garmin</code>, passt
-                das hier. Kommt ein anderer Wert vor, nimm ihn mit in die Liste:
+                Am 27.08.2026 ergab die Abfrage{" "}
+                <code>tracked, copied, deload, garmin</code>. Solange sich das
+                nicht geändert hat, passt das hier:
               </p>
               <pre className="mt-1.5 overflow-x-auto rounded-lg bg-paper/60 p-2 text-[11px] text-ink-soft">
                 <code>{`alter table workout_sessions
@@ -101,12 +102,16 @@ where conname = 'workout_sessions_log_source_check';`}</code>
 
 alter table workout_sessions
   add constraint workout_sessions_log_source_check
-  check (log_source is null or log_source in ('manual', 'garmin', 'schnell'));`}</code>
+  check (log_source is null
+         or log_source in ('tracked', 'copied', 'deload', 'garmin', 'schnell'));`}</code>
               </pre>
               <p className="mt-2 text-ink-faint">
-                Fehlt ein bestehender Wert in der Liste, scheitert der zweite
-                Befehl mit einer klaren Meldung — Postgres prüft die
-                vorhandenen Zeilen mit. Kaputtgehen kann dabei nichts.
+                Zeigt die Abfrage oben etwas anderes, nimm die dortigen Werte
+                und häng nur <code>schnell</code> an. Fehlt ein bestehender
+                Wert, scheitert der zweite Befehl mit einer klaren Meldung —
+                Postgres prüft die vorhandenen Zeilen mit. Kaputtgehen kann
+                dabei nichts, und genau so ist es beim ersten Versuch auch
+                gelaufen.
               </p>
             </>
           )}

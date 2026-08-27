@@ -1,7 +1,7 @@
 import Link from "next/link";
 import {
   fetchTrades, fetchStrategien, computeJournalStats, signiertesR,
-  SETUPS, PAARE, SESSIONS, tradingUserId,
+  SETUPS, PAARE, tradingUserId,
   type Trade, type TradeFilter,
 } from "@/lib/trading/journal";
 import { tradingConfigured, fetchWatchlistPaar } from "@/lib/supabase/trading";
@@ -63,13 +63,18 @@ function TradeZeile({ t }: { t: Trade }) {
           {t.direction === "long" ? "Long" : "Short"}
         </Badge>
         {t.status === "open" && <Badge tone="warn">läuft</Badge>}
-        {t.session && <span className="text-xs text-ink-muted">{t.session}</span>}
 
         <span className={`tabular ml-auto text-sm font-medium ${
           r > 0 ? "text-good-bright" : r < 0 ? "text-bad-bright" : "text-ink-muted"
         }`}>
           {r >= 0 ? "+" : ""}{r.toFixed(1)} R
         </span>
+
+        <Link href={`/trading/journal/trades?bearbeiten=${t.id}`}
+          title="Trade bearbeiten — Stop, R, Notizen nachtragen"
+          className="rounded-lg px-1.5 text-xs text-ink-faint transition hover:text-accent-soft">
+          bearbeiten
+        </Link>
 
         <form action={tradeLoeschen}>
           <input type="hidden" name="id" value={t.id} />
@@ -99,7 +104,7 @@ function TradeZeile({ t }: { t: Trade }) {
 export default async function TradesSeite({
   searchParams,
 }: {
-  searchParams: Promise<{ paar?: string; ergebnis?: string; neu?: string }>;
+  searchParams: Promise<{ paar?: string; ergebnis?: string; neu?: string; bearbeiten?: string }>;
 }) {
   if (!tradingConfigured()) return <JournalHinweis grund="keine-db" />;
   const userId = await tradingUserId();
@@ -130,7 +135,49 @@ export default async function TradesSeite({
    * `watchlistId` geht mit: nach dem Speichern verschwindet die Zeile von der
    * Übersicht, statt dort stehen zu bleiben.
    */
-  const vorgabe = beobachtung ? {
+  const s = computeJournalStats(trades);
+
+  // Paar-Filter nur aus dem, was auch wirklich gehandelt wurde — eine Liste
+  // mit 32 Einträgen, von denen 26 leer sind, hilft niemandem.
+  const alleTrades = filter.pair || filter.result
+    ? await fetchTrades({ sessionType: "live" }) : trades;
+  const gehandelt = [...new Set(alleTrades.map((t) => t.pair))].sort();
+
+  const zuBearbeiten = sp.bearbeiten
+    ? (trades.find((t) => t.id === sp.bearbeiten)
+      ?? alleTrades.find((t) => t.id === sp.bearbeiten) ?? null)
+    : null;
+
+  /*
+   * Bearbeiten schlägt Neuanlegen: wer auf „bearbeiten" drückt, will nicht
+   * plötzlich ein leeres Formular. Bis zum 27.08.2026 gab es hier gar keinen
+   * Weg — die Liste bot nur Löschen an. Damit liess sich ein von der Brücke
+   * eingetragener Trade nicht korrigieren, und genau das brauchte Kerim: Stop
+   * und R nachtragen, wenn die Brücke sie nicht messen konnte.
+   */
+  const bearbeitung = zuBearbeiten ? {
+    id: zuBearbeiten.id,
+    pair: zuBearbeiten.pair,
+    direction: zuBearbeiten.direction,
+    date: zuBearbeiten.date,
+    result: zuBearbeiten.result ?? "win",
+    rMultiple: zuBearbeiten.rMultiple,
+    sessionType: zuBearbeiten.sessionType,
+    type: zuBearbeiten.type,
+    notes: zuBearbeiten.notes,
+    entryPrice: zuBearbeiten.entryPrice,
+    stopLoss: zuBearbeiten.stopLoss,
+    takeProfit: zuBearbeiten.takeProfit,
+    setups: {
+      dreiTagesGva: zuBearbeiten.setups.dreiTagesGva,
+      weeklyGva: zuBearbeiten.setups.weeklyGva,
+      dailyBos: zuBearbeiten.setups.dailyBos,
+      valueArea: zuBearbeiten.setups.valueArea,
+      marketStructure: zuBearbeiten.setups.marketStructure,
+    },
+  } : undefined;
+
+  const vorgabe = bearbeitung ?? (beobachtung ? {
     pair: beobachtung.pair,
     direction: (beobachtung.side === "short" ? "short" : "long") as "long" | "short",
     sessionType: "live" as const,
@@ -140,14 +187,10 @@ export default async function TradesSeite({
     // jedem dieser Trades sitzt.
     setups: { dreiTagesGva: true },
     watchlistId: beobachtung.id,
-  } : undefined;
-  const s = computeJournalStats(trades);
+  } : undefined);
 
-  // Paar-Filter nur aus dem, was auch wirklich gehandelt wurde — eine Liste
-  // mit 32 Einträgen, von denen 26 leer sind, hilft niemandem.
-  const alleTrades = filter.pair || filter.result
-    ? await fetchTrades({ sessionType: "live" }) : trades;
-  const gehandelt = [...new Set(alleTrades.map((t) => t.pair))].sort();
+  const offene = trades.filter((t) => t.status === "open");
+  const geschlossene = trades.filter((t) => t.status !== "open");
 
   const q = (aenderung: Record<string, string | undefined>) => {
     const p = new URLSearchParams();
@@ -161,7 +204,6 @@ export default async function TradesSeite({
     <div className="space-y-5">
       <TradeForm
         paare={PAARE}
-        sessions={SESSIONS}
         strategien={strategien.map((x) => ({ id: x.id, name: x.name }))}
         konfluenzen={KONFLUENZEN}
         vorgabe={vorgabe}
@@ -205,20 +247,41 @@ export default async function TradesSeite({
         </div>
       </Card>
 
+      {/* Offen und geschlossen getrennt. „Live-Trade" hiess hier bis zum
+          27.08.2026 jeder Trade des Live-Kontos — auch ein längst
+          abgeschlossener. Kerims Einwand ist berechtigt: live ist, was noch
+          läuft. Ein Trade mit Ergebnis ist geschlossen, egal auf welchem
+          Konto. */}
+      {offene.length > 0 && (
+        <Card area="trading">
+          <CardTitle>
+            {offene.length} {offene.length === 1 ? "Trade läuft" : "Trades laufen"}
+          </CardTitle>
+          <p className="mb-2 text-xs text-ink-muted">
+            Noch offen — R und Ergebnis stehen erst fest, wenn beide
+            Positionen des Setups zu sind.
+          </p>
+          <div>
+            {offene.map((t) => <TradeZeile key={t.id} t={t} />)}
+          </div>
+        </Card>
+      )}
+
       <Card>
         <CardTitle>
-          {trades.length} {trades.length === 1 ? "Live-Trade" : "Live-Trades"}
+          {geschlossene.length}{" "}
+          {geschlossene.length === 1 ? "geschlossener Trade" : "geschlossene Trades"}
         </CardTitle>
-        {trades.length === 0 ? (
+        {geschlossene.length === 0 ? (
           <Empty>
             {sp.paar || sp.ergebnis
               ? "Kein Trade passt zu diesem Filter."
-              : "Noch kein Live-Trade. Das Formular oben ist der Anfang — "
-                + "oder die MT5-Brücke trägt ihn selbst ein."}
+              : "Noch kein abgeschlossener Trade. Das Formular oben ist der "
+                + "Anfang — oder die MT5-Brücke trägt ihn selbst ein."}
           </Empty>
         ) : (
           <div>
-            {trades.map((t) => <TradeZeile key={t.id} t={t} />)}
+            {geschlossene.map((t) => <TradeZeile key={t.id} t={t} />)}
           </div>
         )}
       </Card>
