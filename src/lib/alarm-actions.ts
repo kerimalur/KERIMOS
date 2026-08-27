@@ -1,6 +1,10 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { ausFormular } from "@/lib/alarm/regeln";
+import { createClient } from "@/lib/supabase/server";
+import { createTradingClient } from "@/lib/supabase/trading";
+import { ALARMARTEN } from "@/lib/alarm/regeln";
+import type { Alarmart } from "@/lib/alarm/regeln";
 import { ladeEinstellungen, speichereEinstellungen } from "@/lib/alarm/einstellungen";
 import { verschicke, irgendwoAngekommen } from "@/lib/alarm/versand";
 import { pruefeTelegram, chatIdFuer, telegramKonfiguriert } from "@/lib/alarm/kanaele";
@@ -121,4 +125,60 @@ export async function pruefeTelegramVerbindung(
   return geprueft.ok
     ? { ok: true, text: `Verbunden mit „${geprueft.titel}" (Chat ${chatId}).`, stempel: Date.now() }
     : { ok: false, text: `Keine Verbindung: ${geprueft.fehler}`, stempel: Date.now() };
+}
+
+/* ------------------------------------------ Stumm schalten (27.08.2026) */
+
+/**
+ * Alarme von Hand stumm schalten oder wieder scharf machen.
+ *
+ * **Stumm = eine Sperrzeile schreiben.** Genau dieselbe Zeile, die nach einem
+ * Versand entsteht. Eine eigene Spalte `stumm` wäre eine zweite Wahrheit
+ * darüber, ob etwas rausgeht — und zwei Wahrheiten über dieselbe Frage sind
+ * der Fehler, den dieses Projekt an mehreren Stellen aufgeräumt hat.
+ *
+ * **Scharf = die Sperrzeile löschen.** Danach meldet die Linie beim nächsten
+ * Treffer wieder, einmalig.
+ */
+
+async function alarmZugang() {
+  const kerimos = await createClient();
+  const { data: wer } = await kerimos.auth.getUser();
+  if (!wer.user) throw new Error("Nicht angemeldet.");
+
+  const db = createTradingClient();
+  if (!db) throw new Error("Trading-Datenbank nicht verbunden.");
+  return db;
+}
+
+function liesAlarm(fd: FormData): { id: string; art: Alarmart } | null {
+  const id = String(fd.get("id") ?? "").trim();
+  const art = String(fd.get("art") ?? "").trim() as Alarmart;
+  if (!id || !(ALARMARTEN as readonly string[]).includes(art)) return null;
+  return { id, art };
+}
+
+function alarmNeuLaden() {
+  revalidatePath("/trading/einstellungen");
+  revalidatePath("/trading");
+}
+
+export async function alarmStumm(fd: FormData) {
+  const w = liesAlarm(fd);
+  if (!w) return;
+  const db = await alarmZugang();
+  // `ignoreDuplicates`: zweimal stumm schalten ist kein Fehler, sondern
+  // derselbe Wunsch noch einmal.
+  await db.from("alarm_log")
+    .upsert({ watchlist_id: w.id, art: w.art, tag: heuteISO() },
+      { onConflict: "watchlist_id,art,tag", ignoreDuplicates: true });
+  alarmNeuLaden();
+}
+
+export async function alarmScharf(fd: FormData) {
+  const w = liesAlarm(fd);
+  if (!w) return;
+  const db = await alarmZugang();
+  await db.from("alarm_log").delete().eq("watchlist_id", w.id).eq("art", w.art);
+  alarmNeuLaden();
 }

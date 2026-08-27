@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createGymClient, gymUserId, SCHNELL } from "@/lib/supabase/gym";
-import { erlaubtesDatum, istSplit, zeitstempel } from "@/lib/schnell-training";
+import {
+  erlaubtesDatum, istSplit, zeitstempel, ausDatumUndZeit,
+} from "@/lib/schnell-training";
 
 /**
  * Push oder Pull mit einem Fingertipp.
@@ -107,6 +109,24 @@ async function trainingstagFuer(
   return angelegt.id as string;
 }
 
+/**
+ * Postgres-Meldungen, bei denen die Ursache eine Einrichtung ist.
+ *
+ * Der erste Versuch am 27.08.2026 scheiterte an
+ * `workout_sessions_log_source_check` — die Spalte `log_source` hat eine
+ * Prüfregel, und „schnell" stand nicht darin. Die rohe Meldung sagt das zwar,
+ * aber nicht, was zu tun ist. Hier steht der Satz, mit dem Kerim weiterkommt,
+ * statt eines Datenbankfehlers zum Nachschlagen.
+ */
+function alsKlartext(meldung: string): string {
+  if (/log_source_check/.test(meldung)) {
+    return "Die Spalte log_source lässt „schnell\" noch nicht zu. In der "
+      + "Gym-Datenbank einmal die Prüfregel erweitern — die SQL steht auf "
+      + "dieser Seite unter den Knöpfen.";
+  }
+  return `Einheit eintragen: ${meldung}`;
+}
+
 export async function schnellTraining(fd: FormData) {
   const split = String(fd.get("split") ?? "").trim().toLowerCase();
   if (!istSplit(split)) return;
@@ -117,10 +137,16 @@ export async function schnellTraining(fd: FormData) {
   const heute = jetzt.slice(0, 10);
   const datum = erlaubtesDatum(fd.get("datum"), heute);
 
+  // Uhrzeit nur, wenn eine mitkam. Ohne bleibt es beim bisherigen Verhalten:
+  // heute die echte Uhrzeit, ein nachgetragener Tag mittags.
+  const zeitFeld = String(fd.get("zeit") ?? "").trim();
+  const wann = zeitFeld
+    ? ausDatumUndZeit(datum, zeitFeld)
+    : zeitstempel(datum, heute, jetzt);
+
   const fehler = await versuche(async () => {
     const { gym, userId } = await zugang();
     const tagId = await trainingstagFuer(gym, userId, split);
-    const wann = zeitstempel(datum, heute, jetzt);
 
     const { error } = await gym.from("workout_sessions").insert({
       user_id: userId,
@@ -129,7 +155,7 @@ export async function schnellTraining(fd: FormData) {
       completed_at: wann,
       log_source: SCHNELL,
     });
-    if (error) throw new Error(`Einheit eintragen: ${error.message}`);
+    if (error) throw new Error(alsKlartext(error.message));
   });
 
   if (fehler) redirect(`/gym?fehler=${encodeURIComponent(fehler)}`);

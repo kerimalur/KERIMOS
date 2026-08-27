@@ -6,6 +6,7 @@
 // Knopf aus — und die falsche Zahl steht dann in der Wochenzählung.
 import {
   erlaubtesDatum, zeitstempel, istSplit, NACHTRAG_TAGE,
+  ausDatumUndZeit, zonenVersatz,
 } from "../../src/lib/schnell-training";
 
 let fails = 0;
@@ -73,6 +74,38 @@ check("Grossschreibung gilt nicht — das Formular schickt klein",
 check("Beine gibt es nicht als eigenen Knopf", istSplit("beine"), false);
 check("leer gilt nicht", istSplit(""), false);
 check("null gilt nicht", istSplit(null), false);
+
+
+/* --------------------------------------- Datum + Uhrzeit (27.08.2026) */
+//
+// Kerim tippt „gestern, 19:30". Gemeint ist halb acht BEI IHM. Die Schweiz
+// steht im Sommer +2 und im Winter +1 — eine fest verdrahtete Verschiebung
+// waere ein halbes Jahr lang eine Stunde daneben.
+check("Sommerzeit: 19:30 in Zuerich sind 17:30 UTC",
+  ausDatumUndZeit("2026-08-26", "19:30"), "2026-08-26T17:30:00.000Z");
+check("Winterzeit: dieselbe Uhrzeit ist 18:30 UTC",
+  ausDatumUndZeit("2026-12-15", "19:30"), "2026-12-15T18:30:00.000Z");
+check("Versatz im Sommer sind 120 Minuten",
+  zonenVersatz(Date.parse("2026-08-26T12:00:00Z")), 120);
+check("und im Winter 60",
+  zonenVersatz(Date.parse("2026-12-15T12:00:00Z")), 60);
+
+// Frueh am Morgen: die Ortszeit faellt dann auf den Vortag in UTC.
+check("07:00 Ortszeit im Sommer sind 05:00 UTC am selben Tag",
+  ausDatumUndZeit("2026-08-26", "07:00"), "2026-08-26T05:00:00.000Z");
+check("01:00 Ortszeit im Sommer ist der Vortag in UTC",
+  ausDatumUndZeit("2026-08-26", "01:00"), "2026-08-25T23:00:00.000Z");
+
+// Unsinn faellt auf Mittag zurueck — den Wert, der die Tagesgrenze am
+// weitesten meidet.
+for (const kaputt of ["", "25:00", "7:5", "abends", null, undefined, 1930]) {
+  check(`ungueltige Zeit ${JSON.stringify(kaputt)} wird Mittag`,
+    ausDatumUndZeit("2026-08-26", kaputt).slice(11, 16),
+    // Mittag ORTSZEIT, also im Sommer 10:00 UTC. Beim Schreiben stand hier
+    // "Mittag als UTC gemeint" — falsch, der Test hat es gezeigt. Fuer den
+    // Zweck reicht es: der Tag haelt, und mehr soll der Rueckfall nicht.
+    "10:00");
+}
 
 console.log(fails === 0 ? "\nAlle Kontrollwerte gruen." : `\n${fails} Kontrollwert(e) FAIL.`);
 if (fails > 0) process.exit(1);

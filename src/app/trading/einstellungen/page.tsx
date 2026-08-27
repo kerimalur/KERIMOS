@@ -6,6 +6,8 @@ import { pushConfigured } from "@/lib/push";
 import { tradingConfigured, fetchWatchlist } from "@/lib/supabase/trading";
 import { heuteMinuten } from "@/lib/time";
 import { KategorienKarte } from "@/components/trading/kategorien-karte";
+import { AlarmUebersichtKarte } from "@/components/alarm/uebersicht-karte";
+import { ladeAlarmUebersicht } from "@/lib/alarm/uebersicht";
 import { Card, CardTitle, Badge, Empty } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -52,8 +54,8 @@ export default async function TradingEinstellungenPage() {
     );
   }
 
-  const [{ werte, quelle }, linien] = await Promise.all([
-    ladeEinstellungen(), fetchWatchlist(),
+  const [{ werte, quelle }, linien, alarmZeilen] = await Promise.all([
+    ladeEinstellungen(), fetchWatchlist(), ladeAlarmUebersicht(),
   ]);
   const ruhtGerade = inRuhezeit(heuteMinuten(), werte.ruhe_von, werte.ruhe_bis);
   const probleme = warnungen(werte);
@@ -101,6 +103,10 @@ export default async function TradingEinstellungenPage() {
           </ul>
         )}
       </Card>
+
+      {/* Steht VOR den Kacheln: „was meldet demnächst" ist die Frage, mit
+          der man diese Seite öffnet, seit die Alarme einmalig sind. */}
+      <AlarmUebersichtKarte zeilen={alarmZeilen} />
 
       <KategorienKarte />
 
