@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { createTradingClient } from "@/lib/supabase/trading";
-import { GEGENLAUF_REIHE, VORLAUF_REIHE } from "@/lib/backtest-types";
+import { verlaufReihe, type BacktestResult } from "@/lib/backtest-types";
 
 /**
  * Server Actions für das native Backtest-Journal unter /trading/backtest.
@@ -23,6 +23,10 @@ const num = (fd: FormData, k: string): number | null => {
  * Das Formular zeigt immer nur das Feld, das zum Ergebnis passt — kommt
  * trotzdem etwas Unbekanntes an, wird es zu NULL statt in die Datenbank
  * geschrieben. Die Prüfung steht zusätzlich als CHECK in der Migration.
+ *
+ * Die erlaubte Liste hängt am Ergebnis, nicht nur am Feld: ein Breakeven
+ * kennt kein "nie im Plus". Damit kann auch ein veralteter Formularstand
+ * den unmöglichen Wert nicht mehr einschleusen.
  */
 const klasse = (fd: FormData, k: string, erlaubt: readonly string[]): string | null => {
   const v = text(fd, k);
@@ -127,9 +131,12 @@ export async function addBacktestTrade(fd: FormData) {
     tradingview_link: text(fd, "tradingview_link") || null,
     screenshot_url: text(fd, "screenshot_url") || null,
   };
+  // verlaufReihe() liefert je Ergebnis nur EINE der beiden Familien — das
+  // jeweils andere Feld fällt damit automatisch auf NULL.
+  const erlaubt = verlaufReihe(result as BacktestResult);
   const verlauf = {
-    gegenlauf: klasse(fd, "gegenlauf", GEGENLAUF_REIHE),
-    vorlauf: klasse(fd, "vorlauf", VORLAUF_REIHE),
+    gegenlauf: klasse(fd, "gegenlauf", erlaubt),
+    vorlauf: klasse(fd, "vorlauf", erlaubt),
   };
 
   // Ohne die Migration aus supabase/trading/03_backtest_verlauf.sql gibt es die
@@ -187,10 +194,13 @@ export async function updateBacktestTrade(fd: FormData) {
   };
   // Beide Felder werden IMMER geschrieben, auch als NULL: wird ein Stopout
   // nachträglich zum Full TP, muss der Vorlauf verschwinden — sonst stünde
-  // dort eine Angabe, die zum neuen Ergebnis gar nicht mehr passt.
+  // dort eine Angabe, die zum neuen Ergebnis gar nicht mehr passt. Dasselbe
+  // greift beim Wechsel Stopout → Breakeven: ein dort erfasstes "nie im Plus"
+  // ist mit dem neuen Ergebnis unvereinbar und fällt weg.
+  const erlaubt = verlaufReihe(basis.result as BacktestResult);
   const verlauf = {
-    gegenlauf: klasse(fd, "gegenlauf", GEGENLAUF_REIHE),
-    vorlauf: klasse(fd, "vorlauf", VORLAUF_REIHE),
+    gegenlauf: klasse(fd, "gegenlauf", erlaubt),
+    vorlauf: klasse(fd, "vorlauf", erlaubt),
   };
 
   const aendern = (werte: object) => supabase

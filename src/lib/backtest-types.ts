@@ -70,6 +70,27 @@ export function verlaufFeld(result: BacktestResult): "gegenlauf" | "vorlauf" | n
   return null;
 }
 
+/**
+ * Welche Klassen bei diesem Ergebnis überhaupt vorkommen können.
+ *
+ * "nie im Plus" ist bei einem Breakeven ausgeschlossen: Break-even wird erst
+ * gesetzt, wenn der Kurs das -0.27er FIP-Level erreicht hat. Ein BE-Trade war
+ * also per Regel im Plus — die Klasse anzubieten hiesse, einen unmöglichen
+ * Wert erfassbar zu machen, und ein einziger Fehlklick verschiebt später die
+ * Aussage "so viele meiner Verlierer liefen nie ins Plus".
+ *
+ * Beim Stopout bleibt sie stehen: dort ist sie der interessanteste Fall
+ * überhaupt — ein Trade, der von Anfang an verkehrt herum lief.
+ */
+export function verlaufReihe(result: BacktestResult): readonly string[] {
+  const feld = verlaufFeld(result);
+  if (feld === "gegenlauf") return GEGENLAUF_REIHE;
+  if (feld !== "vorlauf") return [];
+  return result === "breakeven"
+    ? VORLAUF_REIHE.filter((v) => v !== "kein")
+    : VORLAUF_REIHE;
+}
+
 export const VERLAUF_FRAGE = {
   gegenlauf: "Wie weit lief er gegen dich, bevor er aufging?",
   vorlauf: "Wie weit lief er für dich, bevor er drehte?",

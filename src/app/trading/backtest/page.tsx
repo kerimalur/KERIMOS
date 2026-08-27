@@ -19,6 +19,7 @@ import { BacktestInsights } from "@/components/backtest-insights";
 import { BacktestEquity } from "@/components/backtest-equity";
 import { BacktestCheckliste } from "@/components/backtest-checkliste";
 import { BacktestTradeWizard } from "@/components/backtest-trade-wizard";
+import { PipFenster } from "@/components/pip-fenster";
 import { DatumWaehler } from "@/components/datum-waehler";
 import { heuteISO } from "@/lib/time";
 import { BacktestTradeListe } from "@/components/backtest-trade-liste";
@@ -280,8 +281,11 @@ function EintragenAnsicht({
             Auswertung ansehen ↗
           </Link>
         </div>
-        <BacktestTradeWizard sessionId={session.id} pair={session.pair}
-          kategorien={kategorien} standardDatum={standardDatum} slNotizen={slNotizen} />
+        <PipFenster titel={`Backtest · ${session.pair}`} breite={480} hoehe={660}
+          knopfText="Über den Chart legen">
+          <BacktestTradeWizard sessionId={session.id} pair={session.pair}
+            kategorien={kategorien} standardDatum={standardDatum} slNotizen={slNotizen} />
+        </PipFenster>
       </Card>
 
       <Card>

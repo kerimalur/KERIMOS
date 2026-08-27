@@ -2,10 +2,11 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Button, Input, Label, cx } from "@/components/ui";
 import { DatumWaehler } from "@/components/datum-waehler";
+import { useFensterDokument } from "@/components/pip-fenster";
 import { addBacktestTrade } from "@/lib/backtest-actions";
 import {
-  RESULT_LABEL, berechneR, verlaufFeld, R_FAKTOR_STANDARD,
-  GEGENLAUF_REIHE, VORLAUF_REIHE, GEGENLAUF_LABEL, VORLAUF_LABEL, VERLAUF_FRAGE,
+  RESULT_LABEL, berechneR, verlaufFeld, verlaufReihe, R_FAKTOR_STANDARD,
+  GEGENLAUF_LABEL, VORLAUF_LABEL, VERLAUF_FRAGE,
   type BacktestCategory, type BacktestResult,
 } from "@/lib/backtest-types";
 
@@ -116,6 +117,10 @@ export function BacktestTradeWizard({
   const [serverFehler, setServerFehler] = useState<string | null>(null);
   const [laeuft, starte] = useTransition();
   const wrap = useRef<HTMLDivElement>(null);
+  // Im Schwebefenster ist das globale `document` das der Hauptseite — Tasten
+  // und Fokus liegen dann im falschen Dokument. Deshalb immer das des
+  // umgebenden Fensters nehmen.
+  const dok = useFensterDokument();
 
   const setzeFeld = <K extends keyof Entwurf>(k: K, v: Entwurf[K]) => {
     setGezeigterFehler(null);
@@ -180,11 +185,12 @@ export function BacktestTradeWizard({
       case "skipgrund":
         return (kategorien.skipGrund?.tags ?? []).map((t) => ({ wert: t.id, label: t.label }));
       case "verlauf": {
-        if (!verlaufsFeld) return [];
-        const reihe = verlaufsFeld === "gegenlauf" ? GEGENLAUF_REIHE : VORLAUF_REIHE;
+        if (!verlaufsFeld || entwurf.result === "") return [];
         const label: Record<string, string> =
           verlaufsFeld === "gegenlauf" ? GEGENLAUF_LABEL : VORLAUF_LABEL;
-        return reihe.map((w) => ({ wert: w, label: label[w] }));
+        // Nicht die volle Reihe: beim Breakeven fällt "nie im Plus" weg, weil
+        // BE erst ab dem -0.27er Level gesetzt wird.
+        return verlaufReihe(entwurf.result).map((w) => ({ wert: w, label: label[w] }));
       }
       case "confluence":
         return (kategorien.confluence?.tags ?? []).map((t) => ({ wert: t.id, label: t.label }));
@@ -193,7 +199,7 @@ export function BacktestTradeWizard({
       default:
         return [];
     }
-  }, [schritt, kategorien, verlaufsFeld]);
+  }, [schritt, kategorien, verlaufsFeld, entwurf.result]);
 
   const istMehrfach = schritt === "confluence" || schritt === "anmerkung";
 
@@ -334,8 +340,8 @@ export function BacktestTradeWizard({
   const taste = useRef<(e: KeyboardEvent) => void>(() => {});
   taste.current = (ev: KeyboardEvent) => {
     if (laeuft || ev.metaKey || ev.ctrlKey || ev.altKey) return;
-    const el = document.activeElement as HTMLElement | null;
-    const drin = !el || el === document.body || (wrap.current?.contains(el) ?? false);
+    const el = (dok ?? document).activeElement as HTMLElement | null;
+    const drin = !el || el === (dok ?? document).body || (wrap.current?.contains(el) ?? false);
     if (!drin) return;
     const tippt = !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA");
 
@@ -356,10 +362,11 @@ export function BacktestTradeWizard({
   };
 
   useEffect(() => {
+    const ziel = dok ?? document;
     const f = (e: KeyboardEvent) => taste.current(e);
-    window.addEventListener("keydown", f);
-    return () => window.removeEventListener("keydown", f);
-  }, []);
+    ziel.addEventListener("keydown", f);
+    return () => ziel.removeEventListener("keydown", f);
+  }, [dok]);
 
   /* ------------------------------------------------------------ Beschriftung */
 

@@ -4,8 +4,8 @@ import { Input, Select, Label, Button, cx } from "@/components/ui";
 import { DatumWaehler } from "@/components/datum-waehler";
 import { addBacktestTrade, updateBacktestTrade } from "@/lib/backtest-actions";
 import {
-  RESULT_LABEL, berechneR, verlaufFeld,
-  GEGENLAUF_REIHE, VORLAUF_REIHE, GEGENLAUF_LABEL, VORLAUF_LABEL, VERLAUF_FRAGE,
+  RESULT_LABEL, berechneR, verlaufFeld, verlaufReihe,
+  GEGENLAUF_LABEL, VORLAUF_LABEL, VERLAUF_FRAGE,
   type BacktestCategory, type BacktestResult, type NativeBacktestTrade,
 } from "@/lib/backtest-types";
 
@@ -225,7 +225,9 @@ function VerlaufFeld({
   if (!feld) return null;
 
   const istGegen = feld === "gegenlauf";
-  const werte = istGegen ? GEGENLAUF_REIHE : VORLAUF_REIHE;
+  // Beim Breakeven fehlt "nie im Plus" — BE wird erst ab dem -0.27er Level
+  // gesetzt, der Trade war also zwangsläufig im Plus.
+  const werte = verlaufReihe(result);
   const label: Record<string, string> = istGegen ? GEGENLAUF_LABEL : VORLAUF_LABEL;
 
   return (

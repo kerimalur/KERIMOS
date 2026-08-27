@@ -6,7 +6,7 @@
 // zwei Fragen, deren Antwort bei diesen Ergebnissen ohnehin feststeht — und
 // niemand würde es der Verteilung ansehen.
 import {
-  verlaufBilanz, verlaufFeld, MIN_VERLAUF,
+  verlaufBilanz, verlaufFeld, verlaufReihe, MIN_VERLAUF,
   GEGENLAUF_REIHE, VORLAUF_REIHE,
   type Gegenlauf, type NativeBacktestTrade, type Vorlauf,
 } from "../../src/lib/backtest-types";
@@ -37,6 +37,17 @@ check("Teil-TP ebenso", verlaufFeld("teil_tp_be"), "gegenlauf");
 check("Stopout fragt nach dem Vorlauf", verlaufFeld("sl"), "vorlauf");
 check("Breakeven auch", verlaufFeld("breakeven"), "vorlauf");
 check("Skip fragt gar nichts", verlaufFeld("skip"), null);
+
+/* ------------------------------------------------- Welche Klassen gelten */
+
+// Break-even wird erst ab dem -0.27er FIP-Level gesetzt. Ein BE-Trade war
+// damit per Regel im Plus — "nie im Plus" darf dort nicht wählbar sein.
+check("Breakeven kennt kein 'nie im Plus'",
+  verlaufReihe("breakeven"), VORLAUF_REIHE.filter((v) => v !== "kein"));
+check("Stopout behaelt alle Vorlauf-Klassen", verlaufReihe("sl"), VORLAUF_REIHE);
+check("Full TP bekommt die Gegenlauf-Reihe", verlaufReihe("full_tp"), GEGENLAUF_REIHE);
+check("Teil-TP ebenso", verlaufReihe("teil_tp_be"), GEGENLAUF_REIHE);
+check("Skip bekommt nichts", verlaufReihe("skip"), []);
 
 /* ------------------------------------------------------------ Aufbau */
 
