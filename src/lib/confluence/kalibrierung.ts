@@ -32,7 +32,12 @@ import type { Kurspunkt } from "./saison";
  */
 
 /** Obere Grenzen, die verglichen werden. Unten gilt jeweils 100 − oben. */
-export const SCHWELLEN = [65, 70, 75, 80, 85] as const;
+/*
+ * 90 kam am 26.08.2026 dazu: Kerims Indikator steht auf 90/10, und eine
+ * Kalibrierung, die seine eigene Einstellung nicht enthält, kann ihm nicht
+ * sagen, ob sie gut gewählt ist.
+ */
+export const SCHWELLEN = [65, 70, 75, 80, 85, 90] as const;
 export type Schwelle = (typeof SCHWELLEN)[number];
 
 /** Ein Wochenwert je Währung: die beiden Ränge, sonst nichts. */
@@ -101,7 +106,7 @@ export function divergenzBei(w: RangWoche, oben: number): -1 | 0 | 1 {
  *
  * Welche Fassung traegt, ist eine Messfrage. Deshalb alle drei, nebeneinander.
  */
-export type Variante = "beide" | "basis" | "quote";
+export type Variante = "beide" | "basis" | "quote" | "synth";
 
 export const VARIANTEN: { key: Variante; label: string; hilfe: string }[] = [
   { key: "beide", label: "beide Währungen",
@@ -110,6 +115,9 @@ export const VARIANTEN: { key: Variante; label: string; hilfe: string }[] = [
     hilfe: "z. B. USD bei USDJPY — so rechnet Kerims Pine-Indikator" },
   { key: "quote", label: "nur Quotewährung",
     hilfe: "z. B. JPY bei USDJPY, Vorzeichen gedreht" },
+  { key: "synth", label: "synthetisch",
+    hilfe: "erst Basis minus Quote, dann der Rang — so rechnet Kerims Pine "
+      + "und seit dem 26.08.2026 auch Monty" },
 ];
 
 /** Der Zustand einer Woche in der gewaehlten Fassung. */
@@ -119,7 +127,10 @@ function zustand(
   const db = divergenzBei(b, oben);
   // Eine gestuetzte Quotewaehrung drueckt das Paar — daher das Minus.
   const dq = q ? divergenzBei(q, oben) : 0;
-  const summe = variante === "basis" ? db
+  // "synth" bekommt die Raenge des PAARES herein, nicht die einer Waehrung
+  // (siehe `synthRaengeReihe`). Dort ist die Differenz schon vor dem Rang
+  // gebildet worden — es gibt kein zweites Bein mehr zu verrechnen.
+  const summe = variante === "basis" || variante === "synth" ? db
     : variante === "quote" ? -dq
       : db - dq;
   return summe > 0 ? 1 : summe < 0 ? -1 : 0;

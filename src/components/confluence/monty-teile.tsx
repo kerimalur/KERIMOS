@@ -2,7 +2,9 @@ import { Badge, cx } from "@/components/ui";
 import { Intervall } from "@/components/confluence/bilanz-teile";
 import { MONATS_KURZ, MIN_JAHRE, type SaisonBild } from "@/lib/confluence/saison";
 import { HAEUFIG_AB, type CotStatistik } from "@/lib/confluence/monty-cot";
-import type { CotPaarZeile } from "@/lib/confluence/cot-divergenz";
+import {
+  SYNTH, BIAS_WORT, type BiasStufe, type SynthBild,
+} from "@/lib/confluence/cot-synth";
 
 /**
  * Anzeigebausteine für Monty.
@@ -145,253 +147,116 @@ export function SaisonZeile({ bild }: { bild: SaisonBild }) {
   );
 }
 
-/* ------------------------------------------------- COT je Paar */
+/* --------------------------------------- COT je Paar, synthetisch */
 
 /**
- * Dieselbe Lage, nur auf Paarebene.
+ * Alle 28 Paare, gerechnet wie Kerims Pine-Indikator.
  *
- * Zwei Spalten mit einem Urteil, und das ist Absicht: **beide Beine** rechnet
- * der Screener (Basis minus Quote), **nur Basis** rechnet Kerims
- * Pine-Indikator — und so zeigt es TradingView, weil es kein
- * „EURUSD"-Terminkontrakt gibt, sondern nur den auf den Euro.
+ * Gezeichnet wird der **Bias** — die Zahl, nach der er handelt. Sie fasst
+ * zwei Dinge zusammen: das Niveau (wie weit stehen Commercials und Retail
+ * auseinander) und den Impuls (wohin hat sich das in zwei Wochen bewegt).
+ * Beides je auf −1…+1 geklemmt, Summe also −2…+2.
  *
- * Strittige Zeilen stehen oben und sind markiert. Sie sind kein Fehler,
- * sondern der Grund für diese Tabelle: stehen beide Währungen gleich
- * gestreckt, hebt sich die Differenz auf und der Screener sagt nichts,
- * während der Indikator ein Signal zeigt. Wer das nicht weiss, hält eines
- * von beiden für kaputt.
- */
-export function CotPaarTabelle({ zeilen }: {
-  zeilen: {
-    paar: string;
-    urteil: { dir: -1 | 0 | 1; staerke: number; text: string;
-      basis: { ccy: string; kommRang: number | null; retailRang: number | null; divergenz: -1 | 0 | 1 };
-      quote: { ccy: string; kommRang: number | null; retailRang: number | null; divergenz: -1 | 0 | 1 } };
-    nurBasis: -1 | 0 | 1;
-    widerspruch: boolean;
-  }[];
-}) {
-  const rang = (v: number | null) => (v === null ? "·" : v.toFixed(0));
-  const seite = (d: -1 | 0 | 1) =>
-    d === 0 ? <span className="text-ink-faint">–</span>
-      : <Badge tone={d > 0 ? "good" : "bad"}>{d > 0 ? "long" : "short"}</Badge>;
-
-  const mitAussage = zeilen.filter((z) => z.urteil.dir !== 0 || z.nurBasis !== 0);
-  const strittig = zeilen.filter((z) => z.widerspruch).length;
-
-  if (mitAussage.length === 0) {
-    return (
-      <p className="text-sm text-ink-muted">
-        Kein einziges der 28 Paare hat gerade eine Aussage — weder über beide
-        Beine noch über die Basiswährung allein. Das ist ein normaler Zustand
-        und keine Datenlücke: die Streckung ist selten, sonst wäre sie keine.
-      </p>
-    );
-  }
-
-  return (
-    <>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[680px] border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-line text-xs text-ink-muted">
-              <th className="px-2 py-2 text-left font-normal">Paar</th>
-              <th className="px-2 py-2 text-right font-normal"
-                title="Commercials / Retail der Basiswährung">Basis C/R</th>
-              <th className="px-2 py-2 text-right font-normal"
-                title="Commercials / Retail der Quotewährung">Quote C/R</th>
-              <th className="px-2 py-2 text-center font-normal"
-                title="Basis minus Quote — so rechnet der Screener">beide Beine</th>
-              <th className="px-2 py-2 text-center font-normal"
-                title="Nur die Basiswährung — so rechnet dein Pine und so zeigt es TradingView">
-                nur Basis
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {mitAussage.map((z) => (
-              <tr key={z.paar}
-                className={cx("border-b border-line/50 last:border-b-0 hover:bg-sand/40",
-                  z.widerspruch && "bg-warn-tint/40")}>
-                <td className="px-2 py-2 font-medium text-ink">
-                  {z.paar}
-                  {z.widerspruch && (
-                    <span className="ml-1.5 text-[10px] uppercase tracking-wide text-warn">
-                      strittig
-                    </span>
-                  )}
-                </td>
-                <td className={cx("num px-2 py-2 text-right",
-                  z.urteil.basis.divergenz !== 0 ? "text-ink" : "text-ink-soft")}>
-                  {rang(z.urteil.basis.kommRang)} / {rang(z.urteil.basis.retailRang)}
-                </td>
-                <td className={cx("num px-2 py-2 text-right",
-                  z.urteil.quote.divergenz !== 0 ? "text-ink" : "text-ink-soft")}>
-                  {rang(z.urteil.quote.kommRang)} / {rang(z.urteil.quote.retailRang)}
-                </td>
-                <td className="px-2 py-2 text-center" title={z.urteil.text}>
-                  {seite(z.urteil.dir)}
-                  {z.urteil.dir !== 0 && z.urteil.staerke < 1 && (
-                    <span className="ml-1 text-[10px] text-ink-faint">halb</span>
-                  )}
-                </td>
-                <td className="px-2 py-2 text-center">{seite(z.nurBasis)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
-        {mitAussage.length} von {zeilen.length} Paaren haben überhaupt eine
-        Aussage
-        {strittig > 0 && (
-          <>
-            , davon <strong className="text-warn">{strittig} strittig</strong>
-          </>
-        )}
-        . Paare ohne jede Aussage stehen gar nicht erst da.
-      </p>
-      <p className="mt-2 text-[11px] leading-relaxed text-ink-faint">
-        <strong>strittig</strong> heisst: die zwei Spalten sagen nicht
-        dasselbe. Drei Arten, wie das passiert —
-        {" "}<em>gegenläufig</em> (beide sprechen, in verschiedene Richtungen),
-        {" "}<em>ausgelöscht</em> (beide Währungen gleich gestreckt, die
-        Differenz ist null, nur die Basis spricht) und
-        {" "}<em>nur Quote</em> (das Signal kommt allein vom Gegenbein, die
-        Basis schweigt — dann zeigt TradingView nichts).
-      </p>
-      <p className="mt-2 text-[11px] leading-relaxed text-ink-faint">
-        <strong>halb</strong> heisst: nur eine der beiden Währungen ist
-        gestreckt. Volle Stärke gibt es nur, wenn beide Seiten am Rand stehen
-        und in dieselbe Richtung zeigen.
-      </p>
-      <p className="mt-2 rounded-xl bg-warn-tint px-3 py-2.5 text-[11px] leading-relaxed text-ink-soft">
-        <strong>Für den Vergleich mit TradingView:</strong> nimm die Spalte
-        „nur Basis". TradingView zeigt den Terminkontrakt der Währung, nicht
-        des Paares — einen EURUSD-Kontrakt gibt es nicht. Bei
-        USD-Quote-Paaren ist das die linke Währung, bei USD-Basis-Paaren
-        (USDJPY, USDCAD, USDCHF) der <strong>Dollar-Index</strong>, CFTC
-        098662. Weichen die Perzentile trotzdem ab, liegt es fast immer an
-        einer der drei Stellen: anderes Fenster als drei Jahre, netto statt
-        Anteil am Open Interest, oder ein Bericht Versatz.
-      </p>
-    </>
-  );
-}
-
-/* ------------------------------------------- COT je Paar, gezeichnet */
-
-/**
- * Alle 28 Paare als Balken — Commercials gegen Retail, stetig.
+ * Dass der Impuls dabei ist, ist kein Beiwerk: bei seinem EURCHF vom 26.08.
+ * kamen zwei Drittel des „STARK LONG" daher. Wer nur die Streckung anschaut,
+ * sieht dort gar kein Signal — und genau das zeigte KerimOS vorher.
  *
- * Die Tabelle daneben zeigt nur Paare mit Signal. An einem normalen Tag sind
- * das zwei oder drei, und die anderen 25 sieht man gar nicht. Man weiss dann
- * nicht, ob dort nichts los ist oder ob es knapp war — und das ist ein
- * Unterschied, der beim Suchen nach einem Setup zählt.
- *
- * Gezeichnet wird die **Spanne**: Commercials-Rang minus Retail-Rang, für
- * Basis und Quote verrechnet. −100 bis +100, Mitte ist null.
- *
- * **Zur Kodierung.** Die Länge trägt die Stärke, die Richtung trägt das
- * Vorzeichen — links kurz, rechts lang. Die Farbe sagt dasselbe noch einmal
- * und ist damit Zugabe, nicht Träger: Grün und Rot liegen bei Rot-Grün-
- * Schwäche mit ΔE 7.1 dicht beieinander, und ein Balken, den man nur an der
- * Farbe lesen kann, ist für einen Teil der Leute leer. Deshalb steht die Zahl
- * daneben und das Wort dahinter.
- *
- * Sortiert nach Betrag, stärkste zuerst: man sucht, wo etwas los ist.
+ * **Zur Kodierung.** Die Länge trägt die Stärke, die Richtung das Vorzeichen.
+ * Die Farbe sagt dasselbe noch einmal und ist Zugabe, nicht Träger — daneben
+ * stehen die vorzeichenbehaftete Zahl und das Wort. Die zwei Kerben markieren
+ * seine Schwellen 0,4 (neutral endet) und 1,0 (stark beginnt); der Punkt am
+ * Balkenende erscheint, wenn zusätzlich die 90/10-Streckung greift.
  */
 const LANG = "#5FC2A6";
 const KURZ = "#E28B72";
 
-export function CotPaarGrafik({ zeilen }: { zeilen: CotPaarZeile[] }) {
-  const mitSpanne = zeilen.filter((z) => z.spanne !== null);
+/** Bias −2…+2 auf die halbe Breite abbilden. */
+const anteil = (v: number) => Math.min(50, Math.abs(v) / 2 * 50);
 
-  if (mitSpanne.length === 0) {
+export function SynthPaarGrafik({ bilder }: { bilder: SynthBild[] }) {
+  const fertig = bilder.filter((b) => b.bias !== null);
+  const fehlend = bilder.length - fertig.length;
+
+  if (fertig.length === 0) {
     return (
       <p className="text-sm text-ink-muted">
-        Keine COT-Historie geladen — dann ist hier nichts zu zeichnen. Die
-        Ursache steht in der Tabelle darüber.
+        Für kein Paar liegen {SYNTH.wochen} Wochenberichte vor. Solange das
+        Fenster nicht voll ist, gibt es keinen Rang — ein Rang aus dreissig
+        Wochen sähe genauso aus wie einer aus drei Jahren und wäre etwas
+        anderes.
       </p>
     );
   }
 
+  const zahl = (v: number | null, n = 1) => (v === null ? "·" : v.toFixed(n));
+
   return (
     <>
       <ul className="space-y-0.5">
-        {mitSpanne.map((z) => {
-          const v = z.spanne as number;
-          const links = v < 0;
-          const farbe = links ? KURZ : LANG;
-          // Halbe Breite je Seite: die Mitte ist null, das Ende ±100.
-          const breite = Math.min(50, Math.abs(v) / 2);
-          const rang = (n: number | null) => (n === null ? "·" : n.toFixed(0));
-          const b = z.urteil.basis, q = z.urteil.quote;
-          const legenden =
-            `${b.ccy} ${rang(b.kommRang)}/${rang(b.retailRang)} · ` +
-            `${q.ccy} ${rang(q.kommRang)}/${rang(q.retailRang)}`;
+        {fertig.map((b) => {
+          const bias = b.bias as number;
+          const links = bias < 0;
+          const farbe = Math.abs(bias) < SYNTH.neutral
+            ? "#7A6E5C" : links ? KURZ : LANG;
+          const breite = anteil(bias);
 
           return (
-            <li key={z.paar}
-              title={`${z.paar} — Commercials/Retail: ${legenden}. ${z.urteil.text}`}
-              className="grid grid-cols-[64px_minmax(0,1fr)_58px] items-center gap-2
+            <li key={b.paar}
+              title={`${b.paar} — Commercials ${zahl(b.kommRang, 2)}, `
+                + `Retail ${zahl(b.retailRang, 2)}, Impuls ${zahl(b.impulsRang, 2)}. `
+                + `Score ${zahl(b.score, 2)}, Bias ${zahl(bias, 2)}.`}
+              className="grid grid-cols-[64px_minmax(0,1fr)_50px] items-center gap-2
                          rounded-lg px-1.5 py-1 hover:bg-sand/40
-                         sm:grid-cols-[64px_150px_minmax(0,1fr)_58px_60px]">
+                         sm:grid-cols-[64px_146px_minmax(0,1fr)_50px_86px]">
               <span className="truncate text-xs font-medium text-ink">
-                {z.paar}
-                {z.widerspruch && <span className="ml-1 text-warn" title="strittig">*</span>}
+                {b.paar}
+                {b.extrem !== 0 && (
+                  <span className="ml-1 text-accent-soft" title="90/10-Streckung">◆</span>
+                )}
               </span>
 
               <span className="num hidden text-[11px] text-ink-faint sm:block">
-                {legenden}
+                C {zahl(b.kommRang)} · R {zahl(b.retailRang)} · I {zahl(b.impulsRang)}
               </span>
 
-              {/* Der Balken. Nullpunkt in der Mitte, damit long und short
-                  auf einen Blick auseinandergehen — eine Skala von links
-                  nach rechts würde „schwach short" neben „schwach long"
-                  legen und sie gleich aussehen lassen. */}
               <span className="relative block h-3 rounded bg-sand">
-                {/* Über dem Balken, nicht darunter: die Null ist der
-                    Bezugspunkt der ganzen Zeile und muss auch dann zu sehen
-                    sein, wenn ein langer Balken sie überdeckt. */}
+                {/* Die Schwellen als Kerben. Ohne sie ist „1,03" eine Zahl
+                    ohne Massstab — mit ihnen sieht man, dass sie knapp über
+                    „stark" liegt. */}
+                {[SYNTH.neutral, SYNTH.stark].flatMap((t) => [-t, t]).map((t) => (
+                  <span key={t} aria-hidden
+                    className="absolute inset-y-0.5 w-px bg-line-strong"
+                    style={{ left: `${50 + (t / 2) * 50}%` }} />
+                ))}
                 <span aria-hidden
                   className="absolute inset-y-0 left-1/2 z-10 w-px -translate-x-1/2 bg-ink-faint/70" />
-                <span className="absolute inset-y-0.5 rounded-sm transition-[width]"
+                <span className="absolute inset-y-0.5 rounded-sm"
                   style={{
                     background: farbe,
                     width: `${breite}%`,
                     left: links ? `${50 - breite}%` : "50%",
-                    // Eine Spanne von 2 wäre sonst unsichtbar und sähe aus
-                    // wie gar keine Angabe.
-                    minWidth: Math.abs(v) > 0.5 ? 2 : 0,
+                    minWidth: Math.abs(bias) > 0.02 ? 2 : 0,
                   }} />
-                {/* Das Signal, wenn die 75/25-Regel wirklich greift. Ein
-                    Punkt am Balkenende statt einer zweiten Farbe: sonst
-                    trüge die Farbe zwei Bedeutungen gleichzeitig. */}
-                {z.urteil.dir !== 0 && (
+                {b.extrem !== 0 && (
                   <span aria-hidden
-                    className="absolute top-1/2 h-2 w-2 -translate-y-1/2 rounded-full ring-2 ring-card"
+                    className="absolute top-1/2 z-20 h-2 w-2 -translate-y-1/2 rounded-full ring-2 ring-card"
                     style={{
                       background: farbe,
                       left: links ? `${50 - breite}%` : `${50 + breite}%`,
-                      marginLeft: links ? -4 : -4,
+                      marginLeft: -4,
                     }} />
                 )}
               </span>
 
-              <span className="num text-right text-xs"
-                style={{ color: Math.abs(v) < 8 ? undefined : farbe }}>
-                {v > 0 ? "+" : ""}{v.toFixed(0)}
+              <span className="num text-right text-xs" style={{ color: farbe }}>
+                {bias > 0 ? "+" : ""}{bias.toFixed(2)}
               </span>
 
-              <span className="hidden text-right text-[11px] sm:block">
-                {z.urteil.dir === 0
-                  ? <span className="text-ink-faint">—</span>
-                  : <span style={{ color: farbe }}>
-                      {z.urteil.dir > 0 ? "long" : "short"}
-                      {z.urteil.staerke < 1 && <span className="text-ink-faint"> halb</span>}
-                    </span>}
+              <span className="hidden text-right text-[11px] sm:block"
+                style={{ color: b.stufe === "neutral" ? undefined : farbe }}>
+                {b.stufe === "neutral"
+                  ? <span className="text-ink-faint">neutral</span>
+                  : BIAS_WORT[b.stufe as BiasStufe]}
               </span>
             </li>
           );
@@ -400,34 +265,36 @@ export function CotPaarGrafik({ zeilen }: { zeilen: CotPaarZeile[] }) {
 
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-ink-muted">
         <span className="flex items-center gap-1.5">
-          <span className="h-2.5 w-4 rounded-sm" style={{ background: KURZ }} />
-          short — Commercials tief, Retail hoch
+          <span className="h-2.5 w-4 rounded-sm" style={{ background: KURZ }} />short
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="h-2.5 w-4 rounded-sm" style={{ background: LANG }} />
-          long — Commercials hoch, Retail tief
+          <span className="h-2.5 w-4 rounded-sm" style={{ background: LANG }} />long
         </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-ink-muted" />
-          Punkt = 75/25-Regel greift
-        </span>
-        <span><span className="text-warn">*</span> = strittig</span>
+        <span>Kerben bei {SYNTH.neutral} und {SYNTH.stark}</span>
+        <span className="text-accent-soft">◆ = {SYNTH.oben}/{SYNTH.unten}-Streckung</span>
+        {fehlend > 0 && (
+          <span className="text-warn">
+            {fehlend} {fehlend === 1 ? "Paar hat" : "Paare haben"} noch keine{" "}
+            {SYNTH.wochen} Wochen
+          </span>
+        )}
       </div>
 
       <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
-        Die Zahl ist die <strong>Spanne</strong>: Commercials-Rang minus
-        Retail-Rang, für Basis und Quote verrechnet, −100 bis +100. Sie zeigt
-        die Lage auch dort, wo kein Signal steht — das ist der Unterschied zur
-        Tabelle darüber, die nur Paare mit Signal kennt. Ein Balken ohne Punkt
-        heisst: es geht in diese Richtung, aber mindestens eine Seite steht
-        noch nicht am Rand.
+        <strong>C</strong> und <strong>R</strong> sind die Perzentilränge von
+        Commercials und Retail auf der <em>synthetischen</em> Reihe: erst
+        Basis minus Quote (netto je Open Interest), dann der Rang.
+        <strong> I</strong> ist der Rang der Zwei-Wochen-Änderung dazwischen.
+        Der <strong>Bias</strong> verrechnet Niveau und Impuls je auf −1…+1
+        geklemmt — dieselbe Rechnung wie im TradingView-Panel, dieselben
+        Zahlen.
       </p>
       <p className="mt-2 rounded-xl bg-warn-tint px-3 py-2.5 text-[11px] leading-relaxed text-ink-soft">
-        <strong>Was die Spanne nicht ist:</strong> ein Mass dafür, wie gut der
-        Trade wird. Sie sagt, wie weit Commercials und Retail auseinanderstehen
-        — nicht, ob das je etwas vorhergesagt hat. Diese Frage beantwortet nur
-        die Messung über zwanzig Jahre, und die steht im Backtest unter{" "}
-        <em>Rückblick → Faktor &amp; Grenze</em>.
+        <strong>Warum synthetisch und nicht Ränge vergleichen:</strong> der Rang
+        wirft die Abstände weg und behält nur die Ordnung. Zwei Währungen, die
+        je im Mittelfeld liegen, können als <em>Differenz</em> an einem
+        historischen Extrem stehen. Bis zum 26.08.2026 rechnete KerimOS
+        Rang-minus-Rang und konnte genau das nie sehen.
       </p>
     </>
   );

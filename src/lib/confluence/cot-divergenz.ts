@@ -175,110 +175,21 @@ export function cotPaarUrteil(basis: CotBild, quote: CotBild): CotPaarUrteil {
   };
 }
 
-/* --------------------------------------------------------------- Spanne */
-
-/**
- * Die **Spanne** einer Währung: Commercials-Rang minus Retail-Rang.
+/* ---------------------------------------------------------------------
+ * Am 26.08.2026 entfernt: `cotSpanne`, `paarSpanne`, `cotPaarZeilen` und
+ * `CotPaarZeile` — die Rang-Differenz auf Paarebene.
  *
- * −100 bis +100. Positiv heisst: Commercials stehen hoch, Retail tief — das
- * spricht für die Währung. Negativ umgekehrt.
+ * Sie waren keinen Tag alt und sind trotzdem zu Recht weg. Kerims
+ * Pine-Skript begründet es selbst: Ränge dürfen nicht subtrahiert werden,
+ * weil der Rang keine lineare Transformation ist. Zwei Währungen im
+ * Mittelfeld können als Differenz an einem Extrem stehen, und das sah diese
+ * Rechnung nie. Der Nachbau steht in `cot-synth.ts`.
  *
- * Der Unterschied zu `divergenz` ist der Punkt: `divergenz` ist ein Ja/Nein
- * und nur dann ungleich null, wenn BEIDE Seiten über 75 bzw. unter 25 stehen.
- * Damit sind an einem normalen Tag zwanzig der achtundzwanzig Paare schlicht
- * leer, und man sieht nicht, ob dort gar nichts los ist oder ob es knapp war.
- * Die Spanne zeigt die Lage auch dazwischen — sie ist der Abstand, nicht das
- * Urteil.
- */
-export function cotSpanne(b: CotBild): number | null {
-  if (b.kommRang === null || b.retailRang === null) return null;
-  return b.kommRang - b.retailRang;
-}
-
-/**
- * Die Spanne eines Paares: Basis minus Quote, halbiert.
+ * `cotBildFuer` und `cotPaarUrteil` bleiben: die Währungstabelle auf Monty
+ * und die Backtest-Bilanz brauchen die Sicht je Währung weiterhin, und dort
+ * ist sie richtig — dort wird nichts subtrahiert.
  *
- * Halbiert, damit das Ergebnis wieder in −100…+100 liegt: zwei Spannen von
- * je ±100 ergäben sonst ±200, und eine Skala, deren Enden nie erreicht
- * werden, macht jede Zeichnung in der Mitte flach.
- *
- * Null, wenn eine Seite keine Historie hat — nicht `null`: eine Währung ohne
- * COT-Daten zieht das Paar nicht in eine Richtung, sie trägt nur nichts bei.
- * Ganz ohne beide Seiten kommt `null` zurück, und dann wird nichts gezeichnet.
- */
-export function paarSpanne(basis: CotBild, quote: CotBild): number | null {
-  const b = cotSpanne(basis);
-  const q = cotSpanne(quote);
-  if (b === null && q === null) return null;
-  return ((b ?? 0) - (q ?? 0)) / 2;
-}
-
-/* ------------------------------------------------- Alle Paare auf einmal */
-
-export interface CotPaarZeile {
-  paar: string;
-  urteil: CotPaarUrteil;
-  /** Stetige Lage, −100…+100. Null nur ohne jede Historie. */
-  spanne: number | null;
-  /** Nur das Basis-Bein — die Sicht des Pine-Indikators und von TradingView. */
-  nurBasis: -1 | 0 | 1;
-  /** True, wenn beide Sichten verschiedene Richtungen sagen. */
-  widerspruch: boolean;
-}
-
-/**
- * Die Paar-Tabelle für Monty.
- *
- * Steht hier und nicht in `monty.ts`, weil `monty.ts` `server-only` ist und
- * damit von keinem Kontrollskript importiert werden kann. Eine Rechnung, die
- * sich nicht prüfen lässt, ist eine Behauptung.
- *
- * Die Währungsbilder kommen fertig herein: sie werden EINMAL gerechnet und
- * für alle 28 Paare wiederverwendet. Je Paar neu zu rechnen wäre dieselbe
- * Arbeit 56-mal — und schlimmer, ein zweiter Rechenweg, der irgendwann von
- * der Währungstabelle daneben abweicht.
- */
-export function cotPaarZeilen(
-  bilder: Map<string, CotBild>, paare: readonly string[],
-): CotPaarZeile[] {
-  return paare.flatMap((paar) => {
-    const basis = bilder.get(paar.slice(0, 3));
-    const quote = bilder.get(paar.slice(3, 6));
-    if (!basis || !quote) return [];
-
-    const urteil = cotPaarUrteil(basis, quote);
-    const nurBasis = basis.divergenz;
-    return [{
-      paar, urteil, nurBasis, spanne: paarSpanne(basis, quote),
-      /*
-       * Strittig heisst schlicht: die zwei Sichten sagen nicht dasselbe.
-       *
-       * Der erste Versuch war enger — „beide sagen etwas, und zwar
-       * Verschiedenes" — und hat den wichtigsten Fall übersehen: stehen
-       * BEIDE Währungen gleich gestreckt, hebt sich die Differenz auf, das
-       * Paar sagt nichts, und die Basiswährung allein sagt trotzdem etwas.
-       * Genau dann zeigt der Pine-Indikator ein Signal und der Screener
-       * keines. Ein Kontrollwert hat das gefunden, nicht das Nachdenken.
-       *
-       * Drei Arten, wie es dazu kommt:
-       *   gegenläufig  — beide sprechen, in verschiedene Richtungen
-       *   ausgelöscht  — Paar schweigt, Basis spricht (der Fall oben)
-       *   nur Quote    — Paar spricht, Basis schweigt; das Signal kommt
-       *                  allein vom Gegenbein
-       */
-      widerspruch: urteil.dir !== nurBasis,
-    }];
-  }).sort((a, b) =>
-    /*
-     * Nach dem Betrag der Spanne, stärkste zuerst.
-     *
-     * Bis zum 24.08. standen die strittigen Zeilen oben — richtig, solange
-     * die Ansicht eine Tabelle war, die nur Paare mit Signal zeigte. Seit sie
-     * alle 28 zeichnet, ist die Stärke die natürliche Ordnung: man sucht,
-     * wo etwas los ist. „Strittig" ist weiter markiert, nur nicht mehr
-     * Sortierkriterium.
-     */
-    Math.abs(b.spanne ?? 0) - Math.abs(a.spanne ?? 0)
-    || b.urteil.staerke - a.urteil.staerke
-    || a.paar.localeCompare(b.paar));
-}
+ * Zu holen im Commit davor, falls je jemand die alte Fassung vergleichen
+ * will. Zwei Rechnungen für dieselbe Frage nebeneinander stehen zu lassen
+ * war der Fehler, den diese Sitzung an drei Stellen aufgeräumt hat.
+ * ------------------------------------------------------------------- */

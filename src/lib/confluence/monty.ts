@@ -1,14 +1,15 @@
 import "server-only";
-import { ladeCotLang, ladeFuerStichtag, ladeKurse, KALIBRIER_JAHRE } from "./daten";
+import {
+  ladeCotLang, ladeFuerStichtag, ladeKurse, KALIBRIER_JAHRE, type CotLang,
+} from "./daten";
 import {
   gesamtbild, kalibriere, raengeReihe,
-  type Gesamtbild, type Kalibrierung, type Variante,
+  type Gesamtbild, type Kalibrierung, type RangWoche, type Variante,
 } from "./kalibrierung";
 import { G8, PAARE } from "./faktoren";
 import { cotStatistik, type CotStatistik } from "./monty-cot";
-import {
-  cotBildFuer, cotPaarZeilen, type CotBild, type CotPaarZeile,
-} from "./cot-divergenz";
+import { synthBild, synthRaengeReihe, type SynthBild } from "./cot-synth";
+import { cotBildFuer } from "./cot-divergenz";
 import { saisonBild, type Fenster, type SaisonBild } from "./saison";
 
 /**
@@ -25,29 +26,9 @@ import { saisonBild, type Fenster, type SaisonBild } from "./saison";
  * deshalb Paar für Paar auf, jede hinter ihrer eigenen Suspense-Grenze.
  */
 
-/**
- * Ein Paar, beide Beine.
- *
- * Der Grund für diese Ansicht ist ein Vergleich, der ohne sie nicht geht:
- * TradingView zeigt COT **je Paar**, KerimOS zeigte es bisher nur **je
- * Währung**. Wer die beiden nebeneinanderlegen wollte, musste im Kopf
- * umrechnen — und beim Umrechnen im Kopf gewinnt immer die Erwartung.
- *
- * Deshalb steht hier beides: das Urteil aus **beiden** Beinen (Basis minus
- * Quote, so rechnet der Screener) und daneben, was **nur die Basiswährung**
- * sagt — so rechnet Kerims Pine-Indikator, und so zeigt es TradingView.
- * Die zwei können sich widersprechen, und dass sie es können, ist der
- * eigentliche Befund: stehen beide Währungen gleich gestreckt, ist die
- * Differenz null und beide Beine ergeben KEIN Signal, obwohl ein Bein eines
- * zeigt.
- */
-export type MontyPaar = CotPaarZeile;
-
 export interface MontyCot {
   stichtag: string;
   waehrungen: CotStatistik[];
-  /** Alle 28 Paare, Paare mit Aussage zuerst. */
-  paare: MontyPaar[];
   /** Wie viele der acht Währungen gerade gestreckt sind. */
   gestreckt: number;
   /**
@@ -68,16 +49,9 @@ export async function baueMontyCot(stichtag: string): Promise<MontyCot> {
   // Die Währungsbilder EINMAL rechnen und für alle 28 Paare wiederverwenden.
   // Je Paar neu zu rechnen wäre dieselbe Arbeit 56-mal — und schlimmer: ein
   // zweiter Rechenweg, der irgendwann von der Tabelle darüber abweicht.
-  const bilder = new Map<string, CotBild>(
-    G8.map((c) => [c as string, cotBildFuer(daten, c, stichtag)]),
-  );
-
-  const paare = cotPaarZeilen(bilder, PAARE);
-
   return {
     stichtag,
     waehrungen,
-    paare,
     gestreckt: waehrungen.filter((w) => w.jetzt.divergenz !== 0).length,
     gruppen: bericht.cotGruppen ?? {},
   };
@@ -108,16 +82,32 @@ export async function baueSaisonZeile(
  * Grenze liegt.
  */
 export async function baueKalibrierung(
-  paar: string, stichtag: string, variante: Variante = "beide",
+  paar: string, stichtag: string, variante: Variante = "synth",
 ): Promise<Kalibrierung> {
   const [cot, kurse] = await Promise.all([ladeCotLang(stichtag), ladeKurse(paar)]);
-  return kalibriere(
-    paar, kurse,
-    raengeReihe(cot, paar.slice(0, 3)),
-    raengeReihe(cot, paar.slice(3, 6)),
-    undefined,
-    variante,
-  );
+  const [b, q] = raengeFuer(cot, paar, variante);
+  return kalibriere(paar, kurse, b, q, undefined, variante);
+}
+
+/**
+ * Welche Rangreihen die gewählte Fassung braucht.
+ *
+ * Bei „synth" ist es EINE Reihe — die des Paares, bei der die Differenz vor
+ * dem Rang gebildet wurde. Bei den anderen drei sind es zwei, je Währung.
+ * Diese Verzweigung steht hier und nicht in `kalibriere`, damit dort nichts
+ * von Datenquellen weiss.
+ */
+function raengeFuer(
+  cot: CotLang, paar: string, variante: Variante,
+): [RangWoche[], RangWoche[]] {
+  const basis = paar.slice(0, 3), quote = paar.slice(3, 6);
+  if (variante === "synth") {
+    return [synthRaengeReihe(
+      cot.cotKomm[basis] ?? [], cot.cotKomm[quote] ?? [],
+      cot.cotRetail[basis] ?? [], cot.cotRetail[quote] ?? [],
+    ), []];
+  }
+  return [raengeReihe(cot, basis), raengeReihe(cot, quote)];
 }
 
 export { KALIBRIER_JAHRE };
@@ -140,25 +130,44 @@ export const KALIBRIER_PAARE = [
  * wiederverwendet — sonst wäre dieselbe Arbeit siebenmal fällig.
  */
 export async function baueGesamtbild(
-  stichtag: string, variante: Variante = "beide",
+  stichtag: string, variante: Variante = "synth",
 ): Promise<Gesamtbild> {
   const cot = await ladeCotLang(stichtag);
-
-  const waehrungen = [...new Set(
-    KALIBRIER_PAARE.flatMap((p) => [p.slice(0, 3), p.slice(3, 6)]),
-  )];
-  const raenge = new Map(waehrungen.map((c) => [c, raengeReihe(cot, c)]));
 
   const alle: Kalibrierung[] = [];
   for (const paar of KALIBRIER_PAARE) {
     const kurse = await ladeKurse(paar);
-    alle.push(kalibriere(
-      paar, kurse,
-      raenge.get(paar.slice(0, 3)) ?? [],
-      raenge.get(paar.slice(3, 6)) ?? [],
-      undefined,
-      variante,
-    ));
+    const [b, q] = raengeFuer(cot, paar, variante);
+    alle.push(kalibriere(paar, kurse, b, q, undefined, variante));
   }
   return gesamtbild(alle);
+}
+
+/**
+ * Alle 28 Paare synthetisch — die Rechnung, nach der Kerim handelt.
+ *
+ * Seit dem 26.08.2026 die Hauptansicht auf Monty. Sie ersetzt die alte
+ * Rang-Differenz nicht aus Geschmack: sein Pine-Skript begründet selbst,
+ * warum Ränge nicht subtrahiert werden dürfen, und die Messung gibt ihm
+ * recht. Zwei Währungen im Mittelfeld können als Differenz an einem Extrem
+ * stehen — das sah die alte Rechnung nie.
+ *
+ * Geladen wird über `ladeCotLang`: dieselbe zwanzigjährige, 24 h gecachte
+ * Abfrage, die auch die Kalibrierung benutzt. Ein eigener Ladeweg für drei
+ * Jahre wäre ein zweiter Cache-Eintrag für dieselben Zeilen.
+ */
+export async function baueMontySynth(stichtag: string): Promise<SynthBild[]> {
+  const cot = await ladeCotLang(stichtag);
+
+  return (PAARE as readonly string[]).map((paar) => synthBild(
+    paar, stichtag,
+    cot.cotKomm[paar.slice(0, 3)] ?? [],
+    cot.cotKomm[paar.slice(3, 6)] ?? [],
+    cot.cotRetail[paar.slice(0, 3)] ?? [],
+    cot.cotRetail[paar.slice(3, 6)] ?? [],
+  )).sort((a, b) =>
+    // Nach dem Betrag des Bias, stärkste zuerst: man sucht, wo etwas los ist.
+    // Paare ohne genug Historie fallen ans Ende statt in die Mitte.
+    Math.abs(b.bias ?? 0) - Math.abs(a.bias ?? 0)
+    || a.paar.localeCompare(b.paar));
 }

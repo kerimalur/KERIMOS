@@ -52,7 +52,7 @@ export default async function FaktorSeite({ searchParams }: { searchParams: Para
   const heute = heuteISO();
   // Nicht alle 28 Paare zur Auswahl: jedes kostet zwanzig Jahre Rechnung.
   const kalPaar: string = KALIBRIER_PAARE.find((x) => x === einer(p.kal)) ?? KALIBRIER_PAARE[0];
-  const variante: Variante = VARIANTEN.find((v) => v.key === einer(p.var))?.key ?? "beide";
+  const variante: Variante = VARIANTEN.find((v) => v.key === einer(p.var))?.key ?? "synth";
 
   return (
     <>

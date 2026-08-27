@@ -2,10 +2,12 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { tradingConfigured } from "@/lib/supabase/trading";
 import { heuteISO } from "@/lib/time";
-import { baueMontyCot, baueSaisonZeile, MONTY_PAARE } from "@/lib/confluence/monty";
+import {
+  baueMontyCot, baueMontySynth, baueSaisonZeile, MONTY_PAARE,
+} from "@/lib/confluence/monty";
 import { FENSTER, MAX_JAHRE, MIN_JAHRE, type Fenster } from "@/lib/confluence/saison";
 import {
-  CotPaarGrafik, CotPaarTabelle, CotStatistikTabelle,
+  SynthPaarGrafik, CotStatistikTabelle,
   SaisonKopf, SaisonZeile, SaisonZeileLaedt,
 } from "@/components/confluence/monty-teile";
 import { Card, CardTitle, Empty, cx } from "@/components/ui";
@@ -57,7 +59,9 @@ export default async function ConfluencePage({ searchParams }: { searchParams: P
   const p = await searchParams;
   const heute = heuteISO();
   const fenster: Fenster = FENSTER.find((f) => String(f) === einer(p.jahre)) ?? 20;
-  const cot = await baueMontyCot(heute);
+  const [cot, synth] = await Promise.all([
+    baueMontyCot(heute), baueMontySynth(heute),
+  ]);
 
   return (
     <div className="space-y-5">
@@ -104,28 +108,14 @@ export default async function ConfluencePage({ searchParams }: { searchParams: P
       </Card>
 
       <Card>
-        <CardTitle>Commercials gegen Retail — alle 28 Paare</CardTitle>
+        <CardTitle>Alle 28 Paare — so wie dein Indikator rechnet</CardTitle>
         <p className="mb-3 text-[11px] leading-relaxed text-ink-faint">
-          Dieselbe Lage wie oben, nur auf Paarebene und stetig statt als
-          Ja/Nein. Jedes Paar bekommt einen Balken, auch die ohne Signal —
-          sonst sieht man nicht, ob dort nichts los ist oder ob es knapp war.
+          Synthetisch: erst Basis minus Quote als Netto-Anteil am Open
+          Interest, dann der Perzentilrang. Dieselbe Rechnung, dieselben
+          Schwellen und derselbe Bias wie im TradingView-Panel — die Zahlen
+          hier und dort müssen übereinstimmen.
         </p>
-        <CotPaarGrafik zeilen={cot.paare} />
-
-        {/* Der Vergleich mit TradingView ist eine andere Frage als die Lage
-            und steht deshalb zugeklappt darunter: man öffnet ihn, wenn man
-            zweifelt, nicht jeden Morgen. */}
-        <details className="mt-4 border-t border-line/70 pt-3">
-          <summary className="cursor-pointer list-none text-sm font-medium text-ink">
-            Beide Beine gegen nur Basis
-            <span className="ml-2 text-xs font-normal text-ink-faint">
-              für den Vergleich mit TradingView
-            </span>
-          </summary>
-          <div className="mt-3">
-            <CotPaarTabelle zeilen={cot.paare} />
-          </div>
-        </details>
+        <SynthPaarGrafik bilder={synth} />
       </Card>
 
       <Card>
