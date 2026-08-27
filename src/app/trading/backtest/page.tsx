@@ -19,6 +19,8 @@ import { BacktestInsights } from "@/components/backtest-insights";
 import { BacktestEquity } from "@/components/backtest-equity";
 import { BacktestCheckliste } from "@/components/backtest-checkliste";
 import { BacktestTradeForm } from "@/components/backtest-trade-form";
+import { DatumWaehler } from "@/components/datum-waehler";
+import { heuteISO } from "@/lib/time";
 import { BacktestTradeListe } from "@/components/backtest-trade-liste";
 import { Card, CardTitle, Stat, Badge, Empty, Input, Button, cx } from "@/components/ui";
 import { BacktestFundamental } from "@/components/backtest-fundamental";
@@ -196,8 +198,18 @@ export default async function BacktestPage({
         <form action={startBacktestSession} className="flex flex-wrap items-end gap-2">
           <Input name="pair" placeholder="Neues Pair, z. B. EURUSD" required
             className="w-48 uppercase" aria-label="Pair" />
+          <div>
+            <span className="mb-1 block text-[11px] text-ink-faint">Ab welchem Datum</span>
+            <DatumWaehler name="start_date" standard={heuteISO()} raster={false} />
+          </div>
           <Button type="submit" variant="ghost">Session starten</Button>
         </form>
+        <p className="mt-2 text-[11px] leading-relaxed text-ink-faint">
+          Das Startdatum ist die Vorgabe fürs Trade-Formular, solange die Session
+          leer ist — danach steht dort immer der Tag des zuletzt erfassten Trades.
+          Der heutige Tag ist beim Backtesten von 2021 der einzige, der sicher
+          nicht gemeint ist.
+        </p>
       </Card>
 
       {!currentSession ? (
@@ -238,6 +250,14 @@ function EintragenAnsicht({
   };
   checkliste: ChecklistPunkt[];
 }) {
+  // Die Trades kommen mit dem neuesten Datum zuerst; genau dort arbeitet er
+  // weiter. Erst wenn die Session leer ist, zählt ihr Startdatum — und der
+  // heutige Tag ist die letzte Rückfallebene, nicht die erste.
+  const letztes = trades.length > 0
+    ? [...trades].sort((a, b) => b.occurred_on.localeCompare(a.occurred_on))[0].occurred_on
+    : null;
+  const standardDatum = (letztes ?? session.start_date ?? heuteISO()).slice(0, 10);
+
   return (
     <>
       <BacktestCheckliste punkte={checkliste} />
@@ -250,7 +270,8 @@ function EintragenAnsicht({
             Auswertung ansehen ↗
           </Link>
         </div>
-        <BacktestTradeForm sessionId={session.id} kategorien={kategorien} />
+        <BacktestTradeForm sessionId={session.id} kategorien={kategorien}
+          standardDatum={standardDatum} />
       </Card>
 
       <Card>

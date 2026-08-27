@@ -171,6 +171,11 @@ export interface BacktestSession {
   status: SessionStatus;
   created_at: string;
   closed_at: string | null;
+  /**
+   * Erster Handelstag der Session. Vorgabe fürs Trade-Formular, solange noch
+   * kein Trade erfasst ist. Null bei Sessions von vor der Migration.
+   */
+  start_date: string | null;
 }
 
 /** Ein Punkt der Vor-dem-Trade-Checkliste. */

@@ -46,9 +46,18 @@ export async function startBacktestSession(fd: FormData) {
   const supabase = createTradingClient();
   if (!supabase) throw new Error("Trading-Datenbank nicht verbunden");
 
-  const { error } = await supabase
-    .from("backtest_journal_sessions")
-    .insert({ pair, status: "aktiv" });
+  const start_date = text(fd, "start_date");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start_date)) {
+    throw new Error("Startdatum fehlt oder ist unlesbar");
+  }
+
+  // Ohne die Migration aus supabase/trading/04_backtest_session_start.sql gibt
+  // es die Spalte nicht — dann soll die Session trotzdem entstehen.
+  const anlegen = (werte: object) => supabase
+    .from("backtest_journal_sessions").insert(werte);
+
+  let { error } = await anlegen({ pair, status: "aktiv", start_date });
+  if (error) ({ error } = await anlegen({ pair, status: "aktiv" }));
   if (error) throw new Error(`Session starten: ${error.message}`);
 
   revalidatePath("/trading/backtest");

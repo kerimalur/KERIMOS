@@ -16,6 +16,7 @@
     "check:auswertung": "npx -y tsx tools/checks/auswertung.mts",
     "check:verlauf": "npx -y tsx tools/checks/verlauf.mts",
     "check:markdown": "npx -y tsx tools/checks/markdown.mts",
+    "check:datum": "npx -y tsx tools/checks/datum-eingabe.mts",
     "check:monty": "npx -y tsx tools/checks/monty.mts",
     "check:pine": "npx -y tsx tools/checks/pine.mts",
     "check:vorwaerts": "npx -y tsx tools/checks/vorwaerts.mts",

@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { Input, Select, Label, Button, cx } from "@/components/ui";
+import { DatumWaehler } from "@/components/datum-waehler";
 import { addBacktestTrade, updateBacktestTrade } from "@/lib/backtest-actions";
 import {
   RESULT_LABEL, berechneR, verlaufFeld,
@@ -20,9 +21,15 @@ import {
  * Fälle, in denen der Ausstieg woanders lag als geplant.
  */
 export function BacktestTradeForm({
-  sessionId, kategorien, trade, onFertig,
+  sessionId, kategorien, trade, onFertig, standardDatum,
 }: {
   sessionId: string;
+  /**
+   * Datum, mit dem das Feld aufmacht — beim Erfassen der Tag des zuletzt
+   * eingetragenen Trades. Man arbeitet einen Zeitraum der Reihe nach durch;
+   * der heutige Tag ist dabei der einzige, der garantiert nicht gemeint ist.
+   */
+  standardDatum?: string;
   kategorien: {
     gvaTyp: BacktestCategory | null;
     confluence: BacktestCategory | null;
@@ -68,8 +75,9 @@ export function BacktestTradeForm({
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
           <Label htmlFor={`d-${trade?.id ?? "neu"}`}>Datum</Label>
-          <Input id={`d-${trade?.id ?? "neu"}`} type="date" name="occurred_on"
-            defaultValue={trade?.occurred_on ?? new Date().toISOString().slice(0, 10)} required />
+          <DatumWaehler id={`d-${trade?.id ?? "neu"}`} name="occurred_on"
+            standard={(trade?.occurred_on ?? standardDatum
+              ?? new Date().toISOString().slice(0, 10)).slice(0, 10)} />
         </div>
         <div>
           <Label htmlFor={`ri-${trade?.id ?? "neu"}`}>Richtung</Label>

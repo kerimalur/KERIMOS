@@ -144,12 +144,18 @@ export async function fetchBacktestSessions(): Promise<BacktestSession[]> {
   const supabase = createTradingClient();
   if (!supabase) return [];
 
-  const { data } = await supabase
+  // Wie bei den Trades: `start_date` kommt aus einer Migration, die noch
+  // nicht überall gelaufen sein muss (supabase/trading/04_...).
+  const hole = (spalten: string) => supabase
     .from("backtest_journal_sessions")
-    .select("id, pair, status, created_at, closed_at")
+    .select(spalten)
     .order("created_at", { ascending: false });
 
-  return (data ?? []) as BacktestSession[];
+  let { data, error } = await hole("id, pair, status, created_at, closed_at, start_date");
+  if (error) ({ data } = await hole("id, pair, status, created_at, closed_at"));
+
+  return ((data ?? []) as unknown as BacktestSession[])
+    .map((s) => ({ ...s, start_date: s.start_date ?? null }));
 }
 
 /**
