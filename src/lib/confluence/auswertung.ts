@@ -192,6 +192,40 @@ const teil = (liste: TiefenTrade[]): DimTeil => {
   };
 };
 
+export interface TrennBefund {
+  /** True nur, wenn sich die beiden Wilson-Intervalle NICHT überlappen. */
+  getrennt: boolean;
+  satz: string;
+}
+
+/**
+ * Ein Satz darüber, ob zwei Lager sich in der Trefferquote wirklich trennen.
+ *
+ * Steht hier und nicht dreimal im Code: der Zeitstrahl auf der Backtest-Seite
+ * stellt dieselbe Frage wie `nachDimension`, nur zu einer anderen Quelle.
+ * Zwei Formulierungen derselben Prüfung würden über kurz oder lang
+ * auseinanderlaufen — und dann stünde auf einer Seite „trennt" und auf der
+ * anderen „kein Nachweis", ohne dass jemand sagen könnte, welche stimmt.
+ */
+export function trennBefund(dafuer: Quote, dagegen: Quote): TrennBefund {
+  if (dafuer.n < MIN_JE_SEITE_DIM || dagegen.n < MIN_JE_SEITE_DIM) {
+    return {
+      getrennt: false,
+      satz: `${dafuer.n} dafür gegen ${dagegen.n} dagegen — unter `
+        + `${MIN_JE_SEITE_DIM} je Seite sagt der Vergleich nichts.`,
+    };
+  }
+  const getrennt = dafuer.unten! > dagegen.oben! || dagegen.unten! > dafuer.oben!;
+  const zahlen = `${(dafuer.quote! * 100).toFixed(1)} % gegen `
+    + `${(dagegen.quote! * 100).toFixed(1)} %`;
+  return {
+    getrennt,
+    satz: getrennt
+      ? `${zahlen}, Intervalle getrennt — das trennt hier tatsächlich.`
+      : `${zahlen} — die Intervalle überlappen. Kein Nachweis.`,
+  };
+}
+
 /** Die Gegenrichtung: hat eine Dimension die Trefferquote überhaupt getrennt? */
 export function nachDimension(trades: TiefenTrade[], dims: DimKey[]): DimErfolg[] {
   return dims.map((key) => {
@@ -200,19 +234,7 @@ export function nachDimension(trades: TiefenTrade[], dims: DimKey[]): DimErfolg[
     const dagegen = teil(trades.filter((t) => wert(t) < 0));
     const stumm = teil(trades.filter((t) => wert(t) === 0));
 
-    let satz: string;
-    if (dafuer.quote.n < MIN_JE_SEITE_DIM || dagegen.quote.n < MIN_JE_SEITE_DIM) {
-      satz = `${dafuer.quote.n} dafür gegen ${dagegen.quote.n} dagegen — unter `
-        + `${MIN_JE_SEITE_DIM} je Seite sagt der Vergleich nichts.`;
-    } else {
-      const getrennt = dafuer.quote.unten! > dagegen.quote.oben!
-        || dagegen.quote.unten! > dafuer.quote.oben!;
-      const zahlen = `${(dafuer.quote.quote! * 100).toFixed(1)} % gegen `
-        + `${(dagegen.quote.quote! * 100).toFixed(1)} %`;
-      satz = getrennt
-        ? `${zahlen}, Intervalle getrennt — diese Dimension trennt hier tatsächlich.`
-        : `${zahlen} — die Intervalle überlappen. Kein Nachweis.`;
-    }
+    const { satz } = trennBefund(dafuer.quote, dagegen.quote);
 
     return { key, label: DIM_LABEL[key], dafuer, dagegen, stumm, satz };
   });

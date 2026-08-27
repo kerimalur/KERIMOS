@@ -12,6 +12,7 @@ import { BacktestFilter } from "@/components/backtest-filter";
 import { BacktestBreakdown } from "@/components/backtest-breakdown";
 import { BacktestInsights } from "@/components/backtest-insights";
 import { BacktestEquity } from "@/components/backtest-equity";
+import { BacktestVerluste } from "@/components/backtest-verluste";
 import { Card, CardTitle, Stat, Empty, Bar } from "@/components/ui";
 import { heuteISO } from "@/lib/time";
 
@@ -139,6 +140,17 @@ export default async function GesamtauswertungPage({
           <Card>
             <CardTitle>Aufschlüsselung</CardTitle>
             <BacktestBreakdown data={breakdownData} slData={slBreakdown} />
+          </Card>
+
+          <Card>
+            <CardTitle>Was nicht durchgelaufen ist</CardTitle>
+            <BacktestVerluste trades={trades} zeigePaar />
+            <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+              Über alle Pairs, weil die Strategie über alle Pairs dieselbe ist — das
+              Pair steht auf der Karte. Die fundamentale Lage zu einem einzelnen
+              Verlust gibt es nur je Pair, im Reiter <strong>Fundamental</strong> der
+              jeweiligen Session.
+            </p>
           </Card>
         </>
       )}

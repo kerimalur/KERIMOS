@@ -22,11 +22,15 @@ import { BacktestTradeForm } from "@/components/backtest-trade-form";
 import { BacktestTradeListe } from "@/components/backtest-trade-liste";
 import { Card, CardTitle, Stat, Badge, Empty, Input, Button, cx } from "@/components/ui";
 import { BacktestFundamental } from "@/components/backtest-fundamental";
+import { BacktestZeitstrahl } from "@/components/backtest-zeitstrahl";
+import { BacktestVerluste } from "@/components/backtest-verluste";
 import { RVerteilung, DrawdownFlaeche } from "@/components/backtest-bilder";
 import { BacktestExport } from "@/components/backtest-export";
 import { baueBacktestFundamental, KREUZ_LABEL } from "@/lib/confluence/backtest-bilanz";
+import { baueZeitstrahl } from "@/lib/confluence/zeitstrahl";
 import { dimensionenAus, DIM_ALLE, DIM_LABEL, type DimKey } from "@/lib/confluence/auswertung";
 import { FENSTER, type Fenster } from "@/lib/confluence/saison";
+import { SYNTH } from "@/lib/confluence/cot-synth";
 
 export const dynamic = "force-dynamic";
 
@@ -273,6 +277,26 @@ async function FundamentalBlock({ trades, dims, saisonFenster }: {
   return <BacktestFundamental bild={bild} ergebnisLabel={KREUZ_LABEL} />;
 }
 
+/**
+ * Dieselbe Lage, nur als Verlauf statt als Tabelle.
+ *
+ * Bekommt bewusst ALLE Trades der Session, auch wenn oben ein Jahr gewählt
+ * ist: eine Linie, die am 1. Januar anfängt, hat keinen Verlauf. Das gewählte
+ * Jahr bestimmt stattdessen den Ausschnitt, in dem der Zeitstrahl aufgeht.
+ */
+async function ZeitstrahlBlock({ trades, saisonFenster, fokusJahr }: {
+  trades: Trade[]; saisonFenster: Fenster; fokusJahr: string | null;
+}) {
+  if (!tradingConfigured()) return null;
+  const bild = await baueZeitstrahl(trades, { saisonFenster });
+  // key am Jahr: der Ausschnitt steckt im Zustand der Client-Komponente, und
+  // ohne Neuaufbau bliebe er beim Umschalten des Jahres stehen.
+  return (
+    <BacktestZeitstrahl key={fokusJahr ?? "alle"} bild={bild} trades={trades}
+      fokusJahr={fokusJahr} />
+  );
+}
+
 /* ------------------------------------------------------------ Abschnitte */
 
 const TEILE = [
@@ -307,6 +331,9 @@ function AuswertungsAnsicht({
   const dims = dimensionenAus(sp.dim ?? null);
   const saisonFenster: Fenster =
     FENSTER.find((f) => String(f) === sp.saisonjahre) ?? 20;
+  // Die Tabellensicht ist zu, bis jemand sie aufmacht — sonst steht das Bild
+  // wieder unter drei Bildschirmen Zahlen.
+  const zeigeZahlen = sp.zahlen === "1";
 
   // Jahresfilter: gilt für ALLE Abschnitte, damit man nicht in einem Teil ein
   // Jahr wählt und im nächsten unbemerkt wieder alle sieht.
@@ -318,7 +345,10 @@ function AuswertungsAnsicht({
   /** Adresse mit geänderten Parametern — der Rest bleibt stehen. */
   const link = (aenderung: Record<string, string | null>) => {
     const p = new URLSearchParams({ session: session.id, ansicht: "auswerten" });
-    for (const [k, v] of Object.entries({ teil, jahr, dim: sp.dim ?? null, saisonjahre: sp.saisonjahre ?? null, ...aenderung })) {
+    for (const [k, v] of Object.entries({
+      teil, jahr, dim: sp.dim ?? null, saisonjahre: sp.saisonjahre ?? null,
+      zahlen: sp.zahlen ?? null, ...aenderung,
+    })) {
       if (v !== null && v !== undefined && v !== "") p.set(k, String(v));
     }
     return `/trading/backtest?${p.toString()}`;
@@ -473,62 +503,108 @@ function AuswertungsAnsicht({
       ) : teil === "fundamental" ? (
         <>
           <Card>
-            <CardTitle>Was soll ausgewertet werden?</CardTitle>
-            <div className="flex flex-wrap gap-1.5">
-              {DIM_ALLE.map((k) => (
-                <Link key={k} href={dimUm(k)}
-                  className={cx(
-                    "rounded-xl border px-3 py-1.5 text-xs transition duration-150 ease-tactile active:scale-95",
-                    dims.includes(k)
-                      ? "border-accent/60 bg-accent-tint text-ink"
-                      : "border-line bg-sand text-ink-muted hover:text-ink")}>
-                  {dims.includes(k) ? "✓ " : ""}{DIM_LABEL[k]}
+            <CardTitle>Saisonalität — über wie viele Jahre?</CardTitle>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {FENSTER.map((f) => (
+                <Link key={f} href={link({ saisonjahre: String(f) })}
+                  className={cx("num rounded-lg px-2.5 py-1 text-xs transition duration-150 ease-tactile",
+                    saisonFenster === f ? "bg-sand text-ink" : "text-ink-muted hover:text-ink")}>
+                  {f} J
                 </Link>
               ))}
             </div>
-            {dims.includes("saison") && (
-              <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                <span className="text-[11px] text-ink-faint">Saison-Fenster</span>
-                {FENSTER.map((f) => (
-                  <Link key={f} href={link({ saisonjahre: String(f) })}
-                    className={cx("num rounded-lg px-2.5 py-1 text-xs transition duration-150 ease-tactile",
-                      saisonFenster === f ? "bg-sand text-ink" : "text-ink-muted hover:text-ink")}>
-                    {f} J
-                  </Link>
-                ))}
-              </div>
-            )}
             <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
-              Veto und Confluence-Score sind bewusst aus. Wer alles gleichzeitig einschaltet,
-              findet garantiert irgendwo einen Ausschlag — vier Dimensionen über vier
-              Ergebnisklassen sind sechzehn Zahlen, und ein paar davon sind immer auffällig.
+              Drei Spuren, mehr nicht: Commercials gegen Retail, Saisonalität und der
+              Confluence-Score. Jede für sich, jede mit ihrem eigenen Befund darunter.
               Die Kurse fürs Saison-Fenster reichen rund 20 Jahre zurück; deshalb gibt es
               hier kein 25-Jahre-Fenster.
             </p>
           </Card>
 
-          <Suspense key={`${dims.join()}-${saisonFenster}-${jahr}`} fallback={
+          <Suspense key={`zeit-${saisonFenster}`} fallback={
             <Card>
-              <CardTitle>Fundamentale Auswertung</CardTitle>
-              <div className="py-6 text-center text-sm text-ink-muted">
-                Zinsen, COT, Kurse für {trades.length} Handelstage …
+              <CardTitle>Zeitstrahl</CardTitle>
+              <div className="py-10 text-center text-sm text-ink-muted">
+                COT über {SYNTH.wochen} Wochen, Kurse und Zinsen für {alleTrades.length} Trades …
               </div>
             </Card>
           }>
-            <FundamentalBlock trades={trades} dims={dims} saisonFenster={saisonFenster} />
+            <ZeitstrahlBlock trades={alleTrades} saisonFenster={saisonFenster}
+              fokusJahr={jahr} />
           </Suspense>
+
+          <Card>
+            <CardTitle>Die Zahlen dazu</CardTitle>
+            <Link href={link({ zahlen: zeigeZahlen ? null : "1" })}
+              className="float-right ml-4 text-xs text-accent-soft hover:underline">
+              {zeigeZahlen ? "ausblenden" : "einblenden"}
+            </Link>
+            <p className="text-[11px] leading-relaxed text-ink-faint">
+              Kreuztabellen, Faktor-Bilanz und Intervalle — dieselbe Rechnung, nur
+              ausgeschrieben. Standardmässig zu: das Bild oben stellt die Frage,
+              und wer sie schon beantwortet hat, braucht die Tabellen nicht.
+            </p>
+          </Card>
+
+          {zeigeZahlen && (
+            <>
+              <Card>
+                <CardTitle>Was soll ausgewertet werden?</CardTitle>
+                <div className="flex flex-wrap gap-1.5">
+                  {DIM_ALLE.map((k) => (
+                    <Link key={k} href={dimUm(k)}
+                      className={cx(
+                        "rounded-xl border px-3 py-1.5 text-xs transition duration-150 ease-tactile active:scale-95",
+                        dims.includes(k)
+                          ? "border-accent/60 bg-accent-tint text-ink"
+                          : "border-line bg-sand text-ink-muted hover:text-ink")}>
+                      {dims.includes(k) ? "✓ " : ""}{DIM_LABEL[k]}
+                    </Link>
+                  ))}
+                </div>
+                <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+                  Veto und Confluence-Score sind bewusst aus. Wer alles gleichzeitig einschaltet,
+                  findet garantiert irgendwo einen Ausschlag — vier Dimensionen über vier
+                  Ergebnisklassen sind sechzehn Zahlen, und ein paar davon sind immer auffällig.
+                </p>
+              </Card>
+
+              <Suspense key={`${dims.join()}-${saisonFenster}-${jahr}`} fallback={
+                <Card>
+                  <CardTitle>Fundamentale Auswertung</CardTitle>
+                  <div className="py-6 text-center text-sm text-ink-muted">
+                    Zinsen, COT, Kurse für {trades.length} Handelstage …
+                  </div>
+                </Card>
+              }>
+                <FundamentalBlock trades={trades} dims={dims} saisonFenster={saisonFenster} />
+              </Suspense>
+            </>
+          )}
         </>
       ) : teil === "verluste" ? (
-        <Card>
-          <CardTitle>Woran die Verluste hingen</CardTitle>
-          <BacktestBreakdown data={slBreakdown} slData={slBreakdown} />
-          <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
-            Dieselben Gruppen wie in der Aufschlüsselung, aber nur über die Stopouts.
-            Die Frage lautet nicht „welche Gruppe hat viele SL" — grosse Gruppen haben
-            immer viele — sondern <strong>welche hat anteilig mehr</strong>, als ihre Grösse
-            erwarten liesse.
-          </p>
-        </Card>
+        <>
+          <Card>
+            <CardTitle>Was nicht durchgelaufen ist</CardTitle>
+            <BacktestVerluste trades={trades} />
+            <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+              Charts nebeneinander statt Zeilen untereinander: Muster im Bild —
+              immer derselbe Punkt der Bewegung, immer dieselbe Kerzenform — sieht
+              keine Statistik. Klick vergrössert, die Pfeiltasten blättern weiter.
+            </p>
+          </Card>
+
+          <Card>
+            <CardTitle>Woran die Verluste hingen</CardTitle>
+            <BacktestBreakdown data={slBreakdown} slData={slBreakdown} />
+            <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+              Dieselben Gruppen wie in der Aufschlüsselung, aber nur über die Stopouts.
+              Die Frage lautet nicht „welche Gruppe hat viele SL" — grosse Gruppen haben
+              immer viele — sondern <strong>welche hat anteilig mehr</strong>, als ihre Grösse
+              erwarten liesse.
+            </p>
+          </Card>
+        </>
       ) : teil === "export" ? (
         <Card>
           <CardTitle>Trades nach TradingView</CardTitle>
