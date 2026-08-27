@@ -17,6 +17,64 @@ export const RESULT_LABEL: Record<BacktestResult, string> = {
   skip: "Skip",
 };
 
+/* ------------------------------------------------------------- Verlauf */
+
+/**
+ * Wie knapp es war — in Klassen statt in Zahlen.
+ *
+ * Ein exakter MAE/MFE-Wert bräuchte Entry-, Stop- und Zielpreis. Kerim
+ * backtestet ohne Preise, nur mit RR; vier Klassen sind ein Klick im
+ * Formular und tragen den grössten Teil der Aussage. Eine erfundene
+ * Nachkommastelle wäre schlechter als eine ehrliche Spanne.
+ *
+ * Welches der beiden Felder etwas sagt, hängt am Ergebnis: bei einem Stopout
+ * ist die Gegenbewegung definitionsgemäss 1 R, bei einem Full TP ist der
+ * Vorlauf definitionsgemäss das Ziel. Deshalb fragt das Formular immer nur
+ * das Feld, das an dieser Stelle überhaupt eine Information trägt.
+ */
+export type Gegenlauf = "bis_025" | "bis_05" | "bis_075" | "knapp";
+export type Vorlauf = "kein" | "bis_05" | "bis_1" | "ueber_1";
+
+export const GEGENLAUF_REIHE: Gegenlauf[] = ["bis_025", "bis_05", "bis_075", "knapp"];
+export const VORLAUF_REIHE: Vorlauf[] = ["kein", "bis_05", "bis_1", "ueber_1"];
+
+export const GEGENLAUF_LABEL: Record<Gegenlauf, string> = {
+  bis_025: "kaum — bis 0,25 R",
+  bis_05: "bis 0,5 R",
+  bis_075: "bis 0,75 R",
+  knapp: "knapp am Stop — über 0,75 R",
+};
+
+export const VORLAUF_LABEL: Record<Vorlauf, string> = {
+  kein: "nie im Plus",
+  bis_05: "bis 0,5 R",
+  bis_1: "bis 1 R",
+  ueber_1: "über 1 R",
+};
+
+/** Kurzform für die Karte, wo drei Wörter zu viel sind. */
+export const GEGENLAUF_KURZ: Record<Gegenlauf, string> = {
+  bis_025: "kaum gegen", bis_05: "0,5 R gegen",
+  bis_075: "0,75 R gegen", knapp: "knapp am Stop",
+};
+
+export const VORLAUF_KURZ: Record<Vorlauf, string> = {
+  kein: "nie im Plus", bis_05: "0,5 R vor",
+  bis_1: "1 R vor", ueber_1: "über 1 R vor",
+};
+
+/** Welches Verlaufsfeld bei diesem Ergebnis überhaupt etwas aussagt. */
+export function verlaufFeld(result: BacktestResult): "gegenlauf" | "vorlauf" | null {
+  if (result === "full_tp" || result === "teil_tp_be") return "gegenlauf";
+  if (result === "sl" || result === "breakeven") return "vorlauf";
+  return null;
+}
+
+export const VERLAUF_FRAGE = {
+  gegenlauf: "Wie weit lief er gegen dich, bevor er aufging?",
+  vorlauf: "Wie weit lief er für dich, bevor er drehte?",
+} as const;
+
 /**
  * Faktoren, mit denen aus dem geplanten RR das erreichte R wird.
  *
@@ -92,6 +150,10 @@ export interface NativeBacktestTrade {
   tradingview_link: string | null;
   screenshot_url: string | null;
   session_id: string | null;
+  /** Nur bei Gewinnern gesetzt — siehe verlaufFeld(). */
+  gegenlauf: Gegenlauf | null;
+  /** Nur bei Stopout und Breakeven gesetzt. */
+  vorlauf: Vorlauf | null;
   tags: TradeTag[];
 }
 
@@ -647,4 +709,121 @@ export function serien(trades: NativeBacktestTrade[]): SerieBild {
     else if (r < 0) { v++; g = 0; maxV = Math.max(maxV, v); }
   }
   return { laengsteGewinne: maxG, laengsteVerluste: maxV };
+}
+
+/* --------------------------------------------------- Verlauf auswerten */
+
+export interface VerlaufKlasse {
+  key: string;
+  label: string;
+  n: number;
+  /** Anteil an den ERFASSTEN, nicht an allen. */
+  anteil: number;
+}
+
+export interface VerlaufBlock {
+  feld: "gegenlauf" | "vorlauf";
+  frage: string;
+  /** Trades, für die diese Frage überhaupt gilt. */
+  gilt: number;
+  /** Davon beantwortet. */
+  erfasst: number;
+  klassen: VerlaufKlasse[];
+  /**
+   * Die Konsequenz in einem Satz. Null, solange zu wenig erfasst ist —
+   * lieber keine Aussage als eine aus fünf Trades.
+   */
+  befund: string | null;
+}
+
+/** Unter so vielen erfassten Angaben sagt die Verteilung nichts. */
+export const MIN_VERLAUF = 8;
+
+const anteilVon = (klassen: VerlaufKlasse[], keys: string[]) =>
+  klassen.filter((k) => keys.includes(k.key)).reduce((s, k) => s + k.anteil, 0);
+
+/**
+ * Wie knapp es war — einmal über die Gewinner, einmal über die Verlierer.
+ *
+ * Beide Blöcke beantworten dieselbe übergeordnete Frage aus zwei Richtungen:
+ * sitzt der Stop richtig, und sitzt das Ziel richtig. Das ist die einzige
+ * Auswertung im Journal, die nicht vom Einstieg handelt — und Einstiege sind
+ * selten das Problem.
+ *
+ * Rein rechnerisch, keine Datenbank. Prüfbar in `tools/checks/verlauf.mts`.
+ */
+export function verlaufBilanz(trades: NativeBacktestTrade[]): VerlaufBlock[] {
+  const bau = (
+    feld: "gegenlauf" | "vorlauf",
+    reihe: string[],
+    label: Record<string, string>,
+  ): VerlaufBlock => {
+    const gilt = trades.filter((t) => verlaufFeld(t.result) === feld);
+    const werte: string[] = gilt
+      .map((t) => (feld === "gegenlauf" ? t.gegenlauf : t.vorlauf))
+      .filter((v) => v !== null) as string[];
+
+    const klassen: VerlaufKlasse[] = reihe.map((key) => {
+      const n = werte.filter((v) => v === key).length;
+      return { key, label: label[key], n, anteil: werte.length > 0 ? n / werte.length : 0 };
+    });
+
+    return {
+      feld,
+      frage: VERLAUF_FRAGE[feld],
+      gilt: gilt.length,
+      erfasst: werte.length,
+      klassen,
+      befund: werte.length < MIN_VERLAUF ? null : befundVon(feld, klassen, werte.length),
+    };
+  };
+
+  return [
+    bau("vorlauf", VORLAUF_REIHE, VORLAUF_LABEL),
+    bau("gegenlauf", GEGENLAUF_REIHE, GEGENLAUF_LABEL),
+  ];
+}
+
+/**
+ * Der Satz zur Verteilung.
+ *
+ * Bewusst beschreibend formuliert und nicht als Anweisung: die Klassen sind
+ * geschätzt, und aus zwölf Trades folgt kein „mach deinen Stop weiter".
+ */
+function befundVon(
+  feld: "gegenlauf" | "vorlauf", klassen: VerlaufKlasse[], n: number,
+): string {
+  const pz = (a: number) => `${Math.round(a * 100)} %`;
+
+  if (feld === "vorlauf") {
+    const weit = anteilVon(klassen, ["bis_1", "ueber_1"]);
+    const nie = anteilVon(klassen, ["kein"]);
+    if (weit >= 0.33) {
+      return `${pz(weit)} deiner Stopouts standen vorher mindestens 1 R im Plus (${n} erfasst). `
+        + "Das ist ein Ausstiegsproblem, kein Einstiegsproblem — dieselben Setups "
+        + "hätten mit einem Teilverkauf ein anderes Ergebnis gehabt.";
+    }
+    if (nie >= 0.6) {
+      return `${pz(nie)} deiner Stopouts liefen nie ins Plus (${n} erfasst). `
+        + "Das spricht für den Einstieg, nicht für den Ausstieg: die Trades waren "
+        + "von Anfang an verkehrt herum.";
+    }
+    return `${n} erfasst, ohne deutliches Übergewicht. Weder Einstieg noch Ausstieg `
+      + "sticht hier heraus.";
+  }
+
+  const knapp = anteilVon(klassen, ["knapp"]);
+  const kaum = anteilVon(klassen, ["bis_025"]);
+  if (knapp >= 0.25) {
+    return `${pz(knapp)} deiner Gewinner waren knapp am Stop (${n} erfasst). `
+      + "Ein engerer Stop hätte genau diese Trades gekostet — und das sind die, "
+      + "an denen die Summe hängt.";
+  }
+  if (kaum >= 0.6) {
+    return `${pz(kaum)} deiner Gewinner liefen kaum gegen dich (${n} erfasst). `
+      + "Dein Stop hat Luft, die diese Trades nicht gebraucht haben — enger gesetzt "
+      + "wäre dasselbe Ergebnis mit mehr Positionsgrösse möglich gewesen.";
+  }
+  return `${n} erfasst, gleichmässig verteilt. Der Stopabstand passt zu dem, `
+    + "was die Trades tatsächlich gebraucht haben.";
 }

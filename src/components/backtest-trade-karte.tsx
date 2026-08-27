@@ -2,7 +2,8 @@
 import { useEffect, useState } from "react";
 import { Badge, cx } from "@/components/ui";
 import {
-  RESULT_LABEL, tradingViewBild,
+  RESULT_LABEL, tradingViewBild, verlaufFeld,
+  GEGENLAUF_KURZ, VORLAUF_KURZ, GEGENLAUF_LABEL, VORLAUF_LABEL, VERLAUF_FRAGE,
   type BacktestCategoryKey, type BacktestResult, type NativeBacktestTrade,
 } from "@/lib/backtest-types";
 
@@ -56,6 +57,27 @@ const TAG_TON: Partial<Record<BacktestCategoryKey, string>> = {
   skip_grund: "bg-warn-tint text-accent-soft",
   anmerkung: "bg-bad-tint text-bad",
 };
+
+/**
+ * Die Verlaufsangabe eines Trades, kurz oder lang.
+ *
+ * Null, wenn nichts erfasst ist — ein Platzhalter wäre hier schlimmer als
+ * nichts, weil „keine Angabe" wie „lief nie ins Plus" aussähe.
+ */
+function verlaufText(trade: NativeBacktestTrade, lang: boolean): string | null {
+  const feld = verlaufFeld(trade.result);
+  if (feld === "gegenlauf" && trade.gegenlauf) {
+    return lang ? GEGENLAUF_LABEL[trade.gegenlauf] : GEGENLAUF_KURZ[trade.gegenlauf];
+  }
+  if (feld === "vorlauf" && trade.vorlauf) {
+    return lang ? VORLAUF_LABEL[trade.vorlauf] : VORLAUF_KURZ[trade.vorlauf];
+  }
+  return null;
+}
+
+/** Die zwei Klassen, bei denen es wirklich knapp war. */
+const verlaufAuffaellig = (trade: NativeBacktestTrade) =>
+  trade.gegenlauf === "knapp" || trade.vorlauf === "ueber_1";
 
 /* ----------------------------------------------------------------- Bild */
 
@@ -136,6 +158,14 @@ export function TradeKarte({
             <span className="tabular text-ink-faint">RR {trade.rr_geplant.toFixed(1)}</span>
           )}
           <span className="text-ink-faint">{wochentagVon(trade.occurred_on)}</span>
+          {verlaufText(trade, false) && (
+            <span className={cx("rounded px-1.5 py-0.5 text-[10px]",
+              verlaufAuffaellig(trade)
+                ? "bg-warn-tint text-accent-soft"
+                : "bg-sand text-ink-muted")}>
+              {verlaufText(trade, false)}
+            </span>
+          )}
         </div>
 
         {trade.tags.length > 0 && (
@@ -247,6 +277,16 @@ export function TradeOverlay({
                   className="text-accent-soft hover:underline">Chart in TradingView ↗</a>
               )}
             </div>
+
+            {verlaufFeld(trade.result) && (
+              <p className="text-xs text-ink-muted">
+                {VERLAUF_FRAGE[verlaufFeld(trade.result)!]}{" "}
+                <span className={cx("font-medium",
+                  verlaufAuffaellig(trade) ? "text-accent-soft" : "text-ink-soft")}>
+                  {verlaufText(trade, true) ?? "nicht erfasst"}
+                </span>
+              </p>
+            )}
 
             {trade.tags.length > 0 && (
               <div className="flex flex-wrap gap-1">

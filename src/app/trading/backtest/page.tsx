@@ -8,7 +8,7 @@ import { tradingConfigured } from "@/lib/supabase/trading";
 import {
   computeNativeBacktestStats, computeBreakdown, computeInsights, computeEquityKurve,
   rVerteilung, drawdownKurve, maxDrawdown, serien, R_FAKTOR_STANDARD,
-  BREAKDOWN_DIMENSIONS,
+  BREAKDOWN_DIMENSIONS, verlaufBilanz,
   type BreakdownDimension, type BreakdownRow, type ChecklistPunkt,
 } from "@/lib/backtest-types";
 import {
@@ -24,6 +24,7 @@ import { Card, CardTitle, Stat, Badge, Empty, Input, Button, cx } from "@/compon
 import { BacktestFundamental } from "@/components/backtest-fundamental";
 import { BacktestZeitstrahl } from "@/components/backtest-zeitstrahl";
 import { BacktestVerluste } from "@/components/backtest-verluste";
+import { BacktestVerlauf } from "@/components/backtest-verlauf";
 import { RVerteilung, DrawdownFlaeche } from "@/components/backtest-bilder";
 import { BacktestExport } from "@/components/backtest-export";
 import { baueBacktestFundamental, KREUZ_LABEL } from "@/lib/confluence/backtest-bilanz";
@@ -585,6 +586,17 @@ function AuswertungsAnsicht({
       ) : teil === "verluste" ? (
         <>
           <Card>
+            <CardTitle>Wie knapp war es?</CardTitle>
+            <BacktestVerlauf bloecke={verlaufBilanz(trades)} />
+            <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+              Die einzige Auswertung hier, die nicht vom Einstieg handelt. Ein Stop,
+              der vorher über 1 R im Plus stand, und ein Gewinner, der knapp am Stop
+              vorbeischrammte, sagen beide etwas über den <strong>Ausstieg</strong> —
+              und der entscheidet über mehr R als die Frage, welche Confluence dabei war.
+            </p>
+          </Card>
+
+          <Card>
             <CardTitle>Was nicht durchgelaufen ist</CardTitle>
             <BacktestVerluste trades={trades} />
             <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
@@ -607,15 +619,8 @@ function AuswertungsAnsicht({
         </>
       ) : teil === "export" ? (
         <Card>
-          <CardTitle>Trades nach TradingView</CardTitle>
-          <BacktestExport paar={session.pair}
-            trades={trades.map((t) => ({
-              datum: t.occurred_on.slice(0, 10),
-              paar: t.pair,
-              richtung: (t.direction === "short" ? -1 : 1) as -1 | 1,
-              ergebnis: t.result,
-              r: t.r_multiple ?? 0,
-            }))} />
+          <CardTitle>Export</CardTitle>
+          <BacktestExport paar={session.pair} trades={trades} />
         </Card>
       ) : (
         <>

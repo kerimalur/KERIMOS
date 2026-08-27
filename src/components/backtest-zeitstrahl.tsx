@@ -4,7 +4,9 @@ import { Card, CardTitle, Empty, cx } from "@/components/ui";
 import {
   ERGEBNIS_FARBE, TradeOverlay, datumDE, type TradeLage,
 } from "@/components/backtest-trade-karte";
-import { RESULT_LABEL, type NativeBacktestTrade } from "@/lib/backtest-types";
+import {
+  RESULT_LABEL, type BacktestResult, type NativeBacktestTrade,
+} from "@/lib/backtest-types";
 import type { Spur, ZeitstrahlBild, ZeitstrahlTrade } from "@/lib/confluence/zeitstrahl-typen";
 
 /**
@@ -53,6 +55,26 @@ const MODI: { key: Modus; label: string; hinweis: string }[] = [
   { key: "jahre", label: "Jahre übereinander", hinweis: "Ein Streifen je Jahr, gleiche Achse — so liegt jeder Januar untereinander." },
   { key: "monate", label: "Monatsraster", hinweis: "Alle Jahre in zwölf Spalten geklappt — zeigt, ob ein Kalendermonat auffällt." },
 ];
+
+type ErgebnisFilter = "alle" | "tp" | "sl" | "be" | "skip";
+
+/**
+ * Der Ergebnisfilter.
+ *
+ * Er ersetzt nicht die getrennten Spuren, er ergänzt sie: der Filter zeigt
+ * eine Hälfte, das Nebeneinander zeigt den Unterschied. Gesucht ist meistens
+ * der Unterschied — aber wer dreissig Verluste durchklickt, will die Gewinner
+ * eben doch für einen Moment weghaben.
+ */
+const FILTER: { key: ErgebnisFilter; label: string; ergebnisse: BacktestResult[] }[] = [
+  { key: "alle", label: "alle", ergebnisse: [] },
+  { key: "tp", label: "nur TP", ergebnisse: ["full_tp", "teil_tp_be"] },
+  { key: "sl", label: "nur SL", ergebnisse: ["sl"] },
+  { key: "be", label: "nur Breakeven", ergebnisse: ["breakeven"] },
+  { key: "skip", label: "nur Skips", ergebnisse: ["skip"] },
+];
+
+const GEWINN: BacktestResult[] = ["full_tp", "teil_tp_be"];
 
 interface HoverStand {
   trade: ZeitstrahlTrade;
@@ -134,7 +156,8 @@ function Marke({
 /* ------------------------------------------------------- Eine Zeichnung */
 
 function SpurFlaeche({
-  spur, punkte, vonMs, bisMs, hoehe, achse, id, onKlick, onHover, onWeg,
+  spur, punkte, vonMs, bisMs, hoehe, achse, id, zonen, gegen,
+  onKlick, onHover, onWeg,
 }: {
   spur: Spur;
   punkte: ZeitstrahlTrade[];
@@ -142,6 +165,12 @@ function SpurFlaeche({
   hoehe: number;
   achse: boolean;
   id: string;
+  /** Die eingefärbten Extremzonen. Bei aktivem Filter aus — dann liegt die
+      Aussage in den Punkten, und die Fläche wäre nur noch Farbe. */
+  zonen: boolean;
+  /** Die gestrichelte Gegenlinie (Retail). Abschaltbar, weil sie die halbe
+      Tinte des Bildes ausmacht und selten die Frage beantwortet. */
+  gegen: boolean;
   onKlick: (t: ZeitstrahlTrade) => void;
   onHover: (h: HoverStand) => void;
   onWeg: () => void;
@@ -173,12 +202,12 @@ function SpurFlaeche({
 
       <g style={{ pointerEvents: "none" }}>
         {/* Zonen, in denen die Spur überhaupt etwas sagt. */}
-        {spur.schwelleOben !== null && (
+        {zonen && spur.schwelleOben !== null && (
           <rect x={PAD_L} y={y(spur.max)} width={breite}
             height={Math.max(0, y(spur.schwelleOben) - y(spur.max))}
             fill={FARBE_LONG} opacity={0.09} />
         )}
-        {spur.schwelleUnten !== null && (
+        {zonen && spur.schwelleUnten !== null && (
           <rect x={PAD_L} y={y(spur.schwelleUnten)} width={breite}
             height={Math.max(0, y(spur.min) - y(spur.schwelleUnten))}
             fill={FARBE_SHORT} opacity={0.09} />
@@ -188,8 +217,8 @@ function SpurFlaeche({
         {gitter.map((g) => (
           <g key={g.t}>
             <line x1={x(g.t)} y1={PAD_Y - 4} x2={x(g.t)} y2={hoehe - PAD_Y + 4}
-              stroke={FARBE_GITTER} strokeWidth={g.jahr ? 1.1 : 0.6}
-              opacity={g.jahr ? 0.9 : 0.45} />
+              stroke={FARBE_GITTER} strokeWidth={g.jahr ? 1 : 0.5}
+              opacity={g.jahr ? 0.55 : 0.22} />
             {achse && g.label && (
               <text x={x(g.t) + 3} y={PAD_Y - 3} fontSize={9}
                 fill="#7A6E5C" className="tabular">{g.label}</text>
@@ -228,7 +257,7 @@ function SpurFlaeche({
             );
           })}
 
-          {spur.gegenLinie && spur.gegenLinie.length > 1 && (
+          {gegen && spur.gegenLinie && spur.gegenLinie.length > 1 && (
             <path d={pfad(spur.gegenLinie)} fill="none" stroke={FARBE_GEGEN}
               strokeWidth={1.2} strokeDasharray="4 3" opacity={0.75}
               strokeLinejoin="round" />
@@ -363,10 +392,117 @@ function MonatsRaster({
   );
 }
 
+/* --------------------------------------------------- Zwei Equity-Kurven */
+
+const FARBE_DAFUER = "#7EE0C6";
+const FARBE_DAGEGEN = "#F0A08A";
+
+/** Ab so vielen Trades je Seite lohnt der Vergleich überhaupt hinzusehen. */
+const MIN_KURVE = 5;
+
+/**
+ * Dieselbe Frage wie der Befund darunter, nur in R statt in Prozent.
+ *
+ * Der Zeitstrahl zeigt, wo die Trades lagen; diese beiden Kurven zeigen, was
+ * dabei herauskam. Zwei Dinge sind bewusst so:
+ *
+ * 1. **Beide Kurven sind auf die volle Breite gestreckt.** Die Lager sind
+ *    verschieden gross; nebeneinander gelegt vergleicht man sonst zwanzig
+ *    Trades mit acht und liest den Grössenunterschied als Ergebnis. Zu
+ *    vergleichen ist die STEIGUNG, nicht der Endpunkt — deshalb steht das Ø R
+ *    je Trade gross daneben und die Summe klein.
+ * 2. **Der Filter oben gilt hier nicht.** Eine Equity-Kurve aus lauter
+ *    Stopouts wäre eine Gerade nach unten und hätte keine Aussage.
+ */
+function SpurEquity({ spur, trades }: { spur: Spur; trades: ZeitstrahlTrade[] }) {
+  const gewertet = trades.filter((t) => t.ergebnis !== "skip" && t.r !== null);
+  const dafuer = gewertet.filter((t) => t.stand[spur.key] > 0);
+  const dagegen = gewertet.filter((t) => t.stand[spur.key] < 0);
+
+  if (dafuer.length < MIN_KURVE || dagegen.length < MIN_KURVE) {
+    return (
+      <p className="mt-3 rounded-xl bg-sand/40 px-3 py-2 text-[11px] leading-relaxed text-ink-faint">
+        Für die Gegenüberstellung fehlt eine Seite: {dafuer.length} dafür,{" "}
+        {dagegen.length} dagegen. Ab {MIN_KURVE} je Seite werden hier zwei
+        R-Kurven gezeichnet.
+      </p>
+    );
+  }
+
+  const kum = (liste: ZeitstrahlTrade[]) => {
+    let summe = 0;
+    // Die Null vorne, damit beide Kurven am selben Punkt starten.
+    return [0, ...liste.map((t) => (summe += t.r ?? 0))];
+  };
+  const a = kum(dafuer);
+  const b = kum(dagegen);
+
+  const H = 128;
+  const alle = [...a, ...b];
+  const min = Math.min(0, ...alle);
+  const max = Math.max(0, ...alle);
+  const spanne = max - min || 1;
+  const breite = B - PAD_L - PAD_R;
+  const y = (v: number) => PAD_Y + (1 - (v - min) / spanne) * (H - 2 * PAD_Y);
+  const pfad = (werte: number[]) => werte
+    .map((v, i) => `${i === 0 ? "M" : "L"}${(PAD_L + (i / (werte.length - 1)) * breite).toFixed(1)},${y(v).toFixed(1)}`)
+    .join(" ");
+
+  const schnitt = (liste: ZeitstrahlTrade[]) =>
+    liste.reduce((s, t) => s + (t.r ?? 0), 0) / liste.length;
+
+  const zeile = (name: string, liste: ZeitstrahlTrade[], farbe: string) => (
+    <div className="flex items-baseline gap-2">
+      <span className="inline-block h-0.5 w-4 shrink-0 rounded" style={{ backgroundColor: farbe }} />
+      <span className="text-[11px] text-ink-muted">{name}</span>
+      <span className="num text-sm font-medium" style={{ color: farbe }}>
+        {schnitt(liste) > 0 ? "+" : ""}{schnitt(liste).toFixed(2)} R
+      </span>
+      <span className="text-[10px] text-ink-faint">
+        je Trade · {liste.length} Trades ·{" "}
+        <span className="num">
+          {liste.reduce((s, t) => s + (t.r ?? 0), 0) > 0 ? "+" : ""}
+          {liste.reduce((s, t) => s + (t.r ?? 0), 0).toFixed(1)} R gesamt
+        </span>
+      </span>
+    </div>
+  );
+
+  return (
+    <div className="mt-4 rounded-xl border border-line bg-sand/30 p-3">
+      <p className="mb-2 text-[11px] font-medium text-ink-soft">
+        Was dabei herauskam — {spur.titel} dafür gegen dagegen
+      </p>
+      <svg viewBox={`0 0 ${B} ${H}`} className="block w-full" role="img"
+        aria-label={`R-Kurven mit und gegen ${spur.titel}`}>
+        <line x1={PAD_L} y1={y(0)} x2={B - PAD_R} y2={y(0)}
+          stroke="#3E3222" strokeWidth={1} strokeDasharray="3 3" />
+        <path d={pfad(b)} fill="none" stroke={FARBE_DAGEGEN} strokeWidth={1.8}
+          strokeLinecap="round" strokeLinejoin="round" />
+        <path d={pfad(a)} fill="none" stroke={FARBE_DAFUER} strokeWidth={1.8}
+          strokeLinecap="round" strokeLinejoin="round" />
+        <text x={PAD_L - 5} y={y(max) + 3} fontSize={9} textAnchor="end"
+          fill="#7A6E5C" className="tabular">{max.toFixed(0)}</text>
+        <text x={PAD_L - 5} y={y(min) + 3} fontSize={9} textAnchor="end"
+          fill="#7A6E5C" className="tabular">{min.toFixed(0)}</text>
+      </svg>
+      <div className="mt-2 space-y-1">
+        {zeile("dafür", dafuer, FARBE_DAFUER)}
+        {zeile("dagegen", dagegen, FARBE_DAGEGEN)}
+      </div>
+      <p className="mt-2 text-[10px] leading-relaxed text-ink-faint">
+        Beide Kurven sind auf dieselbe Breite gestreckt — zu vergleichen ist die
+        Steigung, nicht der Endpunkt. Und beide zeigen alle gewerteten Trades,
+        unabhängig vom Ergebnisfilter oben.
+      </p>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------ Eine Spur */
 
 function SpurKarte({
-  spur, bild, modus, fenster, setFenster, punkte, oeffne,
+  spur, bild, modus, fenster, setFenster, punkte, oeffne, zonen, gegen, getrennt,
 }: {
   spur: Spur;
   bild: ZeitstrahlBild;
@@ -375,6 +511,10 @@ function SpurKarte({
   setFenster: (f: [number, number]) => void;
   punkte: ZeitstrahlTrade[];
   oeffne: (id: string) => void;
+  zonen: boolean;
+  gegen: boolean;
+  /** Gewinner und Stopouts in zwei Streifen statt übereinander. */
+  getrennt: boolean;
 }) {
   const [hover, setHover] = useState<HoverStand | null>(null);
   const bewegt = useRef(false);
@@ -454,10 +594,36 @@ function SpurKarte({
             onPointerUp={ende} onPointerCancel={ende}
             style={{ cursor: modus === "kalender" ? "grab" : "default" }}>
 
-            {modus === "kalender" && (
+            {modus === "kalender" && !getrennt && (
               <SpurFlaeche spur={spur} punkte={punkte} vonMs={fenster[0]} bisMs={fenster[1]}
-                hoehe={H_GROSS} achse id={`${spur.key}-kal`}
+                hoehe={H_GROSS} achse zonen={zonen} gegen={gegen} id={`${spur.key}-kal`}
                 onKlick={klick} onHover={setHover} onWeg={() => setHover(null)} />
+            )}
+
+            {modus === "kalender" && getrennt && (
+              <div className="space-y-1">
+                {[
+                  { name: "TP", liste: punkte.filter((t) => GEWINN.includes(t.ergebnis)) },
+                  { name: "SL", liste: punkte.filter((t) => t.ergebnis === "sl") },
+                ].map((streifen, i) => (
+                  <div key={streifen.name} className="flex items-center gap-2">
+                    <span className="w-6 shrink-0 text-right text-[11px] text-ink-muted">
+                      {streifen.name}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <SpurFlaeche spur={spur} punkte={streifen.liste}
+                        vonMs={fenster[0]} bisMs={fenster[1]}
+                        hoehe={H_FACETTE + 14} achse={i === 0}
+                        zonen={zonen} gegen={gegen}
+                        id={`${spur.key}-${streifen.name}`}
+                        onKlick={klick} onHover={setHover} onWeg={() => setHover(null)} />
+                    </div>
+                    <span className="w-10 shrink-0 text-[10px] tabular text-ink-faint">
+                      {streifen.liste.length}
+                    </span>
+                  </div>
+                ))}
+              </div>
             )}
 
             {modus === "jahre" && (
@@ -473,7 +639,8 @@ function SpurKarte({
                       </span>
                       <div className="min-w-0 flex-1">
                         <SpurFlaeche spur={spur} punkte={drin} vonMs={von} bisMs={bis}
-                          hoehe={H_FACETTE} achse={j === jahre[0]} id={`${spur.key}-j${j}`}
+                          hoehe={H_FACETTE} achse={j === jahre[0]} zonen={zonen} gegen={gegen}
+                          id={`${spur.key}-j${j}`}
                           onKlick={klick} onHover={setHover} onWeg={() => setHover(null)} />
                       </div>
                       <span className="w-14 shrink-0 text-[10px] tabular text-ink-faint">
@@ -531,7 +698,7 @@ function SpurKarte({
                 {spur.linieTitel}
               </span>
             )}
-            {spur.gegenTitel && (
+            {gegen && spur.gegenTitel && (
               <span className="flex items-center gap-1.5">
                 <span className="inline-block h-0 w-5 border-t border-dashed"
                   style={{ borderColor: FARBE_GEGEN }} />
@@ -552,14 +719,14 @@ function SpurKarte({
                 </span>
               </>
             )}
-            {spur.schwelleOben !== null && (
+            {zonen && spur.schwelleOben !== null && (
               <span className="flex items-center gap-1.5">
                 <span className="inline-block h-2.5 w-3 rounded-sm"
                   style={{ backgroundColor: FARBE_LONG, opacity: 0.25 }} />
                 spricht für Long
               </span>
             )}
-            {spur.schwelleUnten !== null && (
+            {zonen && spur.schwelleUnten !== null && (
               <span className="flex items-center gap-1.5">
                 <span className="inline-block h-2.5 w-3 rounded-sm"
                   style={{ backgroundColor: FARBE_SHORT, opacity: 0.25 }} />
@@ -567,6 +734,8 @@ function SpurKarte({
               </span>
             )}
           </div>
+
+          <SpurEquity spur={spur} trades={bild.trades} />
 
           <div className={cx("mt-3 rounded-xl px-3 py-2 text-xs leading-relaxed",
             spur.getrennt ? "bg-good-tint text-ink-soft" : "bg-sand/60 text-ink-muted")}>
@@ -596,7 +765,12 @@ export function BacktestZeitstrahl({
   const vollBis = bild.fehler ? 1 : zuMs(bild.bis);
 
   const [modus, setModus] = useState<Modus>("kalender");
-  const [nurVerluste, setNurVerluste] = useState(false);
+  const [filter, setFilter] = useState<ErgebnisFilter>("alle");
+  // Getrennte Streifen statt Übereinander — der eigentliche Kontrast.
+  const [getrennt, setGetrennt] = useState(false);
+  // Die Retail-Linie ist standardmässig aus: sie verdoppelt die Tinte und
+  // beantwortet die Frage „wo lagen meine Trades" nicht mit.
+  const [gegen, setGegen] = useState(false);
   const [offen, setOffen] = useState<string | null>(null);
   const [fenster, setFenster] = useState<[number, number]>(() => {
     if (fokusJahr) {
@@ -607,13 +781,19 @@ export function BacktestZeitstrahl({
     return [vollVon, vollBis];
   });
 
-  const punkte = useMemo(
-    () => (nurVerluste
-      ? bild.trades.filter((t) => t.ergebnis === "sl" || t.ergebnis === "breakeven"
-        || t.ergebnis === "teil_tp_be")
-      : bild.trades),
-    [bild.trades, nurVerluste],
-  );
+  const punkte = useMemo(() => {
+    const f = FILTER.find((x) => x.key === filter)!;
+    return f.ergebnisse.length === 0
+      ? bild.trades
+      : bild.trades.filter((t) => f.ergebnisse.includes(t.ergebnis));
+  }, [bild.trades, filter]);
+
+  const anzahl = useMemo(() => Object.fromEntries(FILTER.map((f) => [
+    f.key,
+    f.ergebnisse.length === 0
+      ? bild.trades.length
+      : bild.trades.filter((t) => f.ergebnisse.includes(t.ergebnis)).length,
+  ])) as Record<ErgebnisFilter, number>, [bild.trades]);
 
   const nachId = useMemo(() => new Map(trades.map((t) => [t.id, t])), [trades]);
   const lagen = useMemo(
@@ -681,8 +861,46 @@ export function BacktestZeitstrahl({
           )}
         </p>
 
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-3
-                        text-[10px] text-ink-faint">
+        <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-line pt-3">
+          <span className="mr-1 text-[11px] text-ink-faint">Zeigen</span>
+          {FILTER.map((f) => (
+            <button key={f.key} type="button" onClick={() => setFilter(f.key)}
+              disabled={anzahl[f.key] === 0}
+              className={cx(
+                "rounded-lg px-2.5 py-1 text-xs transition duration-150 ease-tactile active:scale-95",
+                "disabled:cursor-not-allowed disabled:opacity-35",
+                filter === f.key
+                  ? "bg-sand font-medium text-ink"
+                  : "text-ink-muted hover:text-ink")}>
+              {f.label}
+              <span className="ml-1.5 tabular opacity-60">{anzahl[f.key]}</span>
+            </button>
+          ))}
+
+          <span className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1">
+            {modus === "kalender" && (
+              <label className={cx("flex items-center gap-1.5 text-[11px]",
+                filter === "alle"
+                  ? "cursor-pointer text-ink-muted"
+                  : "cursor-not-allowed text-ink-faint/60")}>
+                <input type="checkbox" checked={getrennt} disabled={filter !== "alle"}
+                  onChange={(e) => setGetrennt(e.target.checked)}
+                  className="h-3 w-3 accent-[#E7A96B]" />
+                TP und SL getrennt
+              </label>
+            )}
+            {bild.spuren.some((sp) => sp.gegenTitel) && (
+              <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-ink-muted">
+                <input type="checkbox" checked={gegen}
+                  onChange={(e) => setGegen(e.target.checked)}
+                  className="h-3 w-3 accent-[#E7A96B]" />
+                Retail-Linie
+              </label>
+            )}
+          </span>
+        </div>
+
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2 text-[10px] text-ink-faint">
           <span className="flex items-center gap-1.5">
             <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden>
               <path d="M6,1.5 L10.5,9.5 L1.5,9.5 Z" fill="#CBC0AC" />
@@ -702,18 +920,19 @@ export function BacktestZeitstrahl({
               {RESULT_LABEL[k]}
             </span>
           ))}
-          <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-ink-muted">
-            <input type="checkbox" checked={nurVerluste}
-              onChange={(e) => setNurVerluste(e.target.checked)}
-              className="h-3 w-3 accent-[#E7A96B]" />
-            nur Verluste zeigen
-          </label>
+          {filter !== "alle" && (
+            <span className="ml-auto text-accent-soft">
+              Gefiltert — die Extremzonen sind ausgeblendet, damit die Punkte allein stehen.
+            </span>
+          )}
         </div>
       </Card>
 
       {bild.spuren.map((spur) => (
         <SpurKarte key={spur.key} spur={spur} bild={bild} modus={modus}
-          fenster={fenster} setFenster={setFenster} punkte={punkte} oeffne={setOffen} />
+          fenster={fenster} setFenster={setFenster} punkte={punkte} oeffne={setOffen}
+          zonen={filter === "alle"} gegen={gegen}
+          getrennt={getrennt && filter === "alle"} />
       ))}
 
       {aktiv && (

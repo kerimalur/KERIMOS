@@ -61,24 +61,39 @@ interface TradeRow {
   tradingview_link: string | null;
   screenshot_url: string | null;
   session_id: string | null;
+  gegenlauf?: string | null;
+  vorlauf?: string | null;
   backtest_trade_tags: {
     backtest_tags: { id: string; label: string; backtest_categories: { key: string } | null } | null;
   }[] | null;
 }
+
+const SPALTEN_ALT =
+  "id, occurred_on, pair, direction, result, r_multiple, rr_geplant, notiz, "
+  + "tradingview_link, screenshot_url, session_id, "
+  + "backtest_trade_tags(backtest_tags(id, label, backtest_categories(key)))";
+
+const SPALTEN_NEU =
+  "id, occurred_on, pair, direction, result, r_multiple, rr_geplant, notiz, "
+  + "tradingview_link, screenshot_url, session_id, gegenlauf, vorlauf, "
+  + "backtest_trade_tags(backtest_tags(id, label, backtest_categories(key)))";
 
 /** Alle Trades inkl. verknüpfter Tags und Session, neuestes Datum zuerst. */
 export async function fetchNativeBacktestTrades(): Promise<NativeBacktestTrade[]> {
   const supabase = createTradingClient();
   if (!supabase) return [];
 
-  const { data } = await supabase
+  // Zwei Spaltensätze, weil `gegenlauf`/`vorlauf` aus einer Migration kommen,
+  // die noch nicht überall gelaufen sein muss (supabase/trading/03_...). Ohne
+  // den Rückfall wäre das ganze Backtest-Journal leer, nur weil zwei
+  // Zusatzangaben fehlen.
+  const hole = (spalten: string) => supabase
     .from("backtest_trades")
-    .select(
-      "id, occurred_on, pair, direction, result, r_multiple, rr_geplant, notiz, " +
-      "tradingview_link, screenshot_url, session_id, " +
-      "backtest_trade_tags(backtest_tags(id, label, backtest_categories(key)))"
-    )
+    .select(spalten)
     .order("occurred_on", { ascending: false });
+
+  let { data, error } = await hole(SPALTEN_NEU);
+  if (error) ({ data } = await hole(SPALTEN_ALT));
 
   return ((data ?? []) as unknown as TradeRow[]).map((t) => ({
     id: t.id,
@@ -92,6 +107,8 @@ export async function fetchNativeBacktestTrades(): Promise<NativeBacktestTrade[]
     tradingview_link: t.tradingview_link,
     screenshot_url: t.screenshot_url,
     session_id: t.session_id,
+    gegenlauf: (t.gegenlauf ?? null) as NativeBacktestTrade["gegenlauf"],
+    vorlauf: (t.vorlauf ?? null) as NativeBacktestTrade["vorlauf"],
     tags: (t.backtest_trade_tags ?? [])
       .map((tt) => tt.backtest_tags)
       .filter((tag): tag is NonNullable<typeof tag> => tag !== null)

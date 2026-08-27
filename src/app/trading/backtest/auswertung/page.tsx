@@ -5,7 +5,7 @@ import {
 import { tradingConfigured, BACKTEST_ZIEL } from "@/lib/supabase/trading";
 import {
   computeNativeBacktestStats, computeBreakdown, computeInsights, computeEquityKurve,
-  BREAKDOWN_DIMENSIONS, type BreakdownDimension, type BreakdownRow,
+  BREAKDOWN_DIMENSIONS, verlaufBilanz, type BreakdownDimension, type BreakdownRow,
   type NativeBacktestTrade,
 } from "@/lib/backtest-types";
 import { BacktestFilter } from "@/components/backtest-filter";
@@ -13,6 +13,8 @@ import { BacktestBreakdown } from "@/components/backtest-breakdown";
 import { BacktestInsights } from "@/components/backtest-insights";
 import { BacktestEquity } from "@/components/backtest-equity";
 import { BacktestVerluste } from "@/components/backtest-verluste";
+import { BacktestVerlauf } from "@/components/backtest-verlauf";
+import { BacktestExport } from "@/components/backtest-export";
 import { Card, CardTitle, Stat, Empty, Bar } from "@/components/ui";
 import { heuteISO } from "@/lib/time";
 
@@ -143,6 +145,11 @@ export default async function GesamtauswertungPage({
           </Card>
 
           <Card>
+            <CardTitle>Wie knapp war es?</CardTitle>
+            <BacktestVerlauf bloecke={verlaufBilanz(trades)} />
+          </Card>
+
+          <Card>
             <CardTitle>Was nicht durchgelaufen ist</CardTitle>
             <BacktestVerluste trades={trades} zeigePaar />
             <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
@@ -151,6 +158,14 @@ export default async function GesamtauswertungPage({
               Verlust gibt es nur je Pair, im Reiter <strong>Fundamental</strong> der
               jeweiligen Session.
             </p>
+          </Card>
+
+          <Card>
+            <CardTitle>Export</CardTitle>
+            <BacktestExport trades={trades}
+              paar={[...new Set(trades.map((t) => t.pair))].length === 1
+                ? trades[0].pair
+                : `${[...new Set(trades.map((t) => t.pair))].length} Pairs`} />
           </Card>
         </>
       )}

@@ -3,7 +3,8 @@ import { useState } from "react";
 import { Input, Select, Label, Button, cx } from "@/components/ui";
 import { addBacktestTrade, updateBacktestTrade } from "@/lib/backtest-actions";
 import {
-  RESULT_LABEL, berechneR,
+  RESULT_LABEL, berechneR, verlaufFeld,
+  GEGENLAUF_REIHE, VORLAUF_REIHE, GEGENLAUF_LABEL, VORLAUF_LABEL, VERLAUF_FRAGE,
   type BacktestCategory, type BacktestResult, type NativeBacktestTrade,
 } from "@/lib/backtest-types";
 
@@ -41,6 +42,11 @@ export function BacktestTradeForm({
     const auto = berechneR(trade.result, trade.rr_geplant);
     return auto === trade.r_multiple ? "" : String(trade.r_multiple);
   });
+
+  // Zwei Zustände statt defaultValue: das sichtbare Feld wechselt mit dem
+  // Ergebnis, und ein defaultValue würde beim Wechsel am alten Wert kleben.
+  const [gegenlauf, setGegenlauf] = useState<string>(trade?.gegenlauf ?? "");
+  const [vorlauf, setVorlauf] = useState<string>(trade?.vorlauf ?? "");
 
   const rrZahl = rr.trim() === "" ? null : Number(rr.replace(",", "."));
   const rAuto = berechneR(result, Number.isFinite(rrZahl as number) ? rrZahl : null);
@@ -135,6 +141,10 @@ export function BacktestTradeForm({
         </p>
       )}
 
+      <VerlaufFeld result={result} id={trade?.id ?? "neu"}
+        gegenlauf={gegenlauf} vorlauf={vorlauf}
+        setGegenlauf={setGegenlauf} setVorlauf={setVorlauf} />
+
       {istSkip && kategorien.skipGrund && (
         <div>
           <Label htmlFor={`sk-${trade?.id ?? "neu"}`}>Skip-Grund</Label>
@@ -182,6 +192,53 @@ export function BacktestTradeForm({
         )}
       </div>
     </form>
+  );
+}
+
+/**
+ * Wie knapp es war — eine Frage, die vom Ergebnis abhängt.
+ *
+ * Bei einem Gewinner ist die interessante Zahl die Gegenbewegung (sass der
+ * Stop richtig), bei einem Stopout der Vorlauf (war ein Teil-TP drin). Die
+ * jeweils andere ist definitionsgemäss bekannt und wäre nur ein Klick, der
+ * nichts misst — deshalb steht immer nur eines der beiden Felder da.
+ */
+function VerlaufFeld({
+  result, id, gegenlauf, vorlauf, setGegenlauf, setVorlauf,
+}: {
+  result: BacktestResult;
+  id: string;
+  gegenlauf: string;
+  vorlauf: string;
+  setGegenlauf: (v: string) => void;
+  setVorlauf: (v: string) => void;
+}) {
+  const feld = verlaufFeld(result);
+  if (!feld) return null;
+
+  const istGegen = feld === "gegenlauf";
+  const werte = istGegen ? GEGENLAUF_REIHE : VORLAUF_REIHE;
+  const label: Record<string, string> = istGegen ? GEGENLAUF_LABEL : VORLAUF_LABEL;
+
+  return (
+    <div>
+      <Label htmlFor={`vl-${id}`}>{VERLAUF_FRAGE[feld]}</Label>
+      <Select id={`vl-${id}`} name={feld}
+        value={istGegen ? gegenlauf : vorlauf}
+        onChange={(e) => (istGegen ? setGegenlauf : setVorlauf)(e.target.value)}>
+        <option value="">— keine Angabe —</option>
+        {werte.map((w) => (
+          <option key={w} value={w}>{label[w]}</option>
+        ))}
+      </Select>
+      <p className="mt-1 text-[11px] leading-relaxed text-ink-faint">
+        {istGegen
+          ? "Geschätzt reicht. Aus dieser Angabe wird später ablesbar, ob dein "
+            + "Stopabstand zu dem passt, was die Gewinner tatsächlich gebraucht haben."
+          : "Geschätzt reicht. Ein Stop, der vorher über 1 R im Plus stand, ist ein "
+            + "Ausstiegsproblem — und das sieht man an keiner anderen Zahl."}
+      </p>
+    </div>
   );
 }
 

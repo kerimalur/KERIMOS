@@ -1,6 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { createTradingClient } from "@/lib/supabase/trading";
+import { GEGENLAUF_REIHE, VORLAUF_REIHE } from "@/lib/backtest-types";
 
 /**
  * Server Actions für das native Backtest-Journal unter /trading/backtest.
@@ -14,6 +15,18 @@ const num = (fd: FormData, k: string): number | null => {
   if (!v) return null;
   const n = Number(v.replace(",", "."));
   return Number.isFinite(n) ? n : null;
+};
+
+/**
+ * Verlaufsklasse aus dem Formular, gegen die erlaubten Werte geprüft.
+ *
+ * Das Formular zeigt immer nur das Feld, das zum Ergebnis passt — kommt
+ * trotzdem etwas Unbekanntes an, wird es zu NULL statt in die Datenbank
+ * geschrieben. Die Prüfung steht zusätzlich als CHECK in der Migration.
+ */
+const klasse = (fd: FormData, k: string, erlaubt: readonly string[]): string | null => {
+  const v = text(fd, k);
+  return erlaubt.includes(v) ? v : null;
 };
 
 /** "eurusd", "EUR/USD", " eurusd " -> "EURUSD". */
@@ -96,19 +109,28 @@ export async function addBacktestTrade(fd: FormData) {
     .single();
   if (sessionError || !session) throw new Error("Session nicht gefunden");
 
-  const { data: trade, error } = await supabase
-    .from("backtest_trades")
-    .insert({
-      occurred_on, session_id, direction, result,
-      pair: session.pair,
-      r_multiple: num(fd, "r_multiple"),
-      rr_geplant: num(fd, "rr_geplant"),
-      notiz: text(fd, "notiz") || null,
-      tradingview_link: text(fd, "tradingview_link") || null,
-      screenshot_url: text(fd, "screenshot_url") || null,
-    })
-    .select("id")
-    .single();
+  const basis = {
+    occurred_on, session_id, direction, result,
+    pair: session.pair,
+    r_multiple: num(fd, "r_multiple"),
+    rr_geplant: num(fd, "rr_geplant"),
+    notiz: text(fd, "notiz") || null,
+    tradingview_link: text(fd, "tradingview_link") || null,
+    screenshot_url: text(fd, "screenshot_url") || null,
+  };
+  const verlauf = {
+    gegenlauf: klasse(fd, "gegenlauf", GEGENLAUF_REIHE),
+    vorlauf: klasse(fd, "vorlauf", VORLAUF_REIHE),
+  };
+
+  // Ohne die Migration aus supabase/trading/03_backtest_verlauf.sql gibt es die
+  // zwei Spalten nicht. Dann soll der Trade trotzdem gespeichert werden — nur
+  // eben ohne die Zusatzangabe, statt mit einem Fehler im Gesicht.
+  const anlegen = (werte: object) => supabase
+    .from("backtest_trades").insert(werte).select("id").single();
+
+  let { data: trade, error } = await anlegen({ ...basis, ...verlauf });
+  if (error) ({ data: trade, error } = await anlegen(basis));
   if (error || !trade) throw new Error(`Trade anlegen: ${error?.message ?? "unbekannt"}`);
 
   // Tags einsammeln: Single-Selects (gva_typ, skip_grund) und Mehrfachauswahl
@@ -144,19 +166,29 @@ export async function updateBacktestTrade(fd: FormData) {
   const supabase = createTradingClient();
   if (!supabase) throw new Error("Trading-Datenbank nicht verbunden");
 
-  const { error } = await supabase
-    .from("backtest_trades")
-    .update({
-      occurred_on: text(fd, "occurred_on"),
-      direction: text(fd, "direction"),
-      result: text(fd, "result"),
-      r_multiple: num(fd, "r_multiple"),
-      rr_geplant: num(fd, "rr_geplant"),
-      notiz: text(fd, "notiz") || null,
-      tradingview_link: text(fd, "tradingview_link") || null,
-      screenshot_url: text(fd, "screenshot_url") || null,
-    })
-    .eq("id", id);
+  const basis = {
+    occurred_on: text(fd, "occurred_on"),
+    direction: text(fd, "direction"),
+    result: text(fd, "result"),
+    r_multiple: num(fd, "r_multiple"),
+    rr_geplant: num(fd, "rr_geplant"),
+    notiz: text(fd, "notiz") || null,
+    tradingview_link: text(fd, "tradingview_link") || null,
+    screenshot_url: text(fd, "screenshot_url") || null,
+  };
+  // Beide Felder werden IMMER geschrieben, auch als NULL: wird ein Stopout
+  // nachträglich zum Full TP, muss der Vorlauf verschwinden — sonst stünde
+  // dort eine Angabe, die zum neuen Ergebnis gar nicht mehr passt.
+  const verlauf = {
+    gegenlauf: klasse(fd, "gegenlauf", GEGENLAUF_REIHE),
+    vorlauf: klasse(fd, "vorlauf", VORLAUF_REIHE),
+  };
+
+  const aendern = (werte: object) => supabase
+    .from("backtest_trades").update(werte).eq("id", id);
+
+  let { error } = await aendern({ ...basis, ...verlauf });
+  if (error) ({ error } = await aendern(basis));
   if (error) throw new Error(`Trade ändern: ${error.message}`);
 
   const tagIds = [
