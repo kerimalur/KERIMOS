@@ -16,6 +16,7 @@ Die Migrationen sind im Supabase-Projekt `fhgrjqvunxbfhujoxmcn` angewandt:
 | `21_planung` | Projekte, Aufgaben und die Oberflächen-Einstellungen |
 | `22_planung_kategorie` | `category` an den Aufgaben: „Aufgabe" oder „Habit" |
 | `23_planung_ansicht` | Zwei Schalter dafür, was im Planungskalender steht |
+| `24_meilensteine` | Etappen je Projekt — sie tragen den Fortschrittsbalken |
 
 `06_shifts.sql` ist die erste Migration, die auch im Repository liegt; ab dort
 gilt: Datei im SQL-Editor des Projekts `fhgrjqvunxbfhujoxmcn` ausführen.

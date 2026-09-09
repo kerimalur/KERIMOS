@@ -4,16 +4,25 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { aufgabeVerschieben, aufgabeAbhaken } from "@/lib/planung-actions";
 import { gewohnheitAbhaken } from "@/lib/gewohnheiten-actions";
-import { monatPlus, monatsLabel } from "@/lib/planung-kalender";
+import { monatPlus, monatsLabel, tagPlus } from "@/lib/planung-kalender";
 import type { Aufgabe } from "@/lib/planung-typen";
 import type { GewohnheitsMarke } from "@/lib/gewohnheiten";
 import type { KalenderTag } from "@/lib/planung-kalender";
+import type { KalenderAnsicht } from "@/lib/planung-typen";
 import { Card, cx } from "@/components/ui";
 
 const WOCHENTAGE = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
 /**
- * Der Monatskalender — Aufgaben an ihren Tagen, verschiebbar per Ziehen.
+ * Der Kalender — Aufgaben an ihren Tagen, verschiebbar per Ziehen.
+ *
+ * **Woche oder Monat.** Die Woche ist die Vorgabe: sieben breite Spalten, in
+ * denen ein Eintrag lesbar dasteht statt als Farbstreifen. Sie beantwortet
+ * „was ist jetzt dran", und das ist die Frage, mit der man morgens auf die
+ * Seite schaut. Der Monat beantwortet „wann habe ich Zeit" — seltener
+ * gebraucht, deshalb hinter dem Umschalter. Beides läuft über die Adresse
+ * (`?ansicht=`, `?von=`), damit ein Zeitraum verlinkbar bleibt, der
+ * Zurück-Knopf tut was er soll und die Seite eine Server-Komponente bleibt.
  *
  * **Warum keine Bibliothek.** Ziehen und Fallenlassen kann der Browser seit
  * jeher selbst (`draggable` plus die drag-Ereignisse). Ein Kalenderpaket
@@ -48,9 +57,11 @@ const WOCHENTAGE = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
  * wären der Fehler gewesen — deshalb ein Kalender für beides.
  */
 export function PlanungKalender({
-  monat, tage, aufgaben, marken = [], basis = "/planung",
+  ansicht, anker, tage, aufgaben, marken = [], basis = "/planung",
 }: {
-  monat: string;
+  ansicht: KalenderAnsicht;
+  /** Erster Tag des Zeitraums — Montag bzw. Monatserster. */
+  anker: string;
   tage: KalenderTag[];
   /** Alle Aufgaben MIT Datum. Die ohne stehen in der Ablage daneben. */
   aufgaben: Aufgabe[];
@@ -88,6 +99,28 @@ export function PlanungKalender({
     markenProTag.set(m.datum, liste);
   }
 
+  /**
+   * Beschriftung und Sprungziele hängen an der Ansicht.
+   *
+   * „8.–14. September" statt „September 2026", wenn eine Woche dasteht: der
+   * Monatsname allein liesse offen, welche der vier Wochen man sieht.
+   */
+  const zurueck = ansicht === "woche"
+    ? tagPlus(anker, -7) : monatPlus(anker, -1).slice(0, 7);
+  const vor = ansicht === "woche"
+    ? tagPlus(anker, 7) : monatPlus(anker, 1).slice(0, 7);
+
+  const titel = ansicht === "monat" ? monatsLabel(anker) : (() => {
+    const ende = tagPlus(anker, 6);
+    const tagNr = (d: string) => Number(d.slice(8, 10));
+    // Läuft die Woche über den Monatswechsel, muss der erste Monat mit dran
+    // — „30.–6. Oktober" wäre sonst schlicht falsch.
+    return anker.slice(0, 7) === ende.slice(0, 7)
+      ? `${tagNr(anker)}.–${tagNr(ende)}. ${monatsLabel(anker)}`
+      : `${tagNr(anker)}. ${monatsLabel(anker).split(" ")[0]} – `
+        + `${tagNr(ende)}. ${monatsLabel(ende)}`;
+  })();
+
   function ablegen(datum: string | null) {
     const id = gezogen;
     setGezogen(null);
@@ -104,31 +137,47 @@ export function PlanungKalender({
 
   return (
     <Card>
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <Link href={`${basis}?monat=${monatPlus(monat, -1).slice(0, 7)}`} scroll={false}
-          aria-label="Monat zurück"
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <Link href={`${basis}?ansicht=${ansicht}&von=${zurueck}`} scroll={false}
+          aria-label={ansicht === "woche" ? "Woche zurück" : "Monat zurück"}
           className="rounded-lg px-2 py-0.5 text-ink-muted transition
                      hover:bg-sand hover:text-ink-soft">
           ‹
         </Link>
-        <span className="font-display text-sm font-bold text-ink">
-          {monatsLabel(monat)}
-        </span>
-        <Link href={`${basis}?monat=${monatPlus(monat, 1).slice(0, 7)}`} scroll={false}
-          aria-label="Monat vor"
+        <span className="font-display text-sm font-bold text-ink">{titel}</span>
+        <Link href={`${basis}?ansicht=${ansicht}&von=${vor}`} scroll={false}
+          aria-label={ansicht === "woche" ? "Woche vor" : "Monat vor"}
           className="rounded-lg px-2 py-0.5 text-ink-muted transition
                      hover:bg-sand hover:text-ink-soft">
           ›
         </Link>
+
+        {/* Der Umschalter ganz rechts: er gehört zur Kopfzeile des Kalenders,
+            nicht in die Einstellungen — man wechselt ihn im Lauf eines Tages,
+            nicht einmal im Jahr. */}
+        <span className="ml-auto flex items-center gap-1 rounded-xl bg-sand p-0.5">
+          {(["woche", "monat"] as const).map((a) => (
+            <Link key={a} href={`${basis}?ansicht=${a}`} scroll={false}
+              className={cx("rounded-lg px-2.5 py-1 text-xs transition",
+                a === ansicht
+                  ? "bg-card font-medium text-ink"
+                  : "text-ink-muted hover:text-ink-soft")}>
+              {a === "woche" ? "Woche" : "Monat"}
+            </Link>
+          ))}
+        </span>
       </div>
 
-      <div className="mb-1 grid grid-cols-7 gap-1">
-        {WOCHENTAGE.map((t) => (
-          <div key={t} className="text-center text-[10px] text-ink-faint">{t}</div>
-        ))}
-      </div>
+      {ansicht === "monat" && (
+        <div className="mb-1 grid grid-cols-7 gap-1">
+          {WOCHENTAGE.map((t) => (
+            <div key={t} className="text-center text-[10px] text-ink-faint">{t}</div>
+          ))}
+        </div>
+      )}
 
-      <div className="grid grid-cols-7 gap-1">
+      <div className={cx("grid gap-1",
+        ansicht === "woche" ? "grid-cols-2 sm:grid-cols-4 lg:grid-cols-7" : "grid-cols-7")}>
         {tage.map((tag) => {
           const drin = proTag.get(tag.datum) ?? [];
           const getan = markenProTag.get(tag.datum) ?? [];
@@ -138,14 +187,20 @@ export function PlanungKalender({
               onDragLeave={() => setUeber((u) => (u === tag.datum ? null : u))}
               onDrop={(e) => { e.preventDefault(); ablegen(tag.datum); }}
               className={cx(
-                "min-h-[76px] rounded-lg border p-1 transition",
+                "rounded-lg border p-1 transition",
+                ansicht === "woche" ? "min-h-[150px]" : "min-h-[76px]",
                 tag.ausserhalb ? "border-line/30 bg-transparent" : "border-line/60 bg-sand/30",
                 ueber === tag.datum && "border-accent bg-accent-tint",
                 tag.heute && "ring-1 ring-accent")}>
-              <div className={cx("mb-1 px-0.5 text-[10px]",
+              <div className={cx("mb-1 flex items-baseline gap-1 px-0.5 text-[10px]",
                 tag.heute ? "font-medium text-accent-soft"
                   : tag.ausserhalb ? "text-ink-faint/40" : "text-ink-faint")}>
-                {Number(tag.datum.slice(8, 10))}
+                {/* In der Woche steht der Wochentag dabei — ohne Kopfzeile
+                    darüber wäre sonst nicht klar, welcher Tag das ist. */}
+                {ansicht === "woche" && (
+                  <span>{WOCHENTAGE[(tage.indexOf(tag) + 7) % 7]}</span>
+                )}
+                <span>{Number(tag.datum.slice(8, 10))}.</span>
               </div>
 
               <div className="space-y-1">

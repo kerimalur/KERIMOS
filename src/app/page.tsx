@@ -51,10 +51,10 @@ export const dynamic = "force-dynamic";
 export default async function Start({
   searchParams,
 }: {
-  /** `monat` blaettert den Kalender im Planungsbereich. */
-  searchParams: Promise<{ monat?: string }>;
+  /** `ansicht` und `von` steuern den Kalender im Planungsbereich. */
+  searchParams: Promise<{ ansicht?: string; von?: string }>;
 }) {
-  const { monat } = await searchParams;
+  const { ansicht, von } = await searchParams;
   const supabase = await createClient();
 
   const [{ data: linkRows }, kennzahlen] = await Promise.all([
@@ -148,7 +148,7 @@ export default async function Start({
           Notion-Dashboards, das sie ersetzt — wer es kennt, muss sich nicht
           umgewoehnen. /planung zeigt dasselbe ohne das Drumherum. */}
       <div className="mb-7">
-        <PlanungBereich monat={monat} basis="/" />
+        <PlanungBereich ansicht={ansicht} von={von} basis="/" />
       </div>
 
       <div className="mb-3 text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted">

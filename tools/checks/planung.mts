@@ -8,7 +8,7 @@
 // Kalender nicht mehr.
 import {
   tagPlus, monatsStart, monatPlus, monatsLabel, wochentagMo0, baueMonat,
-  dringlichkeit,
+  baueWoche, wochenStart, dringlichkeit,
 } from "../../src/lib/planung-kalender";
 
 let fails = 0;
@@ -72,6 +72,28 @@ check("November 2026 beginnt an einem Sonntag", wochentagMo0("2026-11-01"), 6);
 check("und passt nur in sechs Zeilen", nov26.length / 7, 6);
 check("November hat 30 Tage",
   nov26.filter((t) => !t.ausserhalb).length, 30);
+
+/* --------------------------------------------------------------- Woche */
+
+check("Wochenstart am Mittwoch", wochenStart(HEUTE), "2026-09-07");
+check("Wochenstart am Montag bleibt", wochenStart("2026-09-07"), "2026-09-07");
+check("Wochenstart am Sonntag geht zurueck",
+  wochenStart("2026-09-13"), "2026-09-07");
+// Ueber den Monatswechsel: der 1. September 2026 ist ein Dienstag.
+check("Wochenstart ueber den Monatswechsel",
+  wochenStart("2026-09-01"), "2026-08-31");
+
+const woche = baueWoche(HEUTE, HEUTE);
+check("sieben Tage", woche.length, 7);
+check("beginnt am Montag", woche[0].datum, "2026-09-07");
+check("endet am Sonntag", woche[6].datum, "2026-09-13");
+check("kein Tag ist ausserhalb", woche.filter((t) => t.ausserhalb).length, 0);
+check("heute ist markiert", woche.filter((t) => t.heute).map((t) => t.datum), [HEUTE]);
+
+// Eine Woche ueber den Jahreswechsel darf nicht zerfallen.
+const silvester = baueWoche("2026-12-31", HEUTE);
+check("Woche ueber den Jahreswechsel",
+  [silvester[0].datum, silvester[6].datum], ["2026-12-28", "2027-01-03"]);
 
 /* -------------------------------------------------------- Dringlichkeit */
 

@@ -2,14 +2,19 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { heuteISO } from "@/lib/time";
 import {
-  baueMonat, monatsStart, dringlichkeit, type KalenderTag,
+  baueMonat, baueWoche, monatsStart, wochenStart, dringlichkeit,
+  type KalenderTag,
 } from "@/lib/planung-kalender";
 // Formen und Kategorien stehen DB-frei nebenan: Client-Komponenten brauchen
 // `KATEGORIEN` zur Laufzeit und duerfen diese Datei nicht anfassen.
-import type { Aufgabe, Projekt } from "@/lib/planung-typen";
+import type {
+  Aufgabe, Meilenstein, Projekt, KalenderAnsicht,
+} from "@/lib/planung-typen";
 
-export type { Aufgabe, Projekt, Kategorie } from "@/lib/planung-typen";
-export { KATEGORIEN } from "@/lib/planung-typen";
+export type {
+  Aufgabe, Meilenstein, Projekt, Kategorie, KalenderAnsicht,
+} from "@/lib/planung-typen";
+export { KATEGORIEN, zuAnsicht } from "@/lib/planung-typen";
 
 /**
  * Planung — Projekte und Aufgaben.
@@ -73,6 +78,30 @@ create index if not exists idx_planung_tasks_projekt
 create index if not exists idx_planung_tasks_kategorie
   on planung_tasks(user_id, category) where done = false;
 
+create table if not exists planung_meilensteine (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users(id) on delete cascade,
+  -- cascade, anders als bei den Aufgaben: ein Meilenstein gehoert seinem
+  -- Projekt und ergibt ohne es keinen Sinn.
+  project_id uuid not null references planung_projects(id) on delete cascade,
+  name       text not null,
+  done       boolean not null default false,
+  sort_order int not null default 0,
+  created_at timestamptz not null default now(),
+  done_at    timestamptz
+);
+
+create index if not exists idx_meilensteine_projekt
+  on planung_meilensteine(project_id, sort_order);
+
+alter table planung_meilensteine enable row level security;
+
+drop policy if exists own_planung_meilensteine on planung_meilensteine;
+create policy own_planung_meilensteine on planung_meilensteine
+  for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
 alter table planung_tasks enable row level security;
 
 drop policy if exists own_planung_tasks on planung_tasks;
@@ -93,7 +122,8 @@ export async function ladePlanung(): Promise<PlanungStand> {
   const supabase = await createClient();
   const heute = heuteISO();
 
-  const [{ data: projektRows, error }, { data: taskRows }] = await Promise.all([
+  const [{ data: projektRows, error }, { data: taskRows }, { data: steinRows }]
+    = await Promise.all([
     supabase.from("planung_projects")
       .select("id, name, color, sort_order")
       .order("sort_order", { ascending: true })
@@ -104,6 +134,10 @@ export async function ladePlanung(): Promise<PlanungStand> {
       // ganz unten: sie drängen nicht, sollen aber nicht verschwinden.
       .order("done", { ascending: true })
       .order("due_date", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: true }),
+    supabase.from("planung_meilensteine")
+      .select("id, project_id, name, done, sort_order")
+      .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true }),
   ]);
 
@@ -145,12 +179,29 @@ export async function ladePlanung(): Promise<PlanungStand> {
       };
     });
 
+  // Fehlt Migration 24 noch, kommt hier schlicht nichts an — dann hat kein
+  // Projekt Meilensteine und keins einen Balken. Genau das Verhalten, das
+  // auch ein Projekt ohne Etappen hat.
+  const steineProProjekt = new Map<string, Meilenstein[]>();
+  for (const m of ((steinRows ?? []) as unknown as Record<string, unknown>[])) {
+    const pid = String(m.project_id);
+    const liste = steineProProjekt.get(pid) ?? [];
+    liste.push({
+      id: String(m.id),
+      name: String(m.name ?? ""),
+      erledigt: m.done === true,
+      sortOrder: Number(m.sort_order ?? 0),
+    });
+    steineProProjekt.set(pid, liste);
+  }
+
   const projekte = rohProjekte.map((p): Projekt => {
     const eigene = aufgaben.filter((a) => a.projektId === p.id);
     return {
       ...p,
       offen: eigene.filter((a) => !a.erledigt).length,
       gesamt: eigene.length,
+      meilensteine: steineProProjekt.get(p.id) ?? [],
     };
   });
 
@@ -158,7 +209,9 @@ export async function ladePlanung(): Promise<PlanungStand> {
 }
 
 export interface KalenderStand {
-  monat: string;
+  ansicht: KalenderAnsicht;
+  /** Erster Tag des Zeitraums — Montag bzw. Monatserster. Steht in der Adresse. */
+  anker: string;
   tage: KalenderTag[];
   /** Aufgaben je Tag, ISO-Datum als Schlüssel. */
   proTag: Record<string, Aufgabe[]>;
@@ -172,12 +225,20 @@ export interface KalenderStand {
  * darüber beantwortet das andere.
  */
 export function baueKalender(
-  aufgaben: Aufgabe[], monat: string | undefined, heute: string,
+  aufgaben: Aufgabe[],
+  ansicht: KalenderAnsicht,
+  anker: string | undefined,
+  heute: string,
 ): KalenderStand {
-  const gewaehlt = monatsStart(
-    monat && /^\d{4}-\d{2}/.test(monat) ? monat : heute,
-  );
-  const tage = baueMonat(gewaehlt, heute);
+  // Ein unbrauchbarer Wert aus der Adresse fällt still auf heute zurück:
+  // eine Fehlermeldung für einen vertippten Parameter hilft niemandem.
+  const roh = anker && /^\d{4}-\d{2}/.test(anker) ? anker : heute;
+  const gewaehlt = ansicht === "woche"
+    ? wochenStart(roh.length === 7 ? roh + "-01" : roh)
+    : monatsStart(roh);
+  const tage = ansicht === "woche"
+    ? baueWoche(gewaehlt, heute)
+    : baueMonat(gewaehlt, heute);
 
   const proTag: Record<string, Aufgabe[]> = {};
   for (const a of aufgaben) {
@@ -185,5 +246,5 @@ export function baueKalender(
     (proTag[a.faellig] ??= []).push(a);
   }
 
-  return { monat: gewaehlt, tage, proTag };
+  return { ansicht, anker: gewaehlt, tage, proTag };
 }

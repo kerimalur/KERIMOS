@@ -15,9 +15,9 @@ export const dynamic = "force-dynamic";
 export default async function PlanungPage({
   searchParams,
 }: {
-  searchParams: Promise<{ monat?: string }>;
+  searchParams: Promise<{ ansicht?: string; von?: string }>;
 }) {
-  const { monat } = await searchParams;
+  const { ansicht, von } = await searchParams;
 
   return (
     <div className="py-6">
@@ -35,7 +35,7 @@ export default async function PlanungPage({
         </p>
       </div>
 
-      <PlanungBereich monat={monat} basis="/planung" kompakt />
+      <PlanungBereich ansicht={ansicht} von={von} basis="/planung" kompakt />
     </div>
   );
 }

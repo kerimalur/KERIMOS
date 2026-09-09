@@ -12,10 +12,10 @@ import { fetchWeeklyNativeBacktestCount } from "@/lib/supabase/backtest";
  * Die Gewohnheiten als eine Reihe Zeilen — der ganze tägliche Umgang mit dem
  * Tracker besteht aus einem Druck pro Zeile.
  *
- * Rechts steht die Zahl, wegen der es den Tracker gibt: wie oft diese Woche.
- * Wo ein Wochenziel gesetzt ist, steht es dahinter, sonst nur die Zahl — ein
- * Ziel zu erfinden, nur damit die Anzeige vollständig aussieht, macht aus
- * einer Beobachtung eine Bewertung.
+ * Rechts stehen die sieben Punkte der Woche und die Zahl, wegen der es den
+ * Tracker gibt: wie oft diese Woche. Wo ein Wochenziel gesetzt ist, steht es
+ * dahinter, sonst nur die Zahl — ein Ziel zu erfinden, nur damit die Anzeige
+ * vollständig aussieht, macht aus einer Beobachtung eine Bewertung.
  *
  * Zwei Arten von Zeilen, und das ist Absicht:
  *
@@ -161,9 +161,26 @@ function Zeile({ h }: { h: GewohnheitStand }) {
         )}
       </span>
 
+      {/* Die Woche als sieben Punkte. „3 von 4" sagt nicht, WELCHE Tage
+          fehlen — wer sieht, dass Montag und Dienstag leer sind und Freitag
+          noch ansteht, weiss, ob die Woche zu retten ist. */}
+      <span className="flex shrink-0 items-center gap-[3px]" aria-hidden>
+        {h.woche.map((t) => (
+          <span key={t.datum}
+            title={t.datum}
+            className={cx(
+              "h-[7px] w-[7px] rounded-full border",
+              t.getan ? "border-transparent"
+                : t.zukunft ? "border-line/60 bg-transparent"
+                  : "border-transparent bg-line-strong/50",
+              t.heute && !t.getan && "ring-1 ring-accent ring-offset-1 ring-offset-card")}
+            style={t.getan ? { background: h.farbe } : undefined} />
+        ))}
+      </span>
+
       {h.streak > 1 && (
-        <span className="tabular hidden shrink-0 text-[11px] text-ink-faint sm:inline">
-          {h.streak} Tage am Stück
+        <span className="tabular hidden shrink-0 text-[11px] text-ink-faint lg:inline">
+          {h.streak}d
         </span>
       )}
 

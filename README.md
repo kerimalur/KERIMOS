@@ -58,7 +58,8 @@ Providers:
 Danach auf `/login` ein Konto anlegen und die Migrationen unter
 `supabase/migrations/` der Reihe nach im SQL-Editor ausführen — zuletzt
 `19_habits.sql`, `20_habits_varianten.sql`, `21_planung.sql`,
-`22_planung_kategorie.sql` und `23_planung_ansicht.sql`. Fehlt eine davon,
+`22_planung_kategorie.sql`, `23_planung_ansicht.sql` und
+`24_meilensteine.sql`. Fehlt eine davon,
 sagt die betroffene Karte das auf der Startseite und zeigt das nötige SQL zum
 Kopieren.
 
@@ -96,6 +97,11 @@ Alles, was angezeigt wird — Serie, Wochenzahl, Aufteilung nach Variante — is
 daraus gerechnet und nirgends gespeichert. Es gibt also keinen zweiten Stand,
 der veralten könnte. Die Rechnung liegt DB-frei in
 `src/lib/gewohnheiten-zaehlung.ts` und hängt an `npm run check:gewohnheiten`.
+
+Der Fortschritt steht als **sieben Wochenpunkte** neben jeder Zeile, Montag
+bis Sonntag: gefüllt = getan, umrandet = heute, hohl = steht noch aus. „3 von
+4" sagt nicht, WELCHE Tage fehlen — wer sieht, dass Montag und Dienstag leer
+sind und Freitag noch aussteht, weiss, ob die Woche zu retten ist.
 
 Eingetragen wird dort, wo man ohnehin hinschaut: auf der Startseite und im
 Gym-Bereich. `/gewohnheiten` ist für den Verlauf und die Verwaltung da — dort
@@ -150,8 +156,14 @@ Sie bildet das Notion-Dashboard ab, das dieser Bereich ersetzt: oben wann, in
 der Mitte was, unten wozu. Bei einem Werkzeug, das man täglich aufmacht, ist
 Wiedererkennung mehr wert als jede Verbesserung, die man erst lernen muss.
 
-**Der Kalender** zeigt jeden Eintrag mit Datum an seinem Tag, mit Checkbox in
-der Kachel. Ziehen legt ihn auf einen anderen Tag — `due_date` wird sofort in
+**Der Kalender steht standardmässig auf Woche**, sieben breite Spalten, in
+denen ein Eintrag lesbar dasteht statt als Farbstreifen. Die Woche beantwortet
+„was ist jetzt dran" — die Frage, mit der man morgens auf die Seite schaut.
+Der Monat beantwortet „wann habe ich Zeit" und liegt hinter dem Umschalter
+rechts in der Kopfzeile. Beides läuft über die Adresse (`?ansicht=`, `?von=`),
+damit ein Zeitraum verlinkbar bleibt und der Zurück-Knopf tut, was er soll.
+
+Er zeigt jeden Eintrag mit Datum an seinem Tag, mit Checkbox in der Kachel. Ziehen legt ihn auf einen anderen Tag — `due_date` wird sofort in
 der Datenbank geschrieben, das ist keine Ansichtssache. In die gestrichelte
 Ablage darunter gezogen verliert ein Eintrag seinen Termin, ohne gelöscht zu
 werden; von dort zieht man ihn auch wieder auf einen Tag. Umgesetzt mit den
@@ -166,6 +178,23 @@ Unterschied, der in Wahrheit ein Etikett ist.
 Der Preis dieser Entscheidung, damit ihn niemand später neu entdeckt: ein
 Habit als Task-Zeile kennt keine Serie, keine Wochenquote und keine Varianten.
 Es ist ein Haken an einem Tag.
+
+### Der Fortschritt eines Projekts misst Meilensteine
+
+Nicht die Aufgaben. „5 von 8 Aufgaben erledigt" wäre eine Aussage über
+Betriebsamkeit: wer während eines Umzugs zwanzig Kleinigkeiten einträgt, fällt
+im Balken zurück, obwohl er vorangekommen ist. Und ein Projekt ohne Ende
+(„Haushalt") hätte einen Balken, der nie voll wird und deshalb nichts sagt.
+
+Ein **Meilenstein** ist eine selbst benannte Etappe (`planung_meilensteine`).
+Wer keine setzt, bekommt keinen Balken — das ist die Vorgabe, kein fehlendes
+Feature. Etappen lassen sich jederzeit nachtragen, abhaken, umbenennen und
+löschen: ein Projekt ändert unterwegs seine Etappen, und ein Modell, das nur
+beim Anlegen zuhört, wäre nach zwei Wochen falsch.
+
+Anders als Aufgaben hängen Meilensteine per `ON DELETE CASCADE` am Projekt —
+sie ergeben ohne es keinen Sinn. Eine Aufgabe dagegen ist auch ohne Projekt
+noch Arbeit, die getan werden muss.
 
 ### Zwei Arten, dasselbe zu notieren
 
@@ -258,9 +287,9 @@ und `habit_entries` (ein Tag, optional eine Variante). Siehe
 ist Tag + Variante, nicht der Tag allein — sonst liesse sich Kraft und
 Ausdauer am selben Tag nicht beides eintragen.
 
-**Planung** — `planung_projects` und `planung_tasks` (mit `category`
-„Aufgabe"/„Habit"); siehe `supabase/migrations/21_planung.sql` und
-`22_planung_kategorie.sql`. Bewusst neue Namen: die alte `tasks`-Tabelle
+**Planung** — `planung_projects`, `planung_tasks` (mit `category`
+„Aufgabe"/„Habit") und `planung_meilensteine`; siehe
+`supabase/migrations/21_planung.sql` bis `24_meilensteine.sql`. Bewusst neue Namen: die alte `tasks`-Tabelle
 gehörte zum Zeit-Bereich und trug dessen Ballast; sie steht unberührt daneben.
 
 **Oberfläche** — `user_settings` (Hausfarbe, Farbnebel), eine Zeile je Nutzer
@@ -313,6 +342,7 @@ src/
     planung-bereich.tsx       Kalender + Aufgaben + Projekte, an zwei Orten
     planung-aufgaben.tsx      Die Liste, offen und erledigt getrennt
     planung-neu.tsx           Das + in der Kopfzeile und sein Dialog
+    planung-projekt.tsx       Projektkachel mit Etappen und Balken
     planung-kalender.tsx      Monatsraster mit Ziehen und Fallenlassen
     einrichtung-hinweis.tsx   „Migration fehlt" statt stillem Ausblenden
     gva-linien-karte.tsx      Aktive Trades auf der Startseite

@@ -60,6 +60,29 @@ export function wochentagMo0(datum: string): number {
   return (tag + 6) % 7;
 }
 
+/** Montag der Woche, in der `datum` liegt. */
+export function wochenStart(datum: string): string {
+  return tagPlus(datum, -wochentagMo0(datum));
+}
+
+/**
+ * Eine Woche, Montag bis Sonntag.
+ *
+ * Die Vorgabe auf der Startseite. Der Monat beantwortet „wann habe ich
+ * Zeit", die Woche „was ist jetzt dran" — und das ist die Frage, mit der man
+ * morgens auf die Seite schaut. Kein Tag ist hier `ausserhalb`: eine Woche
+ * hat keine Nachbartage, die sie auffüllen müsste.
+ *
+ * @param montag Irgendein Tag der gewünschten Woche.
+ */
+export function baueWoche(montag: string, heute: string): KalenderTag[] {
+  const start = wochenStart(montag);
+  return Array.from({ length: 7 }, (_, i) => {
+    const datum = tagPlus(start, i);
+    return { datum, ausserhalb: false, heute: datum === heute };
+  });
+}
+
 /**
  * Ein Monat als Raster, Montag bis Sonntag, in vollen Wochen.
  *

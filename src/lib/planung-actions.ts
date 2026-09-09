@@ -202,3 +202,86 @@ export async function erledigteAufraeumen() {
 
   aktualisieren();
 }
+
+/* ------------------------------------------------------------ Meilensteine */
+//
+// Etappen eines Projekts, vom Nutzer selbst benannt. Sie tragen den
+// Fortschrittsbalken — und lassen sich jederzeit nachtragen, umbenennen und
+// wieder loeschen. Ein Projekt aendert unterwegs seine Etappen; ein Modell,
+// das nur beim Anlegen zuhoert, waere nach zwei Wochen falsch.
+
+export async function meilensteinAnlegen(fd: FormData) {
+  const projektId = txt(fd, "project_id");
+  const name = txt(fd, "name");
+  if (!projektId || !name) return;
+
+  const { supabase, userId } = await zugang();
+
+  // Neue Etappen haengen sich hinten an — die Reihenfolge ist der Weg durch
+  // das Projekt, nicht eine Rangliste.
+  const { data: letzte } = await supabase
+    .from("planung_meilensteine").select("sort_order")
+    .eq("project_id", projektId)
+    .order("sort_order", { ascending: false }).limit(1);
+  const naechste = Number(
+    ((letzte ?? []) as { sort_order: number }[])[0]?.sort_order ?? 0) + 1;
+
+  const { error } = await supabase.from("planung_meilensteine").insert({
+    user_id: userId, project_id: projektId, name, sort_order: naechste,
+  });
+  if (error) throw new Error(`Meilenstein anlegen: ${error.message}`);
+
+  aktualisieren();
+}
+
+/**
+ * Abhaken oder wieder oeffnen.
+ *
+ * Wie ueberall: der gewuenschte Zustand kommt aus dem Formular, nicht aus der
+ * Datenbank — zwei schnelle Klicks heben sich dann sauber auf.
+ */
+export async function meilensteinAbhaken(fd: FormData) {
+  const id = txt(fd, "id");
+  if (!id) return;
+
+  const erledigt = txt(fd, "done") === "1";
+  const { supabase, userId } = await zugang();
+
+  const { error } = await supabase.from("planung_meilensteine")
+    .update({ done: erledigt, done_at: erledigt ? new Date().toISOString() : null })
+    .eq("id", id).eq("user_id", userId);
+  if (error) throw new Error(`Meilenstein abhaken: ${error.message}`);
+
+  aktualisieren();
+}
+
+export async function meilensteinUmbenennen(fd: FormData) {
+  const id = txt(fd, "id");
+  const name = txt(fd, "name");
+  if (!id || !name) return;
+
+  const { supabase, userId } = await zugang();
+  const { error } = await supabase.from("planung_meilensteine")
+    .update({ name }).eq("id", id).eq("user_id", userId);
+  if (error) throw new Error(`Meilenstein ändern: ${error.message}`);
+
+  aktualisieren();
+}
+
+/**
+ * Loeschen — endgueltig, ohne Papierkorb.
+ *
+ * Anders als bei Aufgaben ist das hier harmlos: ein Meilenstein traegt keine
+ * Arbeit, er benennt nur eine Etappe. Wer die letzte loescht, hat wieder ein
+ * Projekt ohne Balken, und das ist ein gueltiger Zustand.
+ */
+export async function meilensteinLoeschen(fd: FormData) {
+  const id = txt(fd, "id");
+  if (!id) return;
+
+  const { supabase, userId } = await zugang();
+  await supabase.from("planung_meilensteine").delete()
+    .eq("id", id).eq("user_id", userId);
+
+  aktualisieren();
+}

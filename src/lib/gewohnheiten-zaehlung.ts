@@ -151,3 +151,37 @@ export function baueMonatsRaster(
   }
   return tage;
 }
+
+/* ---------------------------------------------------------- Wochenpunkte */
+
+export interface WochenTag {
+  datum: string;
+  getan: boolean;
+  heute: boolean;
+  /** Tag der laufenden Woche, der noch nicht da ist. */
+  zukunft: boolean;
+}
+
+/**
+ * Die sieben Tage der laufenden Woche, Montag zuerst.
+ *
+ * Der Fortschritt einer Gewohnheit als Punktreihe statt als Zahl: „3 von 4"
+ * sagt nicht, WELCHE Tage fehlen. Wer sieht, dass Montag und Dienstag leer
+ * sind und Freitag ansteht, weiss, ob die Woche noch zu retten ist.
+ *
+ * @param wochenstart Montag der Woche.
+ */
+export function wochenPunkte(
+  eintraege: Eintrag[], wochenstart: string, heute: string,
+): WochenTag[] {
+  const getan = tageAus(eintraege);
+  return Array.from({ length: 7 }, (_, i) => {
+    const datum = addDays(wochenstart, i);
+    return {
+      datum,
+      getan: getan.has(datum),
+      heute: datum === heute,
+      zukunft: datum > heute,
+    };
+  });
+}

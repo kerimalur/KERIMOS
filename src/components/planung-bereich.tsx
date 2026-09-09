@@ -1,9 +1,9 @@
-import { ladePlanung, baueKalender, PLANUNG_SQL } from "@/lib/planung";
-import { projektUmbenennen, projektLoeschen } from "@/lib/planung-actions";
+import { ladePlanung, baueKalender, zuAnsicht, PLANUNG_SQL } from "@/lib/planung";
 import { NeuesProjekt } from "@/components/planung-neu";
+import { PlanungProjekt } from "@/components/planung-projekt";
 import { PlanungAufgaben } from "@/components/planung-aufgaben";
 import { PlanungKalender } from "@/components/planung-kalender";
-import { Button, Card, CardTitle, Input } from "@/components/ui";
+import { Card, CardTitle } from "@/components/ui";
 import { heuteISO } from "@/lib/time";
 import { ladeGewohnheitsMarken } from "@/lib/gewohnheiten";
 import { ladeOberflaeche } from "@/lib/oberflaeche";
@@ -24,22 +24,24 @@ import { ladeOberflaeche } from "@/lib/oberflaeche";
  * `/planung`. Zwei Abschriften wären zwei Orte, an denen man dieselbe
  * Änderung machen müsste — und einer davon bliebe irgendwann zurück.
  *
- * @param monat Welcher Monat im Kalender steht (aus `?monat=`).
+ * @param ansicht "woche" (Vorgabe) oder "monat", aus `?ansicht=`.
+ * @param von Erster Tag des Zeitraums, aus `?von=`.
  * @param basis Wohin das Blättern zeigt — "/" auf der Startseite.
  * @param kompakt Lässt die Überschrift weg; auf der eigenen Seite steht sie
  *   schon im Kopf.
  */
 export async function PlanungBereich({
-  monat, basis = "/planung", kompakt = false,
+  ansicht, von, basis = "/planung", kompakt = false,
 }: {
-  monat?: string;
+  ansicht?: string;
+  von?: string;
   basis?: string;
   kompakt?: boolean;
 }) {
   // Die Gewohnheiten kommen aus ihrem eigenen Tracker und stehen trotzdem in
   // diesem Kalender: ein Tag hat eine Ansicht, nicht zwei. Fehlen die Tabellen
   // noch, ist die Liste leer und der Kalender zeigt nur Aufgaben.
-  const [{ projekte, aufgaben, tabelleFehlt }, marken, ansicht] = await Promise.all([
+  const [{ projekte, aufgaben, tabelleFehlt }, marken, zeigen] = await Promise.all([
     ladePlanung(),
     ladeGewohnheitsMarken(),
     ladeOberflaeche(),
@@ -48,9 +50,9 @@ export async function PlanungBereich({
 
   // Was im Kalender steht, entscheidet /einstellungen/planung. Die Liste
   // darunter zeigt Erledigtes immer — dort ist es zugeklappt und stört nicht.
-  const imKalender = ansicht.planungErledigte
+  const imKalender = zeigen.planungErledigte
     ? aufgaben : aufgaben.filter((a) => !a.erledigt);
-  const kalender = baueKalender(imKalender, monat, heute);
+  const kalender = baueKalender(imKalender, zuAnsicht(ansicht), von, heute);
 
   if (tabelleFehlt) {
     return (
@@ -82,9 +84,9 @@ export async function PlanungBereich({
       )}
 
       {/* ------------------------------------------------------- Kalender */}
-      <PlanungKalender monat={kalender.monat} tage={kalender.tage}
-        aufgaben={imKalender}
-        marken={ansicht.planungGewohnheiten ? marken : []}
+      <PlanungKalender ansicht={kalender.ansicht} anker={kalender.anker}
+        tage={kalender.tage} aufgaben={imKalender}
+        marken={zeigen.planungGewohnheiten ? marken : []}
         basis={basis} />
 
       {/* ------------------------------------------------------- Aufgaben */}
@@ -107,54 +109,7 @@ export async function PlanungBereich({
             // Zeile, die nichts tut.
             <NeuesProjekt knopf="kachel" />
           )}
-          {projekte.map((p) => (
-            <Card key={p.id} className="p-4">
-              <div className="flex items-start justify-between gap-2">
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full"
-                    style={{ background: p.farbe }} />
-                  <span className="truncate font-display text-base font-bold text-ink">
-                    {p.name}
-                  </span>
-                </span>
-                <span className="tabular shrink-0 text-xs text-ink-muted">
-                  {p.offen > 0 ? `${p.offen} offen` : p.gesamt > 0 ? "fertig" : "leer"}
-                </span>
-              </div>
-
-              <details className="mt-3">
-                <summary className="cursor-pointer text-[11px] text-ink-faint
-                                    transition hover:text-ink-muted">
-                  ändern
-                </summary>
-                <div className="mt-2 flex flex-wrap items-end gap-2">
-                  <form action={projektUmbenennen}
-                    className="flex flex-wrap items-end gap-2">
-                    <input type="hidden" name="id" value={p.id} />
-                    <Input name="name" defaultValue={p.name} required
-                      aria-label="Name" className="w-36 py-1 text-xs" />
-                    <Input name="color" type="color" defaultValue={p.farbe}
-                      aria-label="Farbe" className="h-8 w-12 p-1" />
-                    <Button type="submit" variant="ghost"
-                      className="px-2.5 py-1 text-xs">
-                      Speichern
-                    </Button>
-                  </form>
-                  <form action={projektLoeschen}>
-                    <input type="hidden" name="id" value={p.id} />
-                    <Button type="submit" variant="danger"
-                      className="px-2.5 py-1 text-xs">
-                      Löschen
-                    </Button>
-                  </form>
-                </div>
-                <p className="mt-2 text-[11px] text-ink-faint">
-                  Löschen entfernt nur das Projekt. Die {p.gesamt} zugehörigen
-                  Einträge bleiben stehen und stehen danach ohne Projekt da.
-                </p>
-              </details>
-            </Card>
-          ))}
+          {projekte.map((p) => <PlanungProjekt key={p.id} p={p} />)}
         </div>
 
         {projekte.length === 0 && (

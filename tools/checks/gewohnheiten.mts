@@ -12,7 +12,7 @@
 //      ab — auch den Februar und auch über den Jahreswechsel.
 import {
   streakBis, zaehleZeitraum, zaehleVarianten, tageAus, baueMonatsRaster,
-  monatPlus, monatsStart, monatsLabel, type Eintrag,
+  monatPlus, monatsStart, monatsLabel, wochenPunkte, type Eintrag,
 } from "../../src/lib/gewohnheiten-zaehlung";
 
 let fails = 0;
@@ -119,6 +119,24 @@ check("Februar 2028 ist ein Schaltjahr", feb.length, 29);
 const feb27 = baueMonatsRaster([], "2027-02-01", HEUTE)
   .filter((t) => !t.ausserhalb);
 check("Februar 2027 hat 28 Tage", feb27.length, 28);
+
+/* ---------------------------------------------------------- Wochenpunkte */
+
+const punkte = wochenPunkte(e("2026-09-07/Push", "2026-09-09/Pull"), MONTAG, HEUTE);
+check("sieben Punkte", punkte.length, 7);
+check("Montag zuerst", punkte[0].datum, MONTAG);
+check("Sonntag zuletzt", punkte[6].datum, "2026-09-13");
+check("gefuellt sind Mo und Mi",
+  punkte.filter((t) => t.getan).map((t) => t.datum),
+  ["2026-09-07", "2026-09-09"]);
+check("heute ist markiert",
+  punkte.filter((t) => t.heute).map((t) => t.datum), [HEUTE]);
+// Donnerstag bis Sonntag liegen noch vor uns: sie duerfen nicht wie
+// versaeumte Tage aussehen.
+check("vier Tage stehen noch aus",
+  punkte.filter((t) => t.zukunft).length, 4);
+check("heute zaehlt nicht als Zukunft",
+  punkte.find((t) => t.heute)?.zukunft, false);
 
 console.log(fails === 0 ? "\nAlles grün." : `\n${fails} Abweichung(en).`);
 process.exit(fails === 0 ? 0 : 1);
