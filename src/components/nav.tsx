@@ -37,7 +37,7 @@ interface NavConfig {
 }
 
 /**
- * Trading: sechs Bereiche in EINER Zeile, keine zweite Reihe mehr.
+ * Trading: fünf Bereiche in EINER Zeile, keine zweite Reihe mehr.
  *
  * Die alte Trennung in Haupt- und Nebenabschnitte war die Schwachstelle: bei
  * jeder neuen Seite musste man entscheiden, in welche Reihe sie gehoert, und
@@ -52,7 +52,11 @@ interface NavConfig {
  *   Journal        was habe ich gemacht
  *   Backtest       traegt die Methode ueberhaupt (Auswertung, Kategorien,
  *                  Rueckblick auf die Lage eines vergangenen Handelstages)
- *   Einstellungen  Alarme und der Weg ins Labor
+ *
+ * "Einstellungen" ist am 09.09.2026 hier verschwunden: Alarme, Kategorien und
+ * Kanaele stehen jetzt unter /einstellungen/trading, zusammen mit allem
+ * anderen, was man einmal einrichtet. Ein Reiter im taeglichen Arbeitsweg
+ * fuer etwas, das man alle paar Wochen anfasst, war eine Zeile zu viel.
  *
  * Siehe ../../TRADING-UMBAU.md.
  */
@@ -63,7 +67,6 @@ const TRADING: NavConfig = {
     { href: "/trading/ranking", label: "Confluence", auch: ["/trading/confluence"] },
     { href: "/trading/journal", label: "Journal" },
     { href: "/trading/backtest", label: "Backtest" },
-    { href: "/trading/einstellungen", label: "Einstellungen" },
   ],
   secondary: [],
 };

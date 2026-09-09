@@ -13,6 +13,7 @@ Die Migrationen sind im Supabase-Projekt `fhgrjqvunxbfhujoxmcn` angewandt:
 | … | die Dateien 06–18 unter `migrations/`, jede einmalig im SQL-Editor |
 | `19_habits` | Gewohnheiten und ihre eingetragenen Tage — Grundlage von `/gewohnheiten` |
 | `20_habits_varianten` | Varianten (Push/Pull/Ausdauer), Datumsabfrage, mehrere Einheiten pro Tag |
+| `21_planung` | Projekte, Aufgaben und die Oberflächen-Einstellungen |
 
 `06_shifts.sql` ist die erste Migration, die auch im Repository liegt; ab dort
 gilt: Datei im SQL-Editor des Projekts `fhgrjqvunxbfhujoxmcn` ausführen.

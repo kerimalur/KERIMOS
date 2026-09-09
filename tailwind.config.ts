@@ -21,11 +21,15 @@ export default {
           // Text auf farbig gefüllten Flächen (Buttons, aktive Chips)
           on: "#17130F",
         },
+        // Die Hausfarbe kommt aus CSS-Variablen, damit sie sich in den
+        // Einstellungen aendern laesst (siehe lib/oberflaeche.ts). Der
+        // Rueckfallwert ist Bernstein — er greift, bevor das Layout die
+        // Variablen gesetzt hat, und wenn niemand angemeldet ist.
         accent: {
-          DEFAULT: "#E7A96B",   // Bernstein — die Hausfarbe
-          soft: "#F0BC85",
+          DEFAULT: "var(--akzent, #E7A96B)",
+          soft: "var(--akzent-soft, #F0BC85)",
           deep: "#B4813F",
-          tint: "#3A2A20",
+          tint: "var(--akzent-tint, #3A2A20)",
         },
         good: "#5FC2A6",
         warn: "#E7A96B",
@@ -61,7 +65,7 @@ export default {
         // Kein harter Schlagschatten, sondern ein tiefer, weicher Sockel
         tile: "0 14px 28px -18px rgba(0,0,0,.75)",
         card: "0 16px 32px -20px rgba(0,0,0,.6)",
-        "glow-accent": "0 14px 28px -18px rgba(231,169,107,.35)",
+        "glow-accent": "0 14px 28px -18px rgba(var(--akzent-rgb, 231,169,107),.35)",
         "glow-geld": "0 14px 28px -18px rgba(95,194,166,.32)",
         "glow-zeit": "0 14px 28px -18px rgba(111,163,216,.32)",
         "glow-gym": "0 14px 28px -18px rgba(226,139,114,.32)",

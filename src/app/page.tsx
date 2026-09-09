@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Tagessatz } from "@/components/tagessatz";
 import { GewichtHeute } from "@/components/gewicht-heute";
 import { GewohnheitenKarte } from "@/components/gewohnheiten-karte";
+import { AufgabenKarte } from "@/components/aufgaben-karte";
 import { GvaLinienKarte } from "@/components/gva-linien-karte";
 import { DisplayModeToggle } from "@/components/display-mode-toggle";
 import { Logo } from "@/components/logo";
@@ -23,16 +24,27 @@ export const dynamic = "force-dynamic";
  * Alles-Überblick und daneben die Modi als Arbeitsplätze. Man scrollte an
  * Dingen vorbei, die gerade nicht zählten.
  *
- * Jetzt beantwortet sie drei Fragen und sonst nichts:
+ * Jetzt beantwortet sie vier Fragen und sonst nichts:
  *   1. Was ist heute anders (ein Satz, das Wetter)
- *   2. Was ist heute schon getan (die Gewohnheiten, die aktiven Trades)
- *   3. Wo arbeitest du jetzt (die Modi, mit ihren wichtigsten Zahlen)
+ *   2. Was will heute getan werden (die Gewohnheiten)
+ *   3. Was steht an (die Aufgaben von heute, überfällige, terminlose)
+ *   4. Wo arbeitest du jetzt (die Modi, mit ihren wichtigsten Zahlen)
+ *
+ * Die Reihenfolge ist die Reihenfolge des Tages: erst was man tut, dann was
+ * man erledigt, dann wo man hingeht. Anzeigen ohne Handlung (aktive Trades,
+ * Gewicht) stehen dazwischen, aber nie oben.
+ *
+ * Die Aufgaben zeigen ausdrücklich NICHT alles Offene, sondern nur, was eine
+ * Entscheidung verlangt: überfällig, heute, ohne Termin. Der Rest steht im
+ * Kalender unter /planung. Eine Startseite, die alles zeigt, wird nach einer
+ * Woche überscrollt.
  *
  * Beim Umbau vom 09.09.2026 ist der ganze Zeit-Bereich entfallen — Termine,
- * Aufgaben, Tages- und Wochenrückblick, Wochenziele, Schichten, Zen. Damit
- * sind auch die Karten weg, die von dort gespeist wurden („Heute das
- * Wichtigste", die Termine, der Rückblick-Hinweis). An ihre Stelle tritt der
- * Habit-Tracker: eine Zeile pro Gewohnheit, ein Druck, fertig.
+ * Tages- und Wochenrückblick, Wochenziele, Schichten, Zen. Die Aufgaben sind
+ * als eigenes, schmales Modul zurückgekommen (siehe lib/planung.ts): Name,
+ * Haken, optional ein Datum, optional ein Projekt. Der Vorgänger hatte
+ * Priorität, Lebensbereich und Unteraufgaben — und wurde deshalb nicht
+ * gepflegt.
  *
  * Steht nichts an, ist die Seite fast leer. Das ist das Ziel, kein Mangel.
  */
@@ -94,6 +106,16 @@ export default async function Start() {
           <div className="min-w-0 flex-1">
             <QuickSearch links={links} />
           </div>
+          {/* Planung und Einstellungen als Symbole neben der Suche: beide
+              erreicht man von hier aus mehrmals am Tag, aber keiner von
+              beiden verdient eine eigene Kachel — die Kacheln sind die
+              Arbeitsplaetze, das hier sind Werkzeuge. */}
+          <Kopfknopf href="/planung" titel="Planung — Aufgaben und Kalender">
+            ▤
+          </Kopfknopf>
+          <Kopfknopf href="/einstellungen" titel="Einstellungen">
+            ⚙
+          </Kopfknopf>
           {/* Abendmodus: schaltet die Farben des ganzen Windows-PCs um.
               Blendet sich selbst aus, solange die Zeile nicht geladen ist. */}
           <DisplayModeToggle />
@@ -110,7 +132,8 @@ export default async function Start() {
           steht hier schlicht nichts. */}
       <div className="mb-7 space-y-3">
         <GewohnheitenKarte mitBacktest
-          leer="Noch keine Gewohnheit. Leg die erste an — es dauert zehn Sekunden." />
+          leer="Noch keine Gewohnheit. Unter Einstellungen legst du die erste an." />
+        <AufgabenKarte />
         <GvaLinienKarte />
         <GewichtHeute />
       </div>
@@ -175,5 +198,23 @@ export default async function Start() {
         })}
       </div>
     </div>
+  );
+}
+
+/** Ein Symbolknopf in der Kopfzeile — gleiche Hoehe wie das Suchfeld. */
+function Kopfknopf({
+  href, titel, children,
+}: {
+  href: string;
+  titel: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link href={href} title={titel} aria-label={titel}
+      className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-line
+                 bg-card text-sm text-ink-muted transition duration-150 ease-tactile
+                 hover:border-line-strong hover:text-ink active:scale-95">
+      {children}
+    </Link>
   );
 }

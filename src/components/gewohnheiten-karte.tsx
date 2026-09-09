@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ladeGewohnheiten, type GewohnheitStand } from "@/lib/gewohnheiten";
 import { gewohnheitAbhaken } from "@/lib/gewohnheiten-actions";
 import { GewohnheitenDialog } from "@/components/gewohnheiten-dialog";
+import { EinrichtungHinweis } from "@/components/einrichtung-hinweis";
 import { Card, CardTitle, cx } from "@/components/ui";
 import { heuteISO, weekStart as toWeekStart } from "@/lib/time";
 import { tradingConfigured, WEEKLY_BACKTEST_ZIEL } from "@/lib/supabase/trading";
@@ -51,7 +52,15 @@ export async function GewohnheitenKarte({
       : Promise.resolve(null),
   ]);
 
-  if (tabelleFehlt) return null;
+  // Fehlende Migration ist KEIN „nichts anzuzeigen": stilles Ausblenden hat
+  // hier einen halben Tag Suche gekostet, weil die Startseite nicht zwischen
+  // „nicht eingerichtet" und „nichts zu tun" unterschied.
+  if (tabelleFehlt) {
+    return (
+      <EinrichtungHinweis titel={titel}
+        datei="19_habits.sql + 20_habits_varianten.sql" ziel="/gewohnheiten" />
+    );
+  }
 
   const backtestZeile = backtest === null ? null : (
     <GezaehlteZeile

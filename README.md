@@ -1,22 +1,24 @@
 # KerimOS
 
-Startpunkt für alles: eine Startseite, von der aus du deine Bereiche,
-Werkzeuge und Ordner erreichst — plus die Bereiche, die vollständig hier
-laufen: Trading, Gym, Essen und die Gewohnheiten.
+Startpunkt für alles: ein Dashboard, von dem aus du deine Bereiche, Werkzeuge
+und Ordner erreichst — plus die Bereiche, die vollständig hier laufen:
+Trading, Gym, Essen, die Gewohnheiten und die Planung.
 
-Die Startseite beantwortet drei Fragen und sonst nichts: Was ist heute anders
-(ein Satz, das Wetter). Was ist heute schon getan (die Gewohnheiten, die
-aktiven Trades). Wo arbeitest du jetzt (die Modi als Kacheln). Steht nichts
-an, ist die Seite fast leer. Das ist das Ziel, kein Mangel.
+Die Startseite beantwortet vier Fragen und sonst nichts. Was ist heute anders
+(ein Satz, das Wetter). Was will heute getan werden (die Gewohnheiten). Was
+steht an (die Aufgaben von heute, überfällige, terminlose). Wo arbeitest du
+jetzt (die Modi als Kacheln). Die Reihenfolge ist die Reihenfolge des Tages:
+erst was man tut, dann was man erledigt, dann wo man hingeht.
 
-**Stand (09.09.2026):** Der Zeit-Bereich ist entfallen — Termine, Aufgaben,
+Steht nichts an, ist die Seite fast leer. Das ist das Ziel, kein Mangel.
+
+**Stand (09.09.2026):** Der alte Zeit-Bereich ist entfallen — Termine,
 Tages- und Wochenrückblick, Wochenziele, Schichten, Zen und die drei
 Erinnerungs-Endpunkte dazu. Das Gym ist auf Eintragen, Verlauf und
-Garmin-Import zusammengestrichen. Neu ist der Habit-Tracker unter
-`/gewohnheiten` — mit Varianten, Datumsabfrage und Monatsverlauf. Die
-Startseite führt mit ihm auf; die Karte „Diese Woche" ist weg, ihre
-Backtest-Zahl hängt jetzt als gezählte Zeile unten an den Gewohnheiten und
-die Schrittzahl ganz, weil Kerim sie ohnehin erreicht.
+Garmin-Import zusammengestrichen. Dafür sind drei Dinge dazugekommen: der
+Habit-Tracker unter `/gewohnheiten` (mit Varianten, Datumsabfrage und
+Monatsverlauf), die Planung unter `/planung` (Projekte, Aufgaben, Kalender
+mit Ziehen) und `/einstellungen` als einziger Ort für alles Einmalige.
 
 ---
 
@@ -24,7 +26,9 @@ die Schrittzahl ganz, weil Kerim sie ohnehin erreicht.
 
 | Bereich | Funktion |
 |---|---|
-| **Startseite** | Gewohnheiten zuoberst (samt automatisch gezählter Backtest-Zeile), darunter Tagessatz mit Wetter, Suche, aktive Trades, Modi-Kacheln |
+| **Startseite** | Das Dashboard: Gewohnheiten zuoberst (samt gezählter Backtest-Zeile), dann die Aufgaben von heute, aktive Trades, Modi-Kacheln |
+| **Planung** | Projekte als Kacheln, Aufgaben mit Haken/Datum/Projekt, Monatskalender mit Ziehen und Fallenlassen |
+| **Einstellungen** | Ein Ort für alles Einmalige: Design, Gewohnheiten, Trading, Kacheln, Daten |
 | **Gewohnheiten** | Eintragen je Gewohnheit — mit Varianten (Push / Pull / Ausdauer) und Datum, Zählung nach Woche / 30 Tagen / gesamt, Serie, Monatsraster zum Nachtragen |
 | **Trading** | Übersicht (aktive Trades), Cockpit, Confluence-Ranking, Journal, Backtest, Alarme |
 | **Gym** | Was war (Push / Pull / Ausdauer eintragen, auch nachträglich), Verlauf der Einheiten, Garmin-Import samt Prüfschritt, Körpergewicht |
@@ -53,8 +57,9 @@ Providers:
 
 Danach auf `/login` ein Konto anlegen und die Migrationen unter
 `supabase/migrations/` der Reihe nach im SQL-Editor ausführen — zuletzt
-`19_habits.sql` und `20_habits_varianten.sql`. Fehlt eine davon, bleibt
-`/gewohnheiten` leer und zeigt stattdessen das nötige SQL an.
+`19_habits.sql`, `20_habits_varianten.sql` und `21_planung.sql`. Fehlt eine
+davon, sagt die betroffene Karte das auf der Startseite und zeigt das nötige
+SQL zum Kopieren.
 
 ### Deployment auf Vercel
 
@@ -128,6 +133,61 @@ zweimal. „Viermal diese Woche" meint viermal trainiert.
 
 ---
 
+## Die Planung
+
+Bildet nach, was vorher in Notion lief: zwei verknüpfte Tabellen, mehr nicht.
+Ein **Projekt** hat einen Namen. Eine **Aufgabe** hat einen Namen, einen
+Haken, optional ein Datum und optional ein Projekt.
+
+Die Schmalheit ist der Punkt. Der Vorgänger im Zeit-Bereich hatte Priorität,
+Lebensbereich, Unteraufgaben und Sortierung — und wurde genau deshalb nicht
+gepflegt: jede Aufgabe kostete sechs Entscheidungen, von denen fünf niemanden
+interessierten. Was hier fehlt, fehlt mit Absicht.
+
+**Der Kalender** zeigt jede Aufgabe mit Datum an ihrem Tag. Ziehen legt sie
+auf einen anderen — `due_date` wird sofort in der Datenbank geschrieben, das
+ist keine Ansichtssache. In die gestrichelte Ablage darunter gezogen verliert
+eine Aufgabe ihren Termin, ohne gelöscht zu werden; von dort zieht man sie
+auch wieder auf einen Tag. Umgesetzt mit den `draggable`-Ereignissen des
+Browsers, ohne Kalenderbibliothek.
+
+**Ein gelöschtes Projekt reisst keine Arbeit mit.** Dafür sorgt
+`ON DELETE SET NULL` im Schema, nicht der Anwendungscode: die Aufgaben bleiben
+stehen und stehen danach ohne Projekt da.
+
+**Auf der Startseite** stehen nicht alle offenen Aufgaben, sondern nur die,
+die eine Entscheidung verlangen: überfällige, heutige, terminlose. Der Rest
+wartet im Kalender. Eine Startseite, die alles zeigt, wird nach einer Woche
+überscrollt.
+
+---
+
+## Die Einstellungen
+
+Seit dem 09.09.2026 gibt es genau einen Ort für alles, was man einmal
+einrichtet — aufgeteilt nach Abschnitt: Design, Gewohnheiten, Trading,
+Kacheln, Daten.
+
+Die Regel dahinter: **Wird etwas täglich angefasst, steht es auf der Seite
+seines Bereichs. Wird es einmal eingerichtet, steht es hier.** Vorher lagen
+die Einstellungen dort, wo sie benutzt wurden — die Alarme als sechster
+Reiter mitten im Trading-Arbeitsweg, die Gewohnheiten aufklappbar zwischen
+ihren eigenen Zahlen. Das las sich beim Bauen logisch und war beim Suchen
+unmöglich.
+
+`/trading/einstellungen` leitet auf `/einstellungen/trading` um und bleibt als
+Weiterleitung stehen: die Adresse steht in Lesezeichen und in der
+installierten App.
+
+**Design** ändert die Hausfarbe und schaltet den Farbnebel ab. Acht geprüfte
+Töne statt eines freien Farbwählers — der Akzent trägt dunklen Text, und ein
+zu dunkler Ton macht Knopfbeschriftungen unlesbar, was einem erst zwei Seiten
+später auffällt. Technisch setzt das Layout CSS-Variablen am `<html>`, auf die
+Tailwind für `accent` zeigt; damit zieht jede Klasse im Projekt nach, ohne
+dass irgendwo eine Farbe doppelt gepflegt wird.
+
+---
+
 ## Das Gym
 
 Erfasst wird auf der Uhr. Der Garmin-Import holt die Einheiten ab, ein
@@ -152,6 +212,13 @@ und `habit_entries` (ein Tag, optional eine Variante). Siehe
 `supabase/migrations/19_habits.sql` und `20_habits_varianten.sql`. Eindeutig
 ist Tag + Variante, nicht der Tag allein — sonst liesse sich Kraft und
 Ausdauer am selben Tag nicht beides eintragen.
+
+**Planung** — `planung_projects` und `planung_tasks` (siehe
+`supabase/migrations/21_planung.sql`). Bewusst neue Namen: die alte
+`tasks`-Tabelle gehörte zum Zeit-Bereich und trug dessen Ballast; sie steht
+unberührt daneben.
+
+**Oberfläche** — `user_settings` (Hausfarbe, Farbnebel), eine Zeile je Nutzer
 
 **Navigator** — `links` (Bereich, Webadresse oder lokaler Pfad) mit
 Nutzungszähler über `register_link_open()`
@@ -184,7 +251,9 @@ zu, weil ein KerimOS-Nutzer dort nicht existiert.
 src/
   app/
     page.tsx              Startseite
-    gewohnheiten/         Habit-Tracker: Verlauf und Verwaltung
+    gewohnheiten/         Habit-Tracker: der Verlauf, Monat für Monat
+    planung/              Projekte, Aufgaben, Kalender
+    einstellungen/        Design, gewohnheiten/, trading/
     gym/                  Übersicht, verlauf/, garmin/
     trading/              Übersicht, cockpit/, ranking/, journal/, backtest/, …
     m/[gruppe]/           Arbeitsplatz eines Modus
@@ -196,6 +265,10 @@ src/
     gewohnheiten-dialog.tsx   „Wann war das?" — Tag und Variante wählen
     gewohnheiten-raster.tsx   Ein Monat als klickbares Raster, mit Blättern
     klapp-karte.tsx           Karte zum Zuklappen, Zustand im localStorage
+    aufgaben-karte.tsx        Was heute ansteht — auf dem Dashboard
+    planung-aufgaben.tsx      Die Liste, offen und erledigt getrennt
+    planung-kalender.tsx      Monatsraster mit Ziehen und Fallenlassen
+    einrichtung-hinweis.tsx   „Migration fehlt" statt stillem Ausblenden
     gva-linien-karte.tsx      Aktive Trades auf der Startseite
     trading/  essen/  gym/    Bereichs-Bausteine
     ui.tsx                    Card, Button, Badge, Stat, Bar
@@ -203,6 +276,10 @@ src/
     gewohnheiten.ts           Laden und Zusammensetzen
     gewohnheiten-zaehlung.ts  Serie, Wochenzahl, Monatsraster (DB-frei)
     gewohnheiten-actions.ts   Eintragen, anlegen, ändern, archivieren
+    planung.ts                Projekte und Aufgaben laden
+    planung-kalender.ts       Monatsraster und Dringlichkeit (DB-frei)
+    planung-actions.ts        Anlegen, abhaken, verschieben, löschen
+    oberflaeche.ts            Hausfarbe als CSS-Variablen
     actions.ts                Server Actions (Essen, Gym-Verlauf, Kacheln)
     supabase/                 Browser-, Server-, Gym-, Menu- und Trading-Client
 tools/checks/                 Kontrollskripte, mit reinem Node ausführbar

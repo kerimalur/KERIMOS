@@ -4,6 +4,7 @@ import "./globals.css";
 import { Nav } from "@/components/nav";
 import { AmbientBg } from "@/components/ambient-bg";
 import { createClient } from "@/lib/supabase/server";
+import { ladeOberflaeche, akzentVariablen, STANDARD_OBERFLAECHE } from "@/lib/oberflaeche";
 
 // Sora für Überschriften und grosse Zahlen, Manrope für Fliesstext,
 // Plex Mono überall dort, wo Ziffern untereinander stehen sollen.
@@ -38,11 +39,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
+  // Die Hausfarbe wird als CSS-Variable am <html> gesetzt; Tailwind zeigt
+  // fuer `accent` darauf (siehe tailwind.config.ts). Ohne Anmeldung gilt
+  // der Standard — die Anmeldeseite soll keine Abfrage ausloesen.
+  const oberflaeche = user ? await ladeOberflaeche() : STANDARD_OBERFLAECHE;
+
   return (
     <html lang="de-CH"
+      style={akzentVariablen(oberflaeche.akzent) as React.CSSProperties}
       className={`${sora.variable} ${manrope.variable} ${plexMono.variable}`}>
       <body className="min-h-screen font-sans">
-        <AmbientBg />
+        {oberflaeche.ambient && <AmbientBg />}
         <div className="kt-content">
           {user && <Nav email={user.email ?? undefined} />}
           <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
