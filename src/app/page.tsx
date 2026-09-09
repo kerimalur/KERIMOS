@@ -8,10 +8,8 @@ import { DisplayModeToggle } from "@/components/display-mode-toggle";
 import { Logo } from "@/components/logo";
 import { QuickSearch } from "@/components/quick-search";
 import { Button, Card } from "@/components/ui";
-import { WeeklyGoalsCard } from "@/components/weekly-goals";
 import { seedLinks } from "@/lib/actions";
 import { fetchModusKennzahlen } from "@/lib/modus-kennzahlen";
-import { fetchWeeklyGoals } from "@/lib/weekly-goals";
 import { MODE_ORDER, MODE_DIRECT, MODE_AUS } from "@/lib/modes";
 import type { NavLink } from "@/lib/types";
 
@@ -66,8 +64,6 @@ export default async function Start() {
     );
   }
 
-  const wochenpuls = await fetchWeeklyGoals();
-
   const gruppen = new Map<string, NavLink[]>();
   for (const l of links) {
     // Ausgeblendete Gruppen ("Geld", "Zeit") bleiben in der Datenbank stehen,
@@ -104,14 +100,16 @@ export default async function Start() {
         </div>
       </div>
 
-      <div className="mb-6">
-        <WeeklyGoalsCard data={wochenpuls} />
-      </div>
+      {/* Die Gewohnheiten stehen zuoberst, weil sie das Einzige sind, was
+          diese Seite von einem gedrueckt werden WILL. Alles darunter ist
+          Anzeige. Die Backtest-Trades haengen als gezaehlte Zeile mit drin —
+          eine eigene Karte fuer eine einzige Zahl war die Zersplitterung,
+          die die Seite unlesbar gemacht hat.
 
-      {/* Was heute noch offen ist. Jede Karte blendet sich selbst aus, wenn
-          nichts ansteht - dann steht hier schlicht nichts. */}
+          Jede Karte blendet sich selbst aus, wenn nichts ansteht - dann
+          steht hier schlicht nichts. */}
       <div className="mb-7 space-y-3">
-        <GewohnheitenKarte
+        <GewohnheitenKarte mitBacktest
           leer="Noch keine Gewohnheit. Leg die erste an — es dauert zehn Sekunden." />
         <GvaLinienKarte />
         <GewichtHeute />

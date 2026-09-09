@@ -269,68 +269,6 @@ export async function fetchHistory(limit = 40): Promise<HistorySession[]> {
 
 /** Gesamtzahlen für die Fortschritt-Seite. */
 
-/** Abgeschlossene Einheiten seit einem Datum - zum Abgleich mit dem Wochenziel. */
-
-
-export interface WeeklySteps {
-  /** Summe der Schritte von Wochenbeginn bis einschliesslich `bis`. */
-  total: number;
-  /** Wochenziel = Tagesziel × 7 - konsistent mit Kraft/Ausdauer, die auch
-   *  Wochensummen gegen ein Wochenziel zeigen, nicht Tageswerte gegen ein
-   *  Tagesziel. */
-  ziel: number;
-}
-
-const STANDARD_SCHRITTE_ZIEL = 10000;
-
-/**
- * Schritte der laufenden Woche gegen das Wochenziel (Tagesziel × 7).
- *
- * Tage, die die Uhr noch nicht synchronisiert hat, tragen 0 bei - das ist
- * gewollt: die Woche ist noch nicht vorbei, "70'000 Ziel" bleibt so lange
- * unerreicht, bis wirklich genug Tage etwas beigetragen haben.
- *
- * WICHTIG: eine leere Woche ist KEIN Grund, null zurückzugeben.
- *
- * Vorher stand hier ein `if (zeilen.length === 0) return null`, und damit
- * verschwand die Schritte-Zeile auf der Startseite jeden Montagmorgen
- * vollständig - genau dann, wenn die Woche noch aus einem einzigen Tag
- * besteht, den die Uhr erst am Abend abliefert. Eine fehlende Zeile sieht
- * aus wie ein Defekt; "0 von 70'000" ist dagegen die Wahrheit und zeigt
- * nebenbei, dass noch nichts synchronisiert wurde. Null bleibt deshalb dem
- * echten Ausfall vorbehalten: keine Gym-Datenbank oder ein Abfragefehler.
- */
-export async function fetchWeeklySteps(von: string, bis: string): Promise<WeeklySteps | null> {
-  const supabase = createGymClient();
-  if (!supabase) return null;
-
-  // Zwei Abfragen, weil das Tagesziel nicht an der laufenden Woche hängen
-  // darf: am Montag früh steht dort noch keine Zeile, und das Ziel wäre dann
-  // stillschweigend die Standardvorgabe statt der zuletzt gesetzten.
-  const [{ data, error }, { data: letztesZiel }] = await Promise.all([
-    supabase.from("garmin_daily")
-      .select("schritte, schritte_ziel")
-      .gte("datum", von).lte("datum", bis)
-      .order("datum", { ascending: false }),
-    supabase.from("garmin_daily")
-      .select("schritte_ziel")
-      .gt("schritte_ziel", 0)
-      .order("datum", { ascending: false }).limit(1),
-  ]);
-
-  if (error) return null;
-
-  const zeilen = data ?? [];
-  const total = zeilen.reduce((s, z) => s + Number(z.schritte ?? 0), 0);
-  const tagesZiel =
-    zeilen.find((z) => Number(z.schritte_ziel ?? 0) > 0)?.schritte_ziel
-    ?? letztesZiel?.[0]?.schritte_ziel;
-
-  return {
-    total,
-    ziel: (Number(tagesZiel) || STANDARD_SCHRITTE_ZIEL) * 7,
-  };
-}
 
 /** Eine Zeile aus v_exercise_progress: der schwerste Satz einer Einheit. */
 

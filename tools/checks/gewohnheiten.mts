@@ -1,12 +1,18 @@
 // Kontrollwerte für die Zählung der Gewohnheiten.
 // Aufruf:  npx -y tsx tools/checks/gewohnheiten.mts
 //
-// Der wichtigste Test steht unten: die Serie darf NICHT auf null fallen, nur
-// weil heute noch nichts abgehakt ist. Genau das würde man erst am Abend
-// merken, wenn die Zahl seit dem Morgen falsch dasteht — und es ist die eine
-// Zahl, wegen der man den Tracker überhaupt anschaut.
+// Drei Dinge stehen hier auf dem Prüfstand, und alle drei würde man im
+// Betrieb erst merken, wenn die Zahl seit Tagen falsch ist:
+//
+//   1. Die Serie darf NICHT auf null fallen, nur weil heute noch nichts
+//      eingetragen ist. Sie zählt Tage, nicht Einheiten.
+//   2. Die Wochenzahl zählt Einheiten: Kraft am Morgen und Ausdauer am
+//      Abend sind zwei, nicht eine.
+//   3. Das Monatsraster beginnt am Montag und deckt den Monat vollständig
+//      ab — auch den Februar und auch über den Jahreswechsel.
 import {
-  streakBis, baueRaster, zaehleZeitraum, RASTER_WOCHEN,
+  streakBis, zaehleZeitraum, zaehleVarianten, tageAus, baueMonatsRaster,
+  monatPlus, monatsStart, monatsLabel, type Eintrag,
 } from "../../src/lib/gewohnheiten-zaehlung";
 
 let fails = 0;
@@ -19,66 +25,100 @@ function check(name: string, actual: unknown, expected: unknown) {
   );
 }
 
-/* ------------------------------------------------------------- Die Serie */
+/** Kurzschreibweise: "2026-09-08" oder "2026-09-08/Push". */
+const e = (...roh: string[]): Eintrag[] =>
+  roh.map((r) => {
+    const [datum, variante] = r.split("/");
+    return { datum, variante: variante ?? null };
+  });
 
 // Mittwoch, 9. September 2026. Montag dieser Woche ist der 7.
 const HEUTE = "2026-09-09";
 const MONTAG = "2026-09-07";
 
-const tage = (...d: string[]) => new Set(d);
+/* ------------------------------------------------------------- Die Serie */
 
-check("heute abgehakt, davor zwei Tage → 3",
-  streakBis(tage("2026-09-09", "2026-09-08", "2026-09-07"), HEUTE), 3);
+check("heute eingetragen, davor zwei Tage → 3",
+  streakBis(tageAus(e("2026-09-09", "2026-09-08", "2026-09-07")), HEUTE), 3);
 
 // Der Kernfall: heute noch offen, gestern und vorgestern getan.
 check("heute offen, gestern getan → 2 (nicht 0)",
-  streakBis(tage("2026-09-08", "2026-09-07"), HEUTE), 2);
+  streakBis(tageAus(e("2026-09-08", "2026-09-07")), HEUTE), 2);
 
 check("gestern ausgelassen → 0",
-  streakBis(tage("2026-09-07", "2026-09-06"), HEUTE), 0);
+  streakBis(tageAus(e("2026-09-07", "2026-09-06")), HEUTE), 0);
 
-check("nie getan → 0", streakBis(tage(), HEUTE), 0);
+check("nie getan → 0", streakBis(tageAus([]), HEUTE), 0);
 
-check("nur heute → 1", streakBis(tage("2026-09-09"), HEUTE), 1);
-
-// Über den Monatswechsel: der 1. September folgt auf den 31. August.
 check("Serie über den Monatswechsel → 3",
-  streakBis(tage("2026-09-01", "2026-08-31", "2026-08-30"), "2026-09-01"), 3);
+  streakBis(tageAus(e("2026-09-01", "2026-08-31", "2026-08-30")), "2026-09-01"), 3);
 
-/* -------------------------------------------------------------- Zeitraum */
+// Zwei Einheiten an einem Tag sind EIN Tag Serie, nicht zwei.
+check("Push und Ausdauer am selben Tag → Serie 1",
+  streakBis(tageAus(e("2026-09-09/Push", "2026-09-09/Ausdauer")), HEUTE), 1);
 
-const woche = tage("2026-09-07", "2026-09-09", "2026-09-14");
+/* ------------------------------------------------ Zeitraum und Varianten */
+
 check("diese Woche zählt nur bis heute",
-  zaehleZeitraum(woche, MONTAG, HEUTE), 2);
+  zaehleZeitraum(e("2026-09-07", "2026-09-09", "2026-09-14"), MONTAG, HEUTE), 2);
+
+// Hier zählen Einheiten, nicht Tage — das ist der Unterschied zur Serie.
+check("zwei Einheiten am selben Tag zählen doppelt",
+  zaehleZeitraum(e("2026-09-09/Push", "2026-09-09/Ausdauer"), MONTAG, HEUTE), 2);
 
 check("leerer Zeitraum → 0",
-  zaehleZeitraum(tage("2026-01-01"), MONTAG, HEUTE), 0);
+  zaehleZeitraum(e("2026-01-01"), MONTAG, HEUTE), 0);
 
-/* ---------------------------------------------------------------- Raster */
+const varianten = zaehleVarianten(
+  e("2026-09-07/Push", "2026-09-08/Pull", "2026-09-09/Push", "2026-09-14/Push"),
+  MONTAG, HEUTE);
+check("Push zweimal diese Woche", varianten.get("Push"), 2);
+check("Pull einmal diese Woche", varianten.get("Pull"), 1);
+check("die Einheit von naechster Woche zaehlt nicht mit",
+  [...varianten.values()].reduce((a, b) => a + b, 0), 3);
 
-const raster = baueRaster(tage("2026-09-08"), HEUTE, MONTAG);
+/* --------------------------------------------------------------- Monate */
 
-check("Raster hat vier volle Wochen", raster.length, RASTER_WOCHEN * 7);
-check("Raster beginnt drei Wochen vor dem Montag", raster[0].datum, "2026-08-17");
-check("Raster endet am Sonntag dieser Woche",
-  raster[raster.length - 1].datum, "2026-09-13");
+check("Monatsstart", monatsStart("2026-09-09"), "2026-09-01");
+check("ein Monat zurueck", monatPlus("2026-09-01", -1), "2026-08-01");
+check("ueber den Jahreswechsel zurueck", monatPlus("2026-01-01", -1), "2025-12-01");
+check("ueber den Jahreswechsel vor", monatPlus("2026-12-01", 1), "2027-01-01");
+check("zwoelf Monate zurueck", monatPlus("2026-09-01", -12), "2025-09-01");
+check("Beschriftung", monatsLabel("2026-09-01"), "September 2026");
 
-// Die Spalten müssen Wochentage sein: jedes siebte Feld ist wieder ein Montag.
-check("jede Zeile beginnt am Montag",
-  [raster[0].datum, raster[7].datum, raster[14].datum, raster[21].datum],
-  ["2026-08-17", "2026-08-24", "2026-08-31", "2026-09-07"]);
+/* --------------------------------------------------------- Monatsraster */
 
-check("der abgehakte Tag ist markiert",
-  raster.find((t) => t.datum === "2026-09-08")?.getan, true);
+const raster = baueMonatsRaster(e("2026-09-08/Push", "2026-09-08/Ausdauer"),
+  "2026-09-01", HEUTE);
+
+// September 2026 beginnt an einem Dienstag → ein Vorlauftag (31. August).
+check("Raster beginnt am Montag", raster[0].datum, "2026-08-31");
+check("Vorlauftag ist ausserhalb", raster[0].ausserhalb, true);
+check("volle Wochen", raster.length % 7, 0);
+
+const drin = raster.filter((t) => !t.ausserhalb);
+check("September hat 30 Tage", drin.length, 30);
+check("erster im Monat", drin[0].datum, "2026-09-01");
+check("letzter im Monat", drin[drin.length - 1].datum, "2026-09-30");
+
+check("zwei Einheiten an einem Tag stehen beide im Raster",
+  raster.find((t) => t.datum === "2026-09-08")?.eintraege.length, 2);
 
 check("heute ist noch keine Zukunft",
   raster.find((t) => t.datum === HEUTE)?.zukunft, false);
-
-check("morgen zählt als Zukunft",
+check("morgen zaehlt als Zukunft",
   raster.find((t) => t.datum === "2026-09-10")?.zukunft, true);
-
 check("kein vergangener Tag ist Zukunft",
   raster.filter((t) => t.datum <= HEUTE && t.zukunft).length, 0);
+
+// Der Februar ist der Fall, an dem eine selbstgebaute Datumsrechnung scheitert.
+const feb = baueMonatsRaster([], "2028-02-01", HEUTE)
+  .filter((t) => !t.ausserhalb);
+check("Februar 2028 ist ein Schaltjahr", feb.length, 29);
+
+const feb27 = baueMonatsRaster([], "2027-02-01", HEUTE)
+  .filter((t) => !t.ausserhalb);
+check("Februar 2027 hat 28 Tage", feb27.length, 28);
 
 console.log(fails === 0 ? "\nAlles grün." : `\n${fails} Abweichung(en).`);
 process.exit(fails === 0 ? 0 : 1);

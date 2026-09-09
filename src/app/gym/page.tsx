@@ -65,14 +65,14 @@ export default async function GymPage() {
 
   return (
     <>
-      {/* Der Haken ist der ganze tägliche Umgang mit diesem Bereich. Deshalb
-          steht er oben und ist das Erste, was man drücken kann. */}
+      {/* Der Eintrag ist der ganze tägliche Umgang mit diesem Bereich.
+          Deshalb steht er oben und ist das Erste, was man drücken kann. */}
       <GewohnheitenKarte
         bereich="gym"
-        titel="War ich da"
+        titel="Was war"
         leer={
           "Noch keine Gewohnheit im Gym-Bereich. Leg unter Gewohnheiten eine " +
-          "an und stell sie auf „Gym“ — dann steht der Haken hier."
+          "an und stell sie auf „Gym“ — dann trägst du hier ein."
         } />
 
       <GymWeight entries={(weightData ?? []) as BodyWeightEntry[]} />
@@ -88,8 +88,9 @@ export default async function GymPage() {
           <Link href="/gym/verlauf" className="text-accent-soft hover:underline">
             Verlauf
           </Link>{" "}
-          samt Sätzen und Gewichten. Der Haken oben zählt daneben nur, wie oft
-          du da warst — er ersetzt nicht, was die Uhr aufzeichnet.
+          samt Sätzen und Gewichten. Der Eintrag oben zählt daneben nur, wie
+          oft und was du gemacht hast — Push, Pull oder Ausdauer. Vergangene
+          Einheiten trägst du dort über den Tag nach, auch Wochen später.
         </p>
       </Card>
     </>

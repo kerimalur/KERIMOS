@@ -9,12 +9,12 @@ import { heuteISO } from "@/lib/time";
  *
  * Eigene Datei statt `actions.ts`: Next bündelt eine `"use server"`-Datei als
  * Einheit — wer eine Aktion importiert, zieht alle mit, und die dortige
- * Sammlung ist auf über 130 Aktionen gewachsen.
+ * Sammlung ist über Jahre gewachsen.
  */
 
 const txt = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 
-/** Startseite, Gewohnheiten-Seite und Gym zeigen dieselben Haken. */
+/** Startseite, Gewohnheiten-Seite und Gym zeigen dieselben Einträge. */
 function aktualisieren() {
   revalidatePath("/");
   revalidatePath("/gewohnheiten");
@@ -29,43 +29,99 @@ async function zugang() {
   return { supabase, userId };
 }
 
+/** Ein Datum, das die Datenbank annimmt — sonst nichts. */
+const istDatum = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s);
+
 /**
- * Den Haken für einen Tag setzen oder wegnehmen.
+ * Einen Tag eintragen oder wieder wegnehmen.
  *
  * Der gewünschte Zustand kommt aus dem Formular, statt ihn hier aus der
  * Datenbank zu lesen: so kann ein doppelter Klick nichts umdrehen, was der
  * erste gerade gesetzt hat.
  *
  * Ohne `datum` gilt heute. Der Nachtrag für einen vergangenen Tag schickt das
- * Datum mit — man merkt am Mittwoch, dass Montag fehlt.
+ * Datum mit — man merkt am Mittwoch, dass Montag fehlt. In die Zukunft geht
+ * nichts: ein Haken für übermorgen wäre keine Aufzeichnung, sondern ein Vorsatz.
+ *
+ * `variante` unterscheidet Push von Pull. Leer heisst „keine" und ist bei
+ * Gewohnheiten ohne Unterteilung der Normalfall.
  */
 export async function gewohnheitAbhaken(fd: FormData) {
   const habitId = txt(fd, "id");
   if (!habitId) return;
-  const datum = txt(fd, "datum") || heuteISO();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(datum)) return;
 
+  const datum = txt(fd, "datum") || heuteISO();
+  if (!istDatum(datum) || datum > heuteISO()) return;
+
+  const variante = txt(fd, "variante") || null;
   const { supabase, userId } = await zugang();
 
   if (txt(fd, "getan")) {
-    // upsert statt insert: ein zweiter Klick auf denselben Tag ist kein
-    // Fehler, sondern dieselbe Aussage.
+    // upsert statt insert: derselbe Tag zweimal gedrückt ist kein Fehler,
+    // sondern dieselbe Aussage. Der eindeutige Index deckt Tag UND Variante
+    // ab, deshalb steht er hier als Konfliktziel.
     const { error } = await supabase.from("habit_entries").upsert(
-      { habit_id: habitId, user_id: userId, entry_date: datum },
-      { onConflict: "habit_id,entry_date" },
+      { habit_id: habitId, user_id: userId, entry_date: datum, variante },
+      { onConflict: "habit_id,entry_date,variante" },
     );
-    if (error) throw new Error(`Gewohnheit abhaken: ${error.message}`);
+    if (error) throw new Error(`Gewohnheit eintragen: ${error.message}`);
   } else {
-    await supabase.from("habit_entries").delete()
+    let weg = supabase.from("habit_entries").delete()
       .eq("habit_id", habitId).eq("entry_date", datum).eq("user_id", userId);
+    // Ohne Variante ist die Zeile die mit NULL — `eq` würde dort nie treffen.
+    weg = variante === null ? weg.is("variante", null) : weg.eq("variante", variante);
+    await weg;
   }
 
   aktualisieren();
 }
 
+/**
+ * Nimmt alles weg, was an einem Tag steht.
+ *
+ * Der Weg für das Raster: dort drückt man auf einen Tag, nicht auf eine
+ * einzelne Variante. Ein Tag mit Push UND Ausdauer soll mit einem Druck leer
+ * sein, statt zweimal dieselbe Frage zu stellen.
+ */
+export async function gewohnheitTagLeeren(fd: FormData) {
+  const habitId = txt(fd, "id");
+  const datum = txt(fd, "datum");
+  if (!habitId || !istDatum(datum)) return;
+
+  const { supabase, userId } = await zugang();
+  await supabase.from("habit_entries").delete()
+    .eq("habit_id", habitId).eq("entry_date", datum).eq("user_id", userId);
+
+  aktualisieren();
+}
+
+/** Aus „Push, Pull, Ausdauer" wird die Liste. Leeres und Dubletten fallen weg. */
+function varianten(roh: string): string[] {
+  const gesehen = new Set<string>();
+  return roh.split(",").map((v) => v.trim()).filter((v) => {
+    if (!v || gesehen.has(v.toLowerCase())) return false;
+    gesehen.add(v.toLowerCase());
+    return true;
+  });
+}
+
+/** Gemeinsame Felder von Anlegen und Ändern. */
+function felder(fd: FormData) {
+  const ziel = Number(txt(fd, "ziel_pro_woche"));
+  return {
+    name: txt(fd, "name"),
+    icon: txt(fd, "icon") || null,
+    color: txt(fd, "color") || "#9A8C74",
+    ziel_pro_woche: Number.isFinite(ziel) ? Math.min(Math.max(ziel, 0), 7) : 0,
+    bereich: txt(fd, "bereich") || "allgemein",
+    varianten: varianten(txt(fd, "varianten")),
+    mit_datum: txt(fd, "mit_datum") === "1",
+  };
+}
+
 export async function gewohnheitAnlegen(fd: FormData) {
-  const name = txt(fd, "name");
-  if (!name) return;
+  const werte = felder(fd);
+  if (!werte.name) return;
 
   const { supabase, userId } = await zugang();
 
@@ -76,16 +132,8 @@ export async function gewohnheitAnlegen(fd: FormData) {
   const naechste = Number(
     ((letzte ?? []) as { sort_order: number }[])[0]?.sort_order ?? 0) + 1;
 
-  const ziel = Number(txt(fd, "ziel_pro_woche"));
-  const { error } = await supabase.from("habits").insert({
-    user_id: userId,
-    name,
-    icon: txt(fd, "icon") || null,
-    color: txt(fd, "color") || "#9A8C74",
-    ziel_pro_woche: Number.isFinite(ziel) ? Math.min(Math.max(ziel, 0), 7) : 0,
-    bereich: txt(fd, "bereich") || "allgemein",
-    sort_order: naechste,
-  });
+  const { error } = await supabase.from("habits")
+    .insert({ ...werte, user_id: userId, sort_order: naechste });
   if (error) throw new Error(`Gewohnheit anlegen: ${error.message}`);
 
   aktualisieren();
@@ -93,26 +141,19 @@ export async function gewohnheitAnlegen(fd: FormData) {
 
 export async function gewohnheitAendern(fd: FormData) {
   const id = txt(fd, "id");
-  const name = txt(fd, "name");
-  if (!id || !name) return;
+  const werte = felder(fd);
+  if (!id || !werte.name) return;
 
   const { supabase, userId } = await zugang();
-  const ziel = Number(txt(fd, "ziel_pro_woche"));
-
-  const { error } = await supabase.from("habits").update({
-    name,
-    icon: txt(fd, "icon") || null,
-    color: txt(fd, "color") || "#9A8C74",
-    ziel_pro_woche: Number.isFinite(ziel) ? Math.min(Math.max(ziel, 0), 7) : 0,
-    bereich: txt(fd, "bereich") || "allgemein",
-  }).eq("id", id).eq("user_id", userId);
+  const { error } = await supabase.from("habits").update(werte)
+    .eq("id", id).eq("user_id", userId);
   if (error) throw new Error(`Gewohnheit ändern: ${error.message}`);
 
   aktualisieren();
 }
 
 /**
- * Archivieren, nicht löschen: die abgehakten Tage bleiben stehen. Wer eine
+ * Archivieren, nicht löschen: die eingetragenen Tage bleiben stehen. Wer eine
  * Gewohnheit aufgibt, will trotzdem sehen können, dass er sie ein halbes Jahr
  * lang gehalten hat.
  */

@@ -2,11 +2,12 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { heuteISO, addDays, weekStart as toWeekStart } from "@/lib/time";
 import {
-  streakBis, baueRaster, zaehleZeitraum, type RasterTag,
+  streakBis, zaehleZeitraum, zaehleVarianten, tageAus, baueMonatsRaster,
+  monatsStart, type Eintrag, type RasterTag,
 } from "@/lib/gewohnheiten-zaehlung";
 
 /**
- * Gewohnheiten — ein Haken pro Tag, und die Zählung dazu.
+ * Gewohnheiten — was getan wurde, und wie oft.
  *
  * Ersetzt seit dem 09.09.2026 die Trainingserfassung im Gym-Bereich. Dort
  * wurden Sätze, Gewichte und Muskelgruppen erfasst, um am Ende eine Frage zu
@@ -14,9 +15,15 @@ import {
  * Verhältnis, und was nicht erfasst wird, zählt auch nicht.
  *
  * Der Tracker kennt deshalb nur zwei Dinge: eine Gewohnheit und die Tage, an
- * denen sie getan wurde. Alles, was hier steht — Streak, Wochenzahl, Quote —
- * ist aus diesen Tagen gerechnet und nirgends gespeichert; es gibt keinen
+ * denen sie getan wurde. Alles, was hier steht — Serie, Wochenzahl, Aufteilung
+ * nach Variante — ist daraus gerechnet und nirgends gespeichert; es gibt keinen
  * zweiten Stand, der veralten könnte.
+ *
+ * Zwei Ausbaustufen (Migration 20):
+ *   **Varianten** — beim Gym Push, Pull, Ausdauer. Eine Gewohnheit statt drei,
+ *   damit die Zählung zusammenbleibt und die Aufteilung trotzdem sichtbar ist.
+ *   **mitDatum** — solche Gewohnheiten fragen beim Eintragen nach dem Tag,
+ *   statt still heute zu nehmen. Ein Training trägt man nach, nicht während.
  */
 
 export interface Gewohnheit {
@@ -24,33 +31,50 @@ export interface Gewohnheit {
   name: string;
   icon: string | null;
   farbe: string;
-  /** Angepeilte Tage pro Woche. 0 = kein Ziel, dann wird nur gezählt. */
+  /** Angepeilte Einheiten pro Woche. 0 = kein Ziel, dann wird nur gezählt. */
   zielProWoche: number;
-  /** "gym" steht im Gym-Bereich, alles andere unter /gewohnheiten. */
+  /** "gym" steht im Gym-Bereich, alles andere auf der Startseite. */
   bereich: string;
+  /**
+   * Unterteilungen wie Push / Pull / Ausdauer. Leer heisst: keine, der
+   * Haken steht für sich.
+   */
+  varianten: string[];
+  /**
+   * Fragt beim Eintragen nach Tag (und Variante), statt heute zu nehmen.
+   * Für alles, was man nachträgt statt im Moment abzuhaken.
+   */
+  mitDatum: boolean;
   sortOrder: number;
 }
 
 export interface GewohnheitStand extends Gewohnheit {
-  /** Ist die Gewohnheit heute schon abgehakt? */
+  /** Steht heute schon etwas? */
   heuteGetan: boolean;
-  /** Tage seit Wochenbeginn (Montag). */
+  /** Was heute schon steht — damit der Dialog es wieder wegnehmen kann. */
+  heuteEintraege: Eintrag[];
+  /** Einheiten seit Wochenbeginn (Montag). */
   dieseWoche: number;
-  /** Tage in den letzten 30 Tagen. */
+  /** Aufteilung der Woche nach Variante, häufigste zuerst. */
+  wocheNachVariante: { variante: string; anzahl: number }[];
+  /** Einheiten in den letzten 30 Tagen. */
   dreissigTage: number;
-  /** Tage insgesamt, seit es die Gewohnheit gibt. */
+  /** Einheiten insgesamt. */
   gesamt: number;
-  /** Aufeinanderfolgende Tage bis heute (oder bis gestern, wenn heute offen). */
+  /** Aufeinanderfolgende TAGE bis heute (oder bis gestern, wenn heute offen). */
   streak: number;
-  /**
-   * Vier Kalenderwochen, Montag bis Sonntag, diese Woche zuletzt.
-   * `zukunft` sind die Tage der laufenden Woche, die noch nicht da sind —
-   * sie stehen leer da, statt wie ein Versäumnis auszusehen.
-   */
+  /** Alle Einträge — Grundlage für Raster und Dialog. */
+  eintraege: Eintrag[];
+}
+
+/** Eine Gewohnheit samt dem Monat, der gerade im Raster steht. */
+export interface GewohnheitMitRaster extends GewohnheitStand {
+  /** Erster Tag des angezeigten Monats. */
+  monat: string;
   raster: RasterTag[];
 }
 
-export const GEWOHNHEITEN_SQL = `-- Gewohnheiten: ein Haken pro Tag.
+export const GEWOHNHEITEN_SQL = `-- Gewohnheiten: was getan wurde, und wie oft.
 create table if not exists habits (
   id         uuid primary key default gen_random_uuid(),
   user_id    uuid not null references auth.users(id) on delete cascade,
@@ -60,6 +84,8 @@ create table if not exists habits (
   ziel_pro_woche smallint not null default 0
     check (ziel_pro_woche between 0 and 7),
   bereich    text not null default 'allgemein',
+  varianten  text[] not null default '{}',
+  mit_datum  boolean not null default false,
   sort_order int not null default 0,
   archived   boolean not null default false,
   created_at timestamptz not null default now(),
@@ -78,13 +104,17 @@ create policy own_habits on habits
   with check (auth.uid() = user_id);
 
 create table if not exists habit_entries (
+  id         uuid primary key default gen_random_uuid(),
   habit_id   uuid not null references habits(id) on delete cascade,
   user_id    uuid not null references auth.users(id) on delete cascade,
   entry_date date not null,
+  variante   text,
   note       text,
-  created_at timestamptz not null default now(),
-  primary key (habit_id, entry_date)
+  created_at timestamptz not null default now()
 );
+
+create unique index if not exists idx_habit_entries_eindeutig
+  on habit_entries (habit_id, entry_date, coalesce(variante, ''));
 
 create index if not exists idx_habit_entries_datum
   on habit_entries(habit_id, entry_date desc);
@@ -120,7 +150,7 @@ export async function ladeGewohnheiten(
 
   let frage = supabase
     .from("habits")
-    .select("id, name, icon, color, ziel_pro_woche, bereich, sort_order")
+    .select("id, name, icon, color, ziel_pro_woche, bereich, varianten, mit_datum, sort_order")
     .eq("archived", false);
   if (bereich !== null) frage = frage.eq("bereich", bereich);
 
@@ -128,9 +158,12 @@ export async function ladeGewohnheiten(
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: true });
 
-  // 42P01 = Tabelle fehlt. Jeder andere Fehler wäre etwas anderes und soll
-  // nicht als „noch nicht eingerichtet" durchgehen.
-  if (error) return { gewohnheiten: [], tabelleFehlt: error.code === "42P01" };
+  // 42P01 = Tabelle fehlt, 42703 = Spalte fehlt (Migration 20 noch nicht
+  // gelaufen). Beides heisst „noch nicht eingerichtet"; jeder andere Fehler
+  // wäre etwas anderes und soll nicht als solcher durchgehen.
+  if (error) {
+    return { gewohnheiten: [], tabelleFehlt: ["42P01", "42703"].includes(error.code) };
+  }
 
   const gewohnheiten = ((rows ?? []) as unknown as Record<string, unknown>[]).map(
     (h): Gewohnheit => ({
@@ -140,23 +173,28 @@ export async function ladeGewohnheiten(
       farbe: String(h.color ?? "#9A8C74"),
       zielProWoche: Number(h.ziel_pro_woche ?? 0),
       bereich: String(h.bereich ?? "allgemein"),
+      varianten: Array.isArray(h.varianten) ? h.varianten.map(String) : [],
+      mitDatum: h.mit_datum === true,
       sortOrder: Number(h.sort_order ?? 0),
     }),
   );
 
   if (gewohnheiten.length === 0) return { gewohnheiten: [], tabelleFehlt: false };
 
-  const { data: eintraege } = await supabase
+  const { data: rohe } = await supabase
     .from("habit_entries")
-    .select("habit_id, entry_date")
+    .select("habit_id, entry_date, variante")
     .in("habit_id", gewohnheiten.map((h) => h.id));
 
-  const tage = new Map<string, Set<string>>();
-  for (const e of ((eintraege ?? []) as unknown as Record<string, unknown>[])) {
+  const proGewohnheit = new Map<string, Eintrag[]>();
+  for (const e of ((rohe ?? []) as unknown as Record<string, unknown>[])) {
     const id = String(e.habit_id);
-    const set = tage.get(id) ?? new Set<string>();
-    set.add(String(e.entry_date));
-    tage.set(id, set);
+    const liste = proGewohnheit.get(id) ?? [];
+    liste.push({
+      datum: String(e.entry_date),
+      variante: e.variante ? String(e.variante) : null,
+    });
+    proGewohnheit.set(id, liste);
   }
 
   const heute = heuteISO();
@@ -165,18 +203,56 @@ export async function ladeGewohnheiten(
 
   return {
     tabelleFehlt: false,
-    gewohnheiten: gewohnheiten.map((h) => {
-      const getan = tage.get(h.id) ?? new Set<string>();
+    gewohnheiten: gewohnheiten.map((h) =>
+      stand(h, proGewohnheit.get(h.id) ?? [], heute, wochenstart, vorDreissig)),
+  };
+}
 
-      return {
-        ...h,
-        heuteGetan: getan.has(heute),
-        dieseWoche: zaehleZeitraum(getan, wochenstart, heute),
-        dreissigTage: zaehleZeitraum(getan, vorDreissig, heute),
-        gesamt: getan.size,
-        streak: streakBis(getan, heute),
-        raster: baueRaster(getan, heute, wochenstart),
-      };
-    }),
+function stand(
+  h: Gewohnheit, eintraege: Eintrag[],
+  heute: string, wochenstart: string, vorDreissig: string,
+): GewohnheitStand {
+  const nachVariante = zaehleVarianten(eintraege, wochenstart, heute);
+
+  return {
+    ...h,
+    eintraege,
+    heuteGetan: eintraege.some((e) => e.datum === heute),
+    heuteEintraege: eintraege.filter((e) => e.datum === heute),
+    dieseWoche: zaehleZeitraum(eintraege, wochenstart, heute),
+    wocheNachVariante: [...nachVariante.entries()]
+      .filter(([v]) => v !== "")
+      .map(([variante, anzahl]) => ({ variante, anzahl }))
+      .sort((a, b) => b.anzahl - a.anzahl || a.variante.localeCompare(b.variante)),
+    dreissigTage: zaehleZeitraum(eintraege, vorDreissig, heute),
+    gesamt: eintraege.length,
+    streak: streakBis(tageAus(eintraege), heute),
+  };
+}
+
+/**
+ * Dieselben Gewohnheiten, dazu das Raster eines bestimmten Monats.
+ *
+ * @param monat Irgendein Tag des Monats. Fehlt er, gilt der laufende.
+ */
+export async function ladeGewohnheitenMitRaster(monat?: string): Promise<{
+  gewohnheiten: GewohnheitMitRaster[];
+  tabelleFehlt: boolean;
+  monat: string;
+}> {
+  const { gewohnheiten, tabelleFehlt } = await ladeGewohnheiten();
+  const heute = heuteISO();
+  const gewaehlt = monatsStart(
+    monat && /^\d{4}-\d{2}/.test(monat) ? monat : heute,
+  );
+
+  return {
+    tabelleFehlt,
+    monat: gewaehlt,
+    gewohnheiten: gewohnheiten.map((h) => ({
+      ...h,
+      monat: gewaehlt,
+      raster: baueMonatsRaster(h.eintraege, gewaehlt, heute),
+    })),
   };
 }

@@ -1,10 +1,14 @@
 import Link from "next/link";
 import { ladeGewohnheiten, type GewohnheitStand } from "@/lib/gewohnheiten";
 import { gewohnheitAbhaken } from "@/lib/gewohnheiten-actions";
+import { GewohnheitenDialog } from "@/components/gewohnheiten-dialog";
 import { Card, CardTitle, cx } from "@/components/ui";
+import { heuteISO, weekStart as toWeekStart } from "@/lib/time";
+import { tradingConfigured, WEEKLY_BACKTEST_ZIEL } from "@/lib/supabase/trading";
+import { fetchWeeklyNativeBacktestCount } from "@/lib/supabase/backtest";
 
 /**
- * Die Gewohnheiten als eine Reihe Haken — der ganze tägliche Umgang mit dem
+ * Die Gewohnheiten als eine Reihe Zeilen — der ganze tägliche Umgang mit dem
  * Tracker besteht aus einem Druck pro Zeile.
  *
  * Rechts steht die Zahl, wegen der es den Tracker gibt: wie oft diese Woche.
@@ -12,103 +16,199 @@ import { Card, CardTitle, cx } from "@/components/ui";
  * Ziel zu erfinden, nur damit die Anzeige vollständig aussieht, macht aus
  * einer Beobachtung eine Bewertung.
  *
+ * Zwei Arten von Zeilen, und das ist Absicht:
+ *
+ * **Selbst eingetragene** — ein Druck hakt heute ab. Gewohnheiten mit Datum
+ * oder Varianten öffnen stattdessen den Dialog, weil „heute, ohne nähere
+ * Angabe" bei einem Training schlicht falsch wäre.
+ *
+ * **Automatisch gezählte** — die Backtest-Trades ganz unten. Sie stehen hier
+ * und nicht in einer eigenen Karte daneben: es ist dieselbe Frage („wie oft
+ * diese Woche") und dieselbe Zeile. Eine zweite Karte nur für eine einzige
+ * Zahl war genau die Zersplitterung, die die Startseite unlesbar macht.
+ * Gedrückt wird sie nicht — was gezählt wird, hakt man nicht ab.
+ *
  * @param bereich Nur Gewohnheiten dieses Bereichs (z. B. "gym"), oder alle.
  * @param titel   Überschrift der Karte.
  * @param leer    Was steht da, wenn es keine Gewohnheit gibt. Null blendet
- *                die Karte aus — so verhält sie sich auf der Startseite wie
- *                jede andere Karte dort.
+ *                die Karte aus — so verhält sie sich wie jede andere Karte
+ *                der Startseite.
+ * @param mitBacktest Zeigt die automatisch gezählte Backtest-Zeile.
  */
 export async function GewohnheitenKarte({
-  bereich = null, titel = "Gewohnheiten", leer = null,
+  bereich = null, titel = "Gewohnheiten", leer = null, mitBacktest = false,
 }: {
   bereich?: string | null;
   titel?: string;
   leer?: string | null;
+  mitBacktest?: boolean;
 }) {
-  const { gewohnheiten, tabelleFehlt } = await ladeGewohnheiten(bereich);
+  const heute = heuteISO();
+  const [{ gewohnheiten, tabelleFehlt }, backtest] = await Promise.all([
+    ladeGewohnheiten(bereich),
+    mitBacktest && tradingConfigured()
+      ? fetchWeeklyNativeBacktestCount(toWeekStart(heute), heute)
+      : Promise.resolve(null),
+  ]);
 
   if (tabelleFehlt) return null;
+
+  const backtestZeile = backtest === null ? null : (
+    <GezaehlteZeile
+      name="Backtest-Trades" icon="◈" farbe="#8B94B8"
+      anzahl={backtest} ziel={WEEKLY_BACKTEST_ZIEL} href="/trading/backtest" />
+  );
+
   if (gewohnheiten.length === 0) {
-    if (!leer) return null;
+    if (!leer && !backtestZeile) return null;
     return (
       <Card>
-        <div className="mb-2 flex items-baseline justify-between gap-2">
-          <CardTitle className="mb-0">{titel}</CardTitle>
-          <Link href="/gewohnheiten" className="text-xs text-accent-soft hover:underline">
-            anlegen ↗
-          </Link>
-        </div>
-        <p className="text-sm text-ink-muted">{leer}</p>
+        <Kopf titel={titel} />
+        {leer && <p className="text-sm text-ink-muted">{leer}</p>}
+        {backtestZeile && <ul className="mt-2 space-y-1">{backtestZeile}</ul>}
       </Card>
     );
   }
 
   return (
     <Card>
-      <div className="mb-2 flex items-baseline justify-between gap-2">
-        <CardTitle className="mb-0">{titel}</CardTitle>
-        <Link href="/gewohnheiten" className="text-xs text-accent-soft hover:underline">
-          Verlauf ↗
-        </Link>
-      </div>
-
+      <Kopf titel={titel} />
       <ul className="space-y-1">
         {gewohnheiten.map((h) => (
           <li key={h.id}>
-            <HakenZeile h={h} />
+            <Eintragen h={h} heute={heute} />
           </li>
         ))}
+        {backtestZeile}
       </ul>
     </Card>
   );
 }
 
+function Kopf({ titel }: { titel: string }) {
+  return (
+    <div className="mb-2 flex items-baseline justify-between gap-2">
+      <CardTitle className="mb-0">{titel}</CardTitle>
+      <Link href="/gewohnheiten" className="text-xs text-accent-soft hover:underline">
+        Verlauf ↗
+      </Link>
+    </div>
+  );
+}
+
 /**
- * Eine Zeile, ein Formular. Der gewünschte Zustand steht im Formular, nicht
- * in der Datenbank — ein zweiter Klick nimmt den Haken wieder weg, und zwei
- * schnelle Klicks heben sich sauber auf.
+ * Der Weg zum Eintragen — je nach Gewohnheit ein Druck oder ein Dialog.
+ *
+ * Ein Formular je Zeile statt einem grossen: so schickt der Klick genau eine
+ * Zeile. Der gewünschte Zustand steht im Formular und wird nicht aus der
+ * Datenbank gelesen — zwei schnelle Klicks heben sich dann sauber auf, statt
+ * sich gegenseitig zu überholen.
  */
-export function HakenZeile({ h, datum }: { h: GewohnheitStand; datum?: string }) {
+export function Eintragen({ h, heute }: { h: GewohnheitStand; heute: string }) {
+  if (h.mitDatum || h.varianten.length > 0) {
+    return <GewohnheitenDialog h={h} heute={heute} kind={<Zeile h={h} />} />;
+  }
+
   return (
     <form action={gewohnheitAbhaken}>
       <input type="hidden" name="id" value={h.id} />
-      {datum && <input type="hidden" name="datum" value={datum} />}
-      {/* Leerer Wert heisst "Haken weg" — `txt()` liest ihn als falsch. */}
+      {/* Leerer Wert heisst „Haken weg" — `txt()` liest ihn als falsch. */}
       <input type="hidden" name="getan" value={h.heuteGetan ? "" : "1"} />
-      <button type="submit"
+      <button type="submit" className="w-full text-left">
+        <Zeile h={h} />
+      </button>
+    </form>
+  );
+}
+
+/** Wie eine Zeile aussieht. Ob sie drückt oder öffnet, entscheidet `Eintragen`. */
+function Zeile({ h }: { h: GewohnheitStand }) {
+  const geschafft = h.zielProWoche > 0 && h.dieseWoche >= h.zielProWoche;
+
+  return (
+    <span className={cx(
+      "flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm",
+      "transition duration-150 ease-tactile hover:bg-sand/60 active:scale-[0.99]",
+      h.heuteGetan ? "text-ink" : "text-ink-soft")}>
+      <span aria-hidden
         className={cx(
-          "flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm",
+          "grid h-[22px] w-[22px] shrink-0 place-items-center rounded-lg border text-[12px]",
+          h.heuteGetan
+            ? "border-good/50 bg-good-tint text-good-bright"
+            : "border-line-strong text-transparent")}
+        style={h.heuteGetan ? undefined : { borderColor: h.farbe + "66" }}>
+        ✓
+      </span>
+
+      <span className="min-w-0 flex-1 truncate">
+        {h.icon && <span className="mr-1.5">{h.icon}</span>}
+        {h.name}
+        {/* Die Aufteilung der Woche: „2× Push · 1× Ausdauer". Nur wenn es
+            überhaupt etwas aufzuteilen gibt. */}
+        {h.wocheNachVariante.length > 0 && (
+          <span className="ml-2 text-[11px] text-ink-faint">
+            {h.wocheNachVariante.map((v) => `${v.anzahl}× ${v.variante}`).join(" · ")}
+          </span>
+        )}
+      </span>
+
+      {h.streak > 1 && (
+        <span className="tabular hidden shrink-0 text-[11px] text-ink-faint sm:inline">
+          {h.streak} Tage am Stück
+        </span>
+      )}
+
+      <span className={cx("tabular shrink-0 text-xs",
+        geschafft ? "font-medium text-good" : "text-ink-muted")}>
+        {h.dieseWoche}
+        {h.zielProWoche > 0 && ` / ${h.zielProWoche}`}
+        <span className="ml-1 text-ink-faint">diese Woche</span>
+      </span>
+    </span>
+  );
+}
+
+/**
+ * Eine Zeile, die sich selbst zählt — dieselbe Optik, aber kein Haken.
+ *
+ * Das leere Kästchen der anderen Zeilen fehlt bewusst: es würde zum Drücken
+ * einladen, und ein Druck täte hier nichts. Stattdessen ein Punkt in der
+ * Farbe und ein Pfeil zur Quelle.
+ */
+function GezaehlteZeile({
+  name, icon, farbe, anzahl, ziel, href,
+}: {
+  name: string;
+  icon: string;
+  farbe: string;
+  anzahl: number;
+  ziel: number;
+  href: string;
+}) {
+  return (
+    <li>
+      <Link href={href}
+        className={cx(
+          "flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm",
           "transition duration-150 ease-tactile hover:bg-sand/60 active:scale-[0.99]",
-          h.heuteGetan ? "text-ink" : "text-ink-soft")}>
+          anzahl > 0 ? "text-ink" : "text-ink-soft")}>
         <span aria-hidden
-          className={cx(
-            "grid h-[22px] w-[22px] shrink-0 place-items-center rounded-lg border text-[12px]",
-            h.heuteGetan
-              ? "border-good/50 bg-good-tint text-good-bright"
-              : "border-line-strong text-transparent")}
-          style={h.heuteGetan ? undefined : { borderColor: h.farbe + "66" }}>
-          ✓
+          className="grid h-[22px] w-[22px] shrink-0 place-items-center">
+          <span className="h-2 w-2 rounded-full" style={{ background: farbe }} />
         </span>
 
         <span className="min-w-0 flex-1 truncate">
-          {h.icon && <span className="mr-1.5">{h.icon}</span>}
-          {h.name}
+          <span className="mr-1.5">{icon}</span>
+          {name}
+          <span className="ml-2 text-[11px] text-ink-faint">zählt sich selbst</span>
         </span>
-
-        {h.streak > 1 && (
-          <span className="tabular shrink-0 text-[11px] text-ink-faint">
-            {h.streak} Tage am Stück
-          </span>
-        )}
 
         <span className={cx("tabular shrink-0 text-xs",
-          h.zielProWoche > 0 && h.dieseWoche >= h.zielProWoche
-            ? "font-medium text-good" : "text-ink-muted")}>
-          {h.dieseWoche}
-          {h.zielProWoche > 0 && ` / ${h.zielProWoche}`}
+          anzahl >= ziel ? "font-medium text-good" : "text-ink-muted")}>
+          {anzahl} / {ziel}
           <span className="ml-1 text-ink-faint">diese Woche</span>
         </span>
-      </button>
-    </form>
+      </Link>
+    </li>
   );
 }

@@ -11,7 +11,8 @@ Die Migrationen sind im Supabase-Projekt `fhgrjqvunxbfhujoxmcn` angewandt:
 | `05_time_buckets_and_gaps` | Lebensbereiche, unerfasste Zeit, Wochen-Views, Stundenwert-Matrix |
 | `06_shifts` | Schichten mit Blöcken und Arbeitsweg — **liegt als Datei unter `migrations/`** |
 | … | die Dateien 06–18 unter `migrations/`, jede einmalig im SQL-Editor |
-| `19_habits` | Gewohnheiten und ihre abgehakten Tage — Grundlage von `/gewohnheiten` |
+| `19_habits` | Gewohnheiten und ihre eingetragenen Tage — Grundlage von `/gewohnheiten` |
+| `20_habits_varianten` | Varianten (Push/Pull/Ausdauer), Datumsabfrage, mehrere Einheiten pro Tag |
 
 `06_shifts.sql` ist die erste Migration, die auch im Repository liegt; ab dort
 gilt: Datei im SQL-Editor des Projekts `fhgrjqvunxbfhujoxmcn` ausführen.
