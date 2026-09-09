@@ -14,8 +14,8 @@ export const config = {
   // bekommt er HTML statt JavaScript, die Registrierung scheitert - und
   // ohne Service Worker gibt es überhaupt keine Push-Benachrichtigungen.
   //
-  // Die api/-Endpunkte unten sind ausgenommen, weil sie alle von aussen ohne
-  // Cookies aufgerufen werden (Vercel-Cron bzw. GitHub Actions). Ohne Ausnahme
+  // Der api/-Endpunkt unten ist ausgenommen, weil er von aussen ohne Cookies
+  // aufgerufen wird (GitHub Actions). Ohne Ausnahme
   // landet der Aufruf auf /login, bekommt HTML statt JSON und der Alarm feuert
   // nie. Jeder von ihnen schützt sich selbst über CRON_SECRET.
   //
@@ -26,5 +26,5 @@ export const config = {
   //
   // Muss ein einziges Zeichenketten-Literal sein - Next.js liest den Wert
   // statisch aus, zusammengesetzte Ausdrücke lassen den Build scheitern.
-  matcher: ["/((?!api/garmin-sync|api/gva-alarm|_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  matcher: ["/((?!api/gva-alarm|_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
 };

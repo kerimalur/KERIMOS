@@ -172,7 +172,7 @@ export async function fetchWatchlist(): Promise<WatchlistPair[]> {
  * Die angelegten Kategorien.
  *
  * Leeres Array, wenn die Tabelle noch nicht existiert — die Migration steht
- * unter /einstellungen/trading zum Kopieren, und bis dahin soll die Liste
+ * unter /trading/einstellungen zum Kopieren, und bis dahin soll die Liste
  * einfach ohne Einteilung funktionieren statt eine Fehlerseite zu zeigen.
  */
 export async function fetchKategorien(): Promise<Kategorie[]> {

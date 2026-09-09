@@ -130,7 +130,7 @@ export async function removeWatchlistPair(fd: FormData) {
 /* ------------------------------------------------------------- Kategorien */
 
 /**
- * Kategorien der aktiven Trades — angelegt unter /einstellungen/trading.
+ * Kategorien der aktiven Trades — angelegt unter /trading/einstellungen.
  *
  * Warum es sie gibt: Die Liste auf /trading ist bewusst EINE Liste. Sobald
  * mehr als eine Handvoll Zeilen darin steht, will man sie trotzdem ordnen
@@ -145,7 +145,7 @@ export async function removeWatchlistPair(fd: FormData) {
 /** Alles, was eine Änderung an Kategorien sehen muss. */
 function kategorienAktualisieren() {
   revalidatePath("/trading");
-  revalidatePath("/einstellungen/trading");
+  revalidatePath("/trading/einstellungen");
   revalidatePath("/");
 }
 
@@ -178,7 +178,7 @@ export async function kategorieAnlegen(fd: FormData) {
     if (error.code === "42P01") {
       throw new Error(
         "Die Tabelle trading_kategorien fehlt. Fuehr die Migration aus — sie "
-        + "steht auf /einstellungen/trading unter „Kategorien einrichten“ zum Kopieren.",
+        + "steht auf /trading/einstellungen unter „Kategorien einrichten“ zum Kopieren.",
       );
     }
     // 23505 = doppelter Name.

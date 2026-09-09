@@ -80,7 +80,7 @@ export default async function TradingPage() {
       <Card>
         <div className="mb-3 flex items-baseline justify-between gap-2">
           <CardTitle className="mb-0">Was gerade läuft</CardTitle>
-          <Link href="/einstellungen/trading" className="text-xs text-accent-soft hover:underline">
+          <Link href="/trading/einstellungen" className="text-xs text-accent-soft hover:underline">
             Alarme einstellen ↗
           </Link>
         </div>

@@ -4,10 +4,19 @@ import { heutePlus, weekStart, addDays } from "@/lib/time";
 import type { EssenWoche, WocheTag } from "@/lib/essen-woche";
 
 /**
- * Zugang zur Menüplan-Datenbank. Die Menü-Tabellen liegen im selben
- * Supabase-Projekt wie die Gym-App — deshalb greift ohne eigene MENU_-Variablen
- * automatisch der Gym-Zugang. Eigene MENU_-Variablen sind nur nötig, falls der
- * Menüplan je in ein eigenes Projekt umzieht.
+ * Zugang zur Menüplan-Datenbank.
+ *
+ * Die Menü-Tabellen liegen im selben Supabase-Projekt wie die frühere Gym-App
+ * — deshalb greifen ohne eigene MENU_-Variablen die GYM_-Werte. Der
+ * Gym-Bereich selbst ist am 09.09.2026 aus KerimOS entfernt worden; die
+ * Variablen heissen aber weiter so, weil sie in Vercel unter diesem Namen
+ * stehen. **Sie sind damit die Zugangsdaten des Essens-Bereichs**, auch wenn
+ * der Name das nicht mehr verrät.
+ *
+ * Umbenennen hiesse, sie gleichzeitig hier, in `.env.local`, in
+ * `.env.local.example` und in den Vercel-Einstellungen zu ändern — für einen
+ * schöneren Namen ein Ausfall des Essensplans, sobald eine der Stellen
+ * vergessen geht.
  */
 export function createMenuClient() {
   const url = process.env.MENU_SUPABASE_URL ?? process.env.GYM_SUPABASE_URL;

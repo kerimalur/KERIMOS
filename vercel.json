@@ -1,15 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "regions": ["dub1"],
-  "functions": {
-    "api/garmin-sync.py": {
-      "maxDuration": 60
-    }
-  },
-  "crons": [
-    {
-      "path": "/api/garmin-sync",
-      "schedule": "0 20 * * *"
-    }
+  "regions": [
+    "dub1"
   ]
 }

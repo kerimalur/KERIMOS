@@ -1,5 +1,19 @@
 # Datenbank
 
+> **Stand 09.09.2026 — Radikalschnitt.** KerimOS besteht nur noch aus Trading
+> und Essen. Die Migrationen unten stehen weiterhin hier und ihre Tabellen
+> weiterhin in Supabase: geloescht wurde ausschliesslich Code, keine einzige
+> Zeile Daten. Wer eines der entfernten Module zurueckholt (Tag
+> `vollstand-2026-09-09`), findet sein Schema und seine Daten unveraendert vor.
+>
+> **Aktiv benutzt werden nur noch:** `links` (nur die Bilder der zwei
+> Kacheln), die Anmeldung, die Menue-Tabellen im Projekt "Gymapp Cursor" und
+> die Trading-Tabellen im Projekt kerimtrades.ssg.
+>
+> **Ohne Wirkung, aber unangetastet:** alles zum Zeit-Modul (02, 05, 06, 07,
+> 10, 17), zum Geld-Modul (01, 03), zum Gym (09, 15), zu den Gewohnheiten
+> (19, 20) und zur Planung (21–24).
+
 Die Migrationen sind im Supabase-Projekt `fhgrjqvunxbfhujoxmcn` angewandt:
 
 | Migration | Inhalt |

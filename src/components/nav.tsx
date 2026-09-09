@@ -4,14 +4,13 @@ import { usePathname } from "next/navigation";
 import { cx } from "./ui";
 import { Logo } from "./logo";
 
-// Gym fehlt hier bewusst: dieser Bereich bringt seine eigene Tab-Leiste mit
-// (siehe app/gym/layout.tsx), wie der Essen-Bereich auch. Zwei Navigationen
-// übereinander verwirren mehr, als sie helfen.
+// Essen fehlt hier bewusst: der Bereich bringt seine eigene Tab-Leiste mit
+// (siehe components/essen-tabs.tsx). Zwei Navigationen übereinander
+// verwirren mehr, als sie helfen.
 //
-// Seit dem 09.09.2026 gibt es nur noch EINEN Bereich mit eigener Leiste:
-// Trading. Der Zeit-Bereich (Termine, Rückblick, Schichten) ist entfallen.
-// Die Struktur bleibt trotzdem als Tabelle stehen und wird nicht auf einen
-// festen Trading-Kopf eingedampft — sie kostet nichts und der nächste
+// Seit dem Radikalschnitt vom 09.09.2026 besteht KerimOS aus Trading und
+// Essen. Die Struktur bleibt trotzdem als Tabelle stehen und wird nicht auf
+// einen festen Trading-Kopf eingedampft — sie kostet nichts, und der nächste
 // Bereich mit Unterseiten hängt sich hier ohne Umbau ein.
 type Section = "trading" | null;
 
@@ -37,7 +36,7 @@ interface NavConfig {
 }
 
 /**
- * Trading: fünf Bereiche in EINER Zeile, keine zweite Reihe mehr.
+ * Trading: sechs Bereiche in EINER Zeile, keine zweite Reihe mehr.
  *
  * Die alte Trennung in Haupt- und Nebenabschnitte war die Schwachstelle: bei
  * jeder neuen Seite musste man entscheiden, in welche Reihe sie gehoert, und
@@ -52,11 +51,7 @@ interface NavConfig {
  *   Journal        was habe ich gemacht
  *   Backtest       traegt die Methode ueberhaupt (Auswertung, Kategorien,
  *                  Rueckblick auf die Lage eines vergangenen Handelstages)
- *
- * "Einstellungen" ist am 09.09.2026 hier verschwunden: Alarme, Kategorien und
- * Kanaele stehen jetzt unter /einstellungen/trading, zusammen mit allem
- * anderen, was man einmal einrichtet. Ein Reiter im taeglichen Arbeitsweg
- * fuer etwas, das man alle paar Wochen anfasst, war eine Zeile zu viel.
+ *   Einstellungen  Alarme und der Weg ins Labor
  *
  * Siehe ../../TRADING-UMBAU.md.
  */
@@ -67,14 +62,14 @@ const TRADING: NavConfig = {
     { href: "/trading/ranking", label: "Confluence", auch: ["/trading/confluence"] },
     { href: "/trading/journal", label: "Journal" },
     { href: "/trading/backtest", label: "Backtest" },
+    { href: "/trading/einstellungen", label: "Einstellungen" },
   ],
   secondary: [],
 };
 
 const TRADING_PATHS = ["/trading"];
-// "/", "/links", "/gym", "/gewohnheiten" und "/m/…" gehören zu keinem Bereich -
-// dort zeigt die Navigation nichts bzw. der Bereich bringt seine eigene
-// Leiste mit.
+// "/" und "/m/Essen" gehören zu keinem Bereich - dort zeigt die Navigation
+// nur die Abmelden-Zeile bzw. der Bereich bringt seine eigene Leiste mit.
 
 const SECTION_LABEL: Record<Exclude<Section, null>, string> = {
   trading: "Trading",

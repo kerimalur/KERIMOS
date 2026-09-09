@@ -159,7 +159,7 @@ function liesAlarm(fd: FormData): { id: string; art: Alarmart } | null {
 }
 
 function alarmNeuLaden() {
-  revalidatePath("/einstellungen/trading");
+  revalidatePath("/trading/einstellungen");
   revalidatePath("/trading");
 }
 

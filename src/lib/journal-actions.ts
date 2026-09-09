@@ -617,7 +617,7 @@ export async function konfluenzAnlegen(fd: FormData) {
     throw new Error(`Konfluenz anlegen: ${error.message}`);
   }
 
-  journalAktualisieren(["/einstellungen/trading"]);
+  journalAktualisieren(["/trading/einstellungen"]);
 }
 
 export async function konfluenzLoeschen(fd: FormData) {
@@ -632,7 +632,7 @@ export async function konfluenzLoeschen(fd: FormData) {
   await supabase.from("trading_konfluenzen")
     .delete().eq("id", id).eq("user_id", userId);
 
-  journalAktualisieren(["/einstellungen/trading"]);
+  journalAktualisieren(["/trading/einstellungen"]);
 }
 
 /* ------------------------------------------- Screenshots (27.08.2026) */

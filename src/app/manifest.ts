@@ -11,7 +11,7 @@ export default function manifest(): MetadataRoute.Manifest {
     id: "/",
     name: "KerimOS",
     short_name: "KerimOS",
-    description: "Training, Essen und Trading an einem Ort.",
+    description: "Trading und Essen an einem Ort.",
     // Bewusst die normale Startseite: am Computer die volle Ansicht, auf dem
     // Die Startseite ist auf jedem Gerät dieselbe - kein Umweg mehr.
     start_url: "/",
@@ -27,8 +27,8 @@ export default function manifest(): MetadataRoute.Manifest {
       { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
     shortcuts: [
-      { name: "Gewohnheiten", url: "/gewohnheiten" },
       { name: "Trading", url: "/trading" },
+      { name: "Essen", url: "/m/Essen" },
     ],
   };
 }
