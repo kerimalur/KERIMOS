@@ -152,36 +152,38 @@ export function baueMonatsRaster(
   return tage;
 }
 
-/* ---------------------------------------------------------- Wochenpunkte */
+/* --------------------------------------------------------- Wochenkaestchen */
 
-export interface WochenTag {
-  datum: string;
-  getan: boolean;
-  heute: boolean;
-  /** Tag der laufenden Woche, der noch nicht da ist. */
-  zukunft: boolean;
+export interface Wochenstand {
+  /** So viele Kästchen stehen da — das Wochenziel. 0 = gar keine. */
+  gesamt: number;
+  /** So viele sind gefüllt, höchstens `gesamt`. */
+  gefuellt: number;
+  /** Was über das Ziel hinaus getan wurde. 0, wenn nichts übrig ist. */
+  ueber: number;
 }
 
 /**
- * Die sieben Tage der laufenden Woche, Montag zuerst.
+ * Der Wochenfortschritt als Kästchenreihe.
  *
- * Der Fortschritt einer Gewohnheit als Punktreihe statt als Zahl: „3 von 4"
- * sagt nicht, WELCHE Tage fehlen. Wer sieht, dass Montag und Dienstag leer
- * sind und Freitag ansteht, weiss, ob die Woche noch zu retten ist.
+ * So viele Kästchen, wie das Wochenziel vorgibt — nicht sieben. Sieben Punkte
+ * bei einem Ziel von vier hiessen, dass eine erfüllte Woche dauerhaft zu drei
+ * Siebteln leer aussieht: die Anzeige stellte jede erreichte Woche als Mangel
+ * dar. Vier Kästchen, vier Haken, fertig.
  *
- * @param wochenstart Montag der Woche.
+ * Ohne Ziel (`ziel = 0`) gibt es keine Kästchen. Eines zu erfinden, damit die
+ * Reihe vollständig aussieht, machte aus einer Beobachtung eine Bewertung —
+ * dann steht dort nur die Zahl.
+ *
+ * Was über das Ziel hinausgeht, wird nicht abgeschnitten, sondern getrennt
+ * gezählt: eine fünfte Einheit bei einem Ziel von vier ist keine Nachricht
+ * wert, verschweigen sollte man sie aber auch nicht.
  */
-export function wochenPunkte(
-  eintraege: Eintrag[], wochenstart: string, heute: string,
-): WochenTag[] {
-  const getan = tageAus(eintraege);
-  return Array.from({ length: 7 }, (_, i) => {
-    const datum = addDays(wochenstart, i);
-    return {
-      datum,
-      getan: getan.has(datum),
-      heute: datum === heute,
-      zukunft: datum > heute,
-    };
-  });
+export function wochenKaestchen(dieseWoche: number, ziel: number): Wochenstand {
+  if (ziel <= 0) return { gesamt: 0, gefuellt: 0, ueber: 0 };
+  return {
+    gesamt: ziel,
+    gefuellt: Math.min(dieseWoche, ziel),
+    ueber: Math.max(0, dieseWoche - ziel),
+  };
 }

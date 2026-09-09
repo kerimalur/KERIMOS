@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { heuteISO, addDays, weekStart as toWeekStart } from "@/lib/time";
 import {
   streakBis, zaehleZeitraum, zaehleVarianten, tageAus, baueMonatsRaster,
-  monatsStart, wochenPunkte, type Eintrag, type RasterTag, type WochenTag,
+  monatsStart, wochenKaestchen, type Eintrag, type RasterTag, type Wochenstand,
 } from "@/lib/gewohnheiten-zaehlung";
 
 /**
@@ -65,8 +65,8 @@ export interface GewohnheitStand extends Gewohnheit {
   streak: number;
   /** Alle Einträge — Grundlage für Raster und Dialog. */
   eintraege: Eintrag[];
-  /** Die sieben Tage dieser Woche — die Punktreihe in der Karte. */
-  woche: WochenTag[];
+  /** Die Kästchenreihe in der Karte: so viele, wie das Wochenziel vorgibt. */
+  woche: Wochenstand;
 }
 
 /**
@@ -245,7 +245,8 @@ function stand(
     dreissigTage: zaehleZeitraum(eintraege, vorDreissig, heute),
     gesamt: eintraege.length,
     streak: streakBis(tageAus(eintraege), heute),
-    woche: wochenPunkte(eintraege, wochenstart, heute),
+    woche: wochenKaestchen(
+      zaehleZeitraum(eintraege, wochenstart, heute), h.zielProWoche),
   };
 }
 

@@ -57,14 +57,30 @@ export async function gewohnheitAbhaken(fd: FormData) {
   const { supabase, userId } = await zugang();
 
   if (txt(fd, "getan")) {
-    // upsert statt insert: derselbe Tag zweimal gedrückt ist kein Fehler,
-    // sondern dieselbe Aussage. Der eindeutige Index deckt Tag UND Variante
-    // ab, deshalb steht er hier als Konfliktziel.
-    const { error } = await supabase.from("habit_entries").upsert(
-      { habit_id: habitId, user_id: userId, entry_date: datum, variante },
-      { onConflict: "habit_id,entry_date,variante" },
-    );
-    if (error) throw new Error(`Gewohnheit eintragen: ${error.message}`);
+    /**
+     * Einfaches `insert`, und eine Dublette gilt als Erfolg.
+     *
+     * Hier stand ein `upsert` mit `onConflict: "habit_id,entry_date,variante"`
+     * — und es hat vom 09.09.2026 an KEINEN einzigen Eintrag gespeichert.
+     * Der Grund ist eine Feinheit von Postgres: der eindeutige Index steht
+     * auf dem AUSDRUCK `coalesce(variante, '')` (nötig, weil zwei NULL dort
+     * nicht als gleich gelten), und eine ON-CONFLICT-Spaltenliste lässt sich
+     * auf einen Ausdrucks-Index nicht abbilden. Postgres wies jedes Einfügen
+     * mit 42P10 ab, die Aktion warf, und in der Oberfläche passierte
+     * scheinbar nichts.
+     *
+     * Der Index bleibt, wie er ist — er ist richtig und verhindert Dubletten
+     * verlässlich. Nur der Weg dorthin ist jetzt einer, der ihn nicht
+     * benennen muss: einfügen, und 23505 (Dublette) als „steht schon da"
+     * durchgehen lassen. Denn genau das ist es: derselbe Tag zweimal
+     * gedrückt ist kein Fehler, sondern dieselbe Aussage.
+     */
+    const { error } = await supabase.from("habit_entries")
+      .insert({ habit_id: habitId, user_id: userId, entry_date: datum, variante });
+
+    if (error && error.code !== "23505") {
+      throw new Error(`Gewohnheit eintragen: ${error.message}`);
+    }
   } else {
     let weg = supabase.from("habit_entries").delete()
       .eq("habit_id", habitId).eq("entry_date", datum).eq("user_id", userId);

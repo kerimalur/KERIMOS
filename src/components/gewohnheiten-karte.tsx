@@ -161,22 +161,28 @@ function Zeile({ h }: { h: GewohnheitStand }) {
         )}
       </span>
 
-      {/* Die Woche als sieben Punkte. „3 von 4" sagt nicht, WELCHE Tage
-          fehlen — wer sieht, dass Montag und Dienstag leer sind und Freitag
-          noch ansteht, weiss, ob die Woche zu retten ist. */}
-      <span className="flex shrink-0 items-center gap-[3px]" aria-hidden>
-        {h.woche.map((t) => (
-          <span key={t.datum}
-            title={t.datum}
-            className={cx(
-              "h-[7px] w-[7px] rounded-full border",
-              t.getan ? "border-transparent"
-                : t.zukunft ? "border-line/60 bg-transparent"
-                  : "border-transparent bg-line-strong/50",
-              t.heute && !t.getan && "ring-1 ring-accent ring-offset-1 ring-offset-card")}
-            style={t.getan ? { background: h.farbe } : undefined} />
-        ))}
-      </span>
+      {/* So viele Kästchen, wie das Wochenziel vorgibt — nicht sieben. Bei
+          einem Ziel von vier sähe eine erfüllte Woche sonst dauerhaft zu drei
+          Siebteln leer aus: die Anzeige stellte jede erreichte Woche als
+          Mangel dar. Ohne Ziel steht hier gar nichts. */}
+      {h.woche.gesamt > 0 && (
+        <span className="flex shrink-0 items-center gap-[3px]" aria-hidden>
+          {Array.from({ length: h.woche.gesamt }, (_, i) => (
+            <span key={i}
+              className={cx("h-[9px] w-[9px] rounded-[3px] border",
+                i < h.woche.gefuellt
+                  ? "border-transparent"
+                  : "border-line-strong/70 bg-transparent")}
+              style={i < h.woche.gefuellt ? { background: h.farbe } : undefined} />
+          ))}
+          {/* Was über das Ziel hinausgeht, wird nicht abgeschnitten. */}
+          {h.woche.ueber > 0 && (
+            <span className="tabular ml-0.5 text-[10px] text-ink-faint">
+              +{h.woche.ueber}
+            </span>
+          )}
+        </span>
+      )}
 
       {h.streak > 1 && (
         <span className="tabular hidden shrink-0 text-[11px] text-ink-faint lg:inline">
