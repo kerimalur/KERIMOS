@@ -2,9 +2,14 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { heuteISO } from "@/lib/time";
 import {
-  baueMonat, monatsStart, dringlichkeit,
-  type KalenderTag, type Dringlichkeit,
+  baueMonat, monatsStart, dringlichkeit, type KalenderTag,
 } from "@/lib/planung-kalender";
+// Formen und Kategorien stehen DB-frei nebenan: Client-Komponenten brauchen
+// `KATEGORIEN` zur Laufzeit und duerfen diese Datei nicht anfassen.
+import type { Aufgabe, Projekt } from "@/lib/planung-typen";
+
+export type { Aufgabe, Projekt, Kategorie } from "@/lib/planung-typen";
+export { KATEGORIEN } from "@/lib/planung-typen";
 
 /**
  * Planung — Projekte und Aufgaben.
@@ -18,42 +23,6 @@ import {
  * deshalb nicht gepflegt: jede Aufgabe kostete sechs Entscheidungen, von
  * denen fünf niemanden interessierten. Was hier fehlt, fehlt mit Absicht.
  */
-
-export interface Projekt {
-  id: string;
-  name: string;
-  farbe: string;
-  sortOrder: number;
-  /** Wie viele Aufgaben offen sind — die einzige Zahl auf der Kachel. */
-  offen: number;
-  gesamt: number;
-}
-
-/**
- * "Aufgabe" oder "Habit" — der einzige Unterschied zwischen beiden.
- *
- * Strukturell sind sie dasselbe: eine Zeile mit Namen, Haken und optionalem
- * Tag. Die Kategorie steuert nur, wie sie angezeigt und gefiltert werden.
- * Ein eigenes Modell für Gewohnheiten hätte einen zweiten Kalender, eine
- * zweite Checkbox-Logik und eine zweite Liste bedeutet — für einen
- * Unterschied, der in Wahrheit ein Etikett ist.
- */
-export type Kategorie = "Aufgabe" | "Habit";
-
-export const KATEGORIEN: Kategorie[] = ["Aufgabe", "Habit"];
-
-export interface Aufgabe {
-  id: string;
-  name: string;
-  erledigt: boolean;
-  /** ISO-Datum oder null. Nur Aufgaben mit Datum stehen im Kalender. */
-  faellig: string | null;
-  kategorie: Kategorie;
-  projektId: string | null;
-  projektName: string | null;
-  projektFarbe: string | null;
-  dringend: Dringlichkeit;
-}
 
 export interface PlanungStand {
   projekte: Projekt[];

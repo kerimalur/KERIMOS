@@ -5,7 +5,7 @@ import Link from "next/link";
 import { aufgabeVerschieben, aufgabeAbhaken } from "@/lib/planung-actions";
 import { gewohnheitAbhaken } from "@/lib/gewohnheiten-actions";
 import { monatPlus, monatsLabel } from "@/lib/planung-kalender";
-import type { Aufgabe } from "@/lib/planung";
+import type { Aufgabe } from "@/lib/planung-typen";
 import type { GewohnheitsMarke } from "@/lib/gewohnheiten";
 import type { KalenderTag } from "@/lib/planung-kalender";
 import { Card, cx } from "@/components/ui";

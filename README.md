@@ -195,6 +195,16 @@ Eine zusammengefasste Karte mit „alle 12 ↗" stand dort vorher und war der
 falsche Kompromiss: man sah, DASS etwas ansteht, und musste für jede Handlung
 doch weiterklicken.
 
+**Angelegt wird über das + in der Kopfzeile der jeweiligen Box**, nicht in
+einer zweiten Karte daneben. Ein dauerhaft sichtbares Formular ist öfter im
+Bild als der Inhalt, um den es geht — und zwar auch dann, wenn man gar nichts
+anlegen will, also fast immer. Gibt es noch kein Projekt, steht statt einer
+Leermeldung eine gestrichelte Kachel „Neues Projekt": sie sagt dasselbe und
+ist zugleich der Weg.
+
+Gewohnheiten mit Serie und Varianten legt man dagegen ausschliesslich unter
+`/einstellungen/gewohnheiten` an — sie sind Einrichtung, keine Tageseingabe.
+
 ---
 
 ## Die Einstellungen
@@ -302,6 +312,7 @@ src/
     klapp-karte.tsx           Karte zum Zuklappen, Zustand im localStorage
     planung-bereich.tsx       Kalender + Aufgaben + Projekte, an zwei Orten
     planung-aufgaben.tsx      Die Liste, offen und erledigt getrennt
+    planung-neu.tsx           Das + in der Kopfzeile und sein Dialog
     planung-kalender.tsx      Monatsraster mit Ziehen und Fallenlassen
     einrichtung-hinweis.tsx   „Migration fehlt" statt stillem Ausblenden
     gva-linien-karte.tsx      Aktive Trades auf der Startseite
@@ -314,6 +325,7 @@ src/
     planung.ts                Projekte und Aufgaben laden
     oberflaeche-actions.ts    Design und Kalenderansicht speichern
     planung-kalender.ts       Monatsraster und Dringlichkeit (DB-frei)
+    planung-typen.ts          Formen und Kategorien (DB-frei, für Clients)
     planung-actions.ts        Anlegen, abhaken, verschieben, löschen
     oberflaeche.ts            Hausfarbe als CSS-Variablen
     actions.ts                Server Actions (Essen, Gym-Verlauf, Kacheln)

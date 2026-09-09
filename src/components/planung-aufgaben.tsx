@@ -3,6 +3,7 @@ import {
 } from "@/lib/planung-actions";
 import type { Aufgabe, Projekt } from "@/lib/planung";
 import { KATEGORIEN } from "@/lib/planung";
+import { NeueAufgabe } from "@/components/planung-neu";
 import { Button, Card, CardTitle, Empty, Input, Select, cx } from "@/components/ui";
 import { dateLabel } from "@/lib/format";
 
@@ -33,16 +34,20 @@ export function PlanungAufgaben({
 
   return (
     <Card>
-      <div className="mb-3 flex items-baseline justify-between gap-2">
+      <div className="mb-3 flex items-center justify-between gap-2">
         <CardTitle className="mb-0">Aufgaben</CardTitle>
-        <span className="text-xs text-ink-faint">
-          {offen.length} offen
-          {erledigt.length > 0 && ` · ${erledigt.length} erledigt`}
+        <span className="flex items-center gap-3">
+          <span className="text-xs text-ink-faint">
+            {offen.length} offen
+            {erledigt.length > 0 && ` · ${erledigt.length} erledigt`}
+          </span>
+          {/* Anlegen gehört in die Box, nicht in eine zweite daneben. */}
+          <NeueAufgabe projekte={projekte} />
         </span>
       </div>
 
       {offen.length === 0 ? (
-        <Empty>Nichts offen. Trag unten etwas ein, wenn es so weit ist.</Empty>
+        <Empty>Nichts offen. Das + oben legt etwas an.</Empty>
       ) : (
         <ul className="space-y-0.5">
           {offen.map((a) => (
