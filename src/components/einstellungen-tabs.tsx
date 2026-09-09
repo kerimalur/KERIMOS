@@ -21,6 +21,7 @@ import { cx } from "@/components/ui";
  */
 const TABS = [
   { href: "/einstellungen", label: "Design" },
+  { href: "/einstellungen/planung", label: "Planung" },
   { href: "/einstellungen/gewohnheiten", label: "Gewohnheiten" },
   { href: "/einstellungen/trading", label: "Trading" },
   { href: "/links", label: "Kacheln" },

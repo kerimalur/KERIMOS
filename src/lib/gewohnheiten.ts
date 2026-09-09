@@ -67,6 +67,22 @@ export interface GewohnheitStand extends Gewohnheit {
   eintraege: Eintrag[];
 }
 
+/**
+ * Ein einzelner eingetragener Tag, angereichert um die Gewohnheit dahinter.
+ *
+ * Damit erscheinen die Gewohnheiten im Planungskalender neben den Aufgaben:
+ * ein Kalender für alles, was an einem Tag passiert ist. Ohne das gäbe es
+ * zwei Monatsansichten nebeneinander, die beide behaupten, den Tag zu zeigen.
+ */
+export interface GewohnheitsMarke {
+  habitId: string;
+  datum: string;
+  name: string;
+  farbe: string;
+  icon: string | null;
+  variante: string | null;
+}
+
 /** Eine Gewohnheit samt dem Monat, der gerade im Raster steht. */
 export interface GewohnheitMitRaster extends GewohnheitStand {
   /** Erster Tag des angezeigten Monats. */
@@ -255,4 +271,25 @@ export async function ladeGewohnheitenMitRaster(monat?: string): Promise<{
       raster: baueMonatsRaster(h.eintraege, gewaehlt, heute),
     })),
   };
+}
+
+/**
+ * Alle eingetragenen Tage als flache Liste — für den Planungskalender.
+ *
+ * Bewusst eine eigene, schmale Form statt der ganzen `GewohnheitStand`:
+ * der Kalender braucht Name, Farbe und Tag, nicht Serie und Wochenquote.
+ * Was er nicht bekommt, kann er auch nicht versehentlich anzeigen.
+ */
+export async function ladeGewohnheitsMarken(): Promise<GewohnheitsMarke[]> {
+  const { gewohnheiten } = await ladeGewohnheiten();
+
+  return gewohnheiten.flatMap((h) =>
+    h.eintraege.map((e): GewohnheitsMarke => ({
+      habitId: h.id,
+      datum: e.datum,
+      name: h.name,
+      farbe: h.farbe,
+      icon: h.icon,
+      variante: e.variante,
+    })));
 }

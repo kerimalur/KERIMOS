@@ -3,8 +3,10 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { aufgabeVerschieben, aufgabeAbhaken } from "@/lib/planung-actions";
+import { gewohnheitAbhaken } from "@/lib/gewohnheiten-actions";
 import { monatPlus, monatsLabel } from "@/lib/planung-kalender";
 import type { Aufgabe } from "@/lib/planung";
+import type { GewohnheitsMarke } from "@/lib/gewohnheiten";
 import type { KalenderTag } from "@/lib/planung-kalender";
 import { Card, cx } from "@/components/ui";
 
@@ -33,14 +35,27 @@ const WOCHENTAGE = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
  * (`aufgabeAbhaken`) — es gibt einen Eintrag und einen Haken, nicht zwei.
  * Habits sehen dabei aus wie alles andere: sie sind Aufgaben mit einem
  * Etikett, kein zweites Modell.
+ *
+ * **Die Gewohnheiten aus dem Tracker stehen ebenfalls hier**, unten in der
+ * Zelle und optisch abgesetzt. Sie sind ETWAS ANDERES als die Aufgaben
+ * darüber: eine Aufgabe ist etwas, das getan werden soll, eine
+ * Gewohnheits-Marke etwas, das getan WURDE. Deshalb kein leeres Kästchen und
+ * kein Ziehen — nur der erledigte Tag, den man mit einem Druck wieder
+ * wegnimmt, falls er versehentlich dasteht. Eingetragen wird oben in der
+ * Gewohnheiten-Karte, wo auch Variante und Nachtrag hingehören.
+ *
+ * Zwei Monatsansichten nebeneinander, die beide behaupten den Tag zu zeigen,
+ * wären der Fehler gewesen — deshalb ein Kalender für beides.
  */
 export function PlanungKalender({
-  monat, tage, aufgaben, basis = "/planung",
+  monat, tage, aufgaben, marken = [], basis = "/planung",
 }: {
   monat: string;
   tage: KalenderTag[];
   /** Alle Aufgaben MIT Datum. Die ohne stehen in der Ablage daneben. */
   aufgaben: Aufgabe[];
+  /** Was der Gewohnheiten-Tracker an diesen Tagen verzeichnet hat. */
+  marken?: GewohnheitsMarke[];
   /**
    * Wohin das Blaettern zeigt. Der Kalender steht auf der Startseite UND
    * unter /planung; ein fest verdrahteter Pfad wuerde einen von beiden beim
@@ -64,6 +79,13 @@ export function PlanungKalender({
     const liste = proTag.get(d) ?? [];
     liste.push(a);
     proTag.set(d, liste);
+  }
+
+  const markenProTag = new Map<string, GewohnheitsMarke[]>();
+  for (const m of marken) {
+    const liste = markenProTag.get(m.datum) ?? [];
+    liste.push(m);
+    markenProTag.set(m.datum, liste);
   }
 
   function ablegen(datum: string | null) {
@@ -109,6 +131,7 @@ export function PlanungKalender({
       <div className="grid grid-cols-7 gap-1">
         {tage.map((tag) => {
           const drin = proTag.get(tag.datum) ?? [];
+          const getan = markenProTag.get(tag.datum) ?? [];
           return (
             <div key={tag.datum}
               onDragOver={(e) => { e.preventDefault(); setUeber(tag.datum); }}
@@ -171,6 +194,39 @@ export function PlanungKalender({
                   </div>
                 ))}
               </div>
+
+              {/* Was der Tracker verzeichnet hat. Abgesetzt durch eine feine
+                  Linie: darüber steht, was zu tun ist, darunter, was war. */}
+              {getan.length > 0 && (
+                <div className={cx("space-y-0.5",
+                  drin.length > 0 && "mt-1 border-t border-line/40 pt-1")}>
+                  {getan.map((m) => (
+                    <form key={`${m.habitId}-${m.variante ?? ""}`}
+                      action={gewohnheitAbhaken}>
+                      <input type="hidden" name="id" value={m.habitId} />
+                      <input type="hidden" name="datum" value={m.datum} />
+                      {/* Leerer Wert heisst „wieder wegnehmen". */}
+                      <input type="hidden" name="getan" value="" />
+                      {m.variante && (
+                        <input type="hidden" name="variante" value={m.variante} />
+                      )}
+                      <button type="submit" draggable={false}
+                        title={`${m.name}${m.variante ? ` — ${m.variante}` : ""} `
+                          + "· erledigt, nochmal drücken nimmt weg"}
+                        className="flex w-full items-center gap-1 truncate rounded
+                                   px-1 py-0.5 text-left text-[10px] leading-tight
+                                   text-ink-soft transition hover:bg-sand/60">
+                        <span aria-hidden className="shrink-0"
+                          style={{ color: m.farbe }}>✓</span>
+                        <span className="truncate">
+                          {m.icon && <span className="mr-0.5">{m.icon}</span>}
+                          {m.variante ?? m.name}
+                        </span>
+                      </button>
+                    </form>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })}

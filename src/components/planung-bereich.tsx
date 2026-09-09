@@ -10,6 +10,8 @@ import {
   Button, Card, CardTitle, Empty, Input, Label, Select,
 } from "@/components/ui";
 import { heuteISO } from "@/lib/time";
+import { ladeGewohnheitsMarken } from "@/lib/gewohnheiten";
+import { ladeOberflaeche } from "@/lib/oberflaeche";
 
 /**
  * Der ganze Planungsbereich: Kalender, Aufgaben, Projekte — in dieser
@@ -39,9 +41,21 @@ export async function PlanungBereich({
   basis?: string;
   kompakt?: boolean;
 }) {
-  const { projekte, aufgaben, tabelleFehlt } = await ladePlanung();
+  // Die Gewohnheiten kommen aus ihrem eigenen Tracker und stehen trotzdem in
+  // diesem Kalender: ein Tag hat eine Ansicht, nicht zwei. Fehlen die Tabellen
+  // noch, ist die Liste leer und der Kalender zeigt nur Aufgaben.
+  const [{ projekte, aufgaben, tabelleFehlt }, marken, ansicht] = await Promise.all([
+    ladePlanung(),
+    ladeGewohnheitsMarken(),
+    ladeOberflaeche(),
+  ]);
   const heute = heuteISO();
-  const kalender = baueKalender(aufgaben, monat, heute);
+
+  // Was im Kalender steht, entscheidet /einstellungen/planung. Die Liste
+  // darunter zeigt Erledigtes immer — dort ist es zugeklappt und stört nicht.
+  const imKalender = ansicht.planungErledigte
+    ? aufgaben : aufgaben.filter((a) => !a.erledigt);
+  const kalender = baueKalender(imKalender, monat, heute);
 
   if (tabelleFehlt) {
     return (
@@ -74,7 +88,9 @@ export async function PlanungBereich({
 
       {/* ------------------------------------------------------- Kalender */}
       <PlanungKalender monat={kalender.monat} tage={kalender.tage}
-        aufgaben={aufgaben} basis={basis} />
+        aufgaben={imKalender}
+        marken={ansicht.planungGewohnheiten ? marken : []}
+        basis={basis} />
 
       {/* ------------------------------------------------------- Aufgaben */}
       <PlanungAufgaben aufgaben={aufgaben} projekte={projekte} />

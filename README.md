@@ -28,7 +28,7 @@ mit Ziehen) und `/einstellungen` als einziger Ort für alles Einmalige.
 |---|---|
 | **Startseite** | Das Dashboard: Gewohnheiten, aktive Trades, dann die ganze Planung (Kalender, Aufgaben, Projekte), unten die Modi-Kacheln |
 | **Planung** | Kalender oben, Aufgabenliste in der Mitte, Projekt-Kacheln unten — vollständig auf der Startseite, `/planung` zeigt dasselbe ohne Drumherum |
-| **Einstellungen** | Ein Ort für alles Einmalige: Design, Gewohnheiten, Trading, Kacheln, Daten |
+| **Einstellungen** | Ein Ort für alles Einmalige: Design, Planung, Gewohnheiten, Trading, Kacheln, Daten |
 | **Gewohnheiten** | Eintragen je Gewohnheit — mit Varianten (Push / Pull / Ausdauer) und Datum, Zählung nach Woche / 30 Tagen / gesamt, Serie, Monatsraster zum Nachtragen |
 | **Trading** | Übersicht (aktive Trades), Cockpit, Confluence-Ranking, Journal, Backtest, Alarme |
 | **Gym** | Was war (Push / Pull / Ausdauer eintragen, auch nachträglich), Verlauf der Einheiten, Garmin-Import samt Prüfschritt, Körpergewicht |
@@ -57,9 +57,10 @@ Providers:
 
 Danach auf `/login` ein Konto anlegen und die Migrationen unter
 `supabase/migrations/` der Reihe nach im SQL-Editor ausführen — zuletzt
-`19_habits.sql`, `20_habits_varianten.sql`, `21_planung.sql` und
-`22_planung_kategorie.sql`. Fehlt eine davon, sagt die betroffene Karte das
-auf der Startseite und zeigt das nötige SQL zum Kopieren.
+`19_habits.sql`, `20_habits_varianten.sql`, `21_planung.sql`,
+`22_planung_kategorie.sql` und `23_planung_ansicht.sql`. Fehlt eine davon,
+sagt die betroffene Karte das auf der Startseite und zeigt das nötige SQL zum
+Kopieren.
 
 ### Deployment auf Vercel
 
@@ -164,8 +165,26 @@ Unterschied, der in Wahrheit ein Etikett ist.
 
 Der Preis dieser Entscheidung, damit ihn niemand später neu entdeckt: ein
 Habit als Task-Zeile kennt keine Serie, keine Wochenquote und keine Varianten.
-Es ist ein Haken an einem Tag. Wer zählen will, wie oft etwas passiert ist,
-zählt erledigte Zeilen mit `category = 'Habit'`.
+Es ist ein Haken an einem Tag.
+
+### Zwei Arten, dasselbe zu notieren
+
+Genau deshalb steht der **Gewohnheiten-Tracker** unverändert daneben, und die
+Wahl zwischen beiden ist eine echte:
+
+| | Aufgabe mit Art „Habit" | Gewohnheit im Tracker |
+|---|---|---|
+| Was es ist | eine Zeile mit Haken an einem Tag | etwas, das man zählt |
+| Hat ein Ende | ja, mit dem Haken | nein |
+| Serie, Wochenziel | — | ja |
+| Varianten (Push/Pull) | — | ja |
+| Nachtragen | Datum ändern | Monatsraster |
+
+**Beide stehen im selben Kalender**, damit ein Tag eine Ansicht hat: oben die
+Aufgaben (was zu tun ist), darunter abgesetzt die Haken des Trackers (was
+getan wurde). Ein Druck auf so einen Haken nimmt ihn wieder weg; eingetragen
+wird oben in der Gewohnheiten-Karte, wo auch Variante und Nachtrag hingehören.
+Unter `/einstellungen/planung` lässt sich beides einzeln abschalten.
 
 **Ein gelöschtes Projekt reisst keine Arbeit mit.** Dafür sorgt
 `ON DELETE SET NULL` im Schema, nicht der Anwendungscode: die Aufgaben bleiben
@@ -269,7 +288,7 @@ src/
     page.tsx              Startseite
     gewohnheiten/         Habit-Tracker: der Verlauf, Monat für Monat
     planung/              Projekte, Aufgaben, Kalender
-    einstellungen/        Design, gewohnheiten/, trading/
+    einstellungen/        Design, planung/, gewohnheiten/, trading/
     gym/                  Übersicht, verlauf/, garmin/
     trading/              Übersicht, cockpit/, ranking/, journal/, backtest/, …
     m/[gruppe]/           Arbeitsplatz eines Modus
@@ -293,6 +312,7 @@ src/
     gewohnheiten-zaehlung.ts  Serie, Wochenzahl, Monatsraster (DB-frei)
     gewohnheiten-actions.ts   Eintragen, anlegen, ändern, archivieren
     planung.ts                Projekte und Aufgaben laden
+    oberflaeche-actions.ts    Design und Kalenderansicht speichern
     planung-kalender.ts       Monatsraster und Dringlichkeit (DB-frei)
     planung-actions.ts        Anlegen, abhaken, verschieben, löschen
     oberflaeche.ts            Hausfarbe als CSS-Variablen

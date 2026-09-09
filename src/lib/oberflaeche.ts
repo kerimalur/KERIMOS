@@ -20,11 +20,17 @@ export interface Oberflaeche {
   akzent: string;
   /** Der driftende Farbnebel hinter allem. Kostet auf schwachen Geräten Bildrate. */
   ambient: boolean;
+  /** Erledigte Aufgaben im Kalender stehen lassen (durchgestrichen). */
+  planungErledigte: boolean;
+  /** Die Haken des Gewohnheiten-Trackers im selben Kalender zeigen. */
+  planungGewohnheiten: boolean;
 }
 
 export const STANDARD_OBERFLAECHE: Oberflaeche = {
   akzent: "#E7A96B",
   ambient: true,
+  planungErledigte: true,
+  planungGewohnheiten: true,
 };
 
 /** Die geprüften Töne. Alle hell genug für dunklen Text darauf. */
@@ -90,7 +96,9 @@ export function akzentVariablen(akzent: string): Record<string, string> {
 export async function ladeOberflaeche(): Promise<Oberflaeche> {
   const supabase = await createClient();
   const { data, error } = await supabase
-    .from("user_settings").select("akzent, ambient").maybeSingle();
+    .from("user_settings")
+    .select("akzent, ambient, planung_erledigte, planung_gewohnheiten")
+    .maybeSingle();
 
   if (error || !data) return STANDARD_OBERFLAECHE;
 
@@ -103,5 +111,7 @@ export async function ladeOberflaeche(): Promise<Oberflaeche> {
     // bringen — dann lieber zurück auf Bernstein.
     akzent: /^#[0-9a-f]{6}$/i.test(akzent) ? akzent : STANDARD_OBERFLAECHE.akzent,
     ambient: zeile.ambient !== false,
+    planungErledigte: zeile.planung_erledigte !== false,
+    planungGewohnheiten: zeile.planung_gewohnheiten !== false,
   };
 }
