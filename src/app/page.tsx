@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Tagessatz } from "@/components/tagessatz";
 import { GewichtHeute } from "@/components/gewicht-heute";
 import { GewohnheitenKarte } from "@/components/gewohnheiten-karte";
-import { AufgabenKarte } from "@/components/aufgaben-karte";
+import { PlanungBereich } from "@/components/planung-bereich";
 import { GvaLinienKarte } from "@/components/gva-linien-karte";
 import { DisplayModeToggle } from "@/components/display-mode-toggle";
 import { Logo } from "@/components/logo";
@@ -27,17 +27,17 @@ export const dynamic = "force-dynamic";
  * Jetzt beantwortet sie vier Fragen und sonst nichts:
  *   1. Was ist heute anders (ein Satz, das Wetter)
  *   2. Was will heute getan werden (die Gewohnheiten)
- *   3. Was steht an (die Aufgaben von heute, überfällige, terminlose)
+ *   3. Was steht an (die Planung: Kalender, Aufgaben, Projekte)
  *   4. Wo arbeitest du jetzt (die Modi, mit ihren wichtigsten Zahlen)
  *
  * Die Reihenfolge ist die Reihenfolge des Tages: erst was man tut, dann was
- * man erledigt, dann wo man hingeht. Anzeigen ohne Handlung (aktive Trades,
- * Gewicht) stehen dazwischen, aber nie oben.
+ * man erledigt, dann wo man hingeht.
  *
- * Die Aufgaben zeigen ausdrücklich NICHT alles Offene, sondern nur, was eine
- * Entscheidung verlangt: überfällig, heute, ohne Termin. Der Rest steht im
- * Kalender unter /planung. Eine Startseite, die alles zeigt, wird nach einer
- * Woche überscrollt.
+ * Die Planung steht vollständig auf der Seite und nicht hinter einem Menü —
+ * Kalender oben, Aufgaben in der Mitte, Projekte unten, genau wie im
+ * Notion-Dashboard, das sie ersetzt. Eine zusammengefasste Vorschau mit
+ * „alle 12 ↗" stand hier vorher und war der falsche Kompromiss: man sah, DASS
+ * etwas ansteht, und musste für jede Handlung doch weiterklicken.
  *
  * Beim Umbau vom 09.09.2026 ist der ganze Zeit-Bereich entfallen — Termine,
  * Tages- und Wochenrückblick, Wochenziele, Schichten, Zen. Die Aufgaben sind
@@ -48,7 +48,13 @@ export const dynamic = "force-dynamic";
  *
  * Steht nichts an, ist die Seite fast leer. Das ist das Ziel, kein Mangel.
  */
-export default async function Start() {
+export default async function Start({
+  searchParams,
+}: {
+  /** `monat` blaettert den Kalender im Planungsbereich. */
+  searchParams: Promise<{ monat?: string }>;
+}) {
+  const { monat } = await searchParams;
   const supabase = await createClient();
 
   const [{ data: linkRows }, kennzahlen] = await Promise.all([
@@ -133,9 +139,16 @@ export default async function Start() {
       <div className="mb-7 space-y-3">
         <GewohnheitenKarte mitBacktest
           leer="Noch keine Gewohnheit. Unter Einstellungen legst du die erste an." />
-        <AufgabenKarte />
         <GvaLinienKarte />
         <GewichtHeute />
+      </div>
+
+      {/* Die Planung steht vollstaendig hier und nicht hinter einem Menue:
+          Kalender, Aufgaben, Projekte. Genau die Reihenfolge des
+          Notion-Dashboards, das sie ersetzt — wer es kennt, muss sich nicht
+          umgewoehnen. /planung zeigt dasselbe ohne das Drumherum. */}
+      <div className="mb-7">
+        <PlanungBereich monat={monat} basis="/" />
       </div>
 
       <div className="mb-3 text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted">

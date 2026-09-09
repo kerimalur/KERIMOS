@@ -26,8 +26,8 @@ mit Ziehen) und `/einstellungen` als einziger Ort für alles Einmalige.
 
 | Bereich | Funktion |
 |---|---|
-| **Startseite** | Das Dashboard: Gewohnheiten zuoberst (samt gezählter Backtest-Zeile), dann die Aufgaben von heute, aktive Trades, Modi-Kacheln |
-| **Planung** | Projekte als Kacheln, Aufgaben mit Haken/Datum/Projekt, Monatskalender mit Ziehen und Fallenlassen |
+| **Startseite** | Das Dashboard: Gewohnheiten, aktive Trades, dann die ganze Planung (Kalender, Aufgaben, Projekte), unten die Modi-Kacheln |
+| **Planung** | Kalender oben, Aufgabenliste in der Mitte, Projekt-Kacheln unten — vollständig auf der Startseite, `/planung` zeigt dasselbe ohne Drumherum |
 | **Einstellungen** | Ein Ort für alles Einmalige: Design, Gewohnheiten, Trading, Kacheln, Daten |
 | **Gewohnheiten** | Eintragen je Gewohnheit — mit Varianten (Push / Pull / Ausdauer) und Datum, Zählung nach Woche / 30 Tagen / gesamt, Serie, Monatsraster zum Nachtragen |
 | **Trading** | Übersicht (aktive Trades), Cockpit, Confluence-Ranking, Journal, Backtest, Alarme |
@@ -57,9 +57,9 @@ Providers:
 
 Danach auf `/login` ein Konto anlegen und die Migrationen unter
 `supabase/migrations/` der Reihe nach im SQL-Editor ausführen — zuletzt
-`19_habits.sql`, `20_habits_varianten.sql` und `21_planung.sql`. Fehlt eine
-davon, sagt die betroffene Karte das auf der Startseite und zeigt das nötige
-SQL zum Kopieren.
+`19_habits.sql`, `20_habits_varianten.sql`, `21_planung.sql` und
+`22_planung_kategorie.sql`. Fehlt eine davon, sagt die betroffene Karte das
+auf der Startseite und zeigt das nötige SQL zum Kopieren.
 
 ### Deployment auf Vercel
 
@@ -144,21 +144,37 @@ Lebensbereich, Unteraufgaben und Sortierung — und wurde genau deshalb nicht
 gepflegt: jede Aufgabe kostete sechs Entscheidungen, von denen fünf niemanden
 interessierten. Was hier fehlt, fehlt mit Absicht.
 
-**Der Kalender** zeigt jede Aufgabe mit Datum an ihrem Tag. Ziehen legt sie
-auf einen anderen — `due_date` wird sofort in der Datenbank geschrieben, das
-ist keine Ansichtssache. In die gestrichelte Ablage darunter gezogen verliert
-eine Aufgabe ihren Termin, ohne gelöscht zu werden; von dort zieht man sie
-auch wieder auf einen Tag. Umgesetzt mit den `draggable`-Ereignissen des
-Browsers, ohne Kalenderbibliothek.
+**Die Reihenfolge — Kalender, Aufgaben, Projekte — ist nicht verhandelt.**
+Sie bildet das Notion-Dashboard ab, das dieser Bereich ersetzt: oben wann, in
+der Mitte was, unten wozu. Bei einem Werkzeug, das man täglich aufmacht, ist
+Wiedererkennung mehr wert als jede Verbesserung, die man erst lernen muss.
+
+**Der Kalender** zeigt jeden Eintrag mit Datum an seinem Tag, mit Checkbox in
+der Kachel. Ziehen legt ihn auf einen anderen Tag — `due_date` wird sofort in
+der Datenbank geschrieben, das ist keine Ansichtssache. In die gestrichelte
+Ablage darunter gezogen verliert ein Eintrag seinen Termin, ohne gelöscht zu
+werden; von dort zieht man ihn auch wieder auf einen Tag. Umgesetzt mit den
+`draggable`-Ereignissen des Browsers, ohne Kalenderbibliothek.
+
+**Habits sind Aufgaben.** `category` unterscheidet „Aufgabe" von „Habit" und
+tut sonst nichts: dieselbe Tabelle, derselbe Kalender, dieselbe Checkbox,
+dieselbe Liste — nur ein ↻ davor. Ein eigenes Modell hätte einen zweiten
+Kalender, eine zweite Checkbox-Logik und eine zweite Liste bedeutet, für einen
+Unterschied, der in Wahrheit ein Etikett ist.
+
+Der Preis dieser Entscheidung, damit ihn niemand später neu entdeckt: ein
+Habit als Task-Zeile kennt keine Serie, keine Wochenquote und keine Varianten.
+Es ist ein Haken an einem Tag. Wer zählen will, wie oft etwas passiert ist,
+zählt erledigte Zeilen mit `category = 'Habit'`.
 
 **Ein gelöschtes Projekt reisst keine Arbeit mit.** Dafür sorgt
 `ON DELETE SET NULL` im Schema, nicht der Anwendungscode: die Aufgaben bleiben
 stehen und stehen danach ohne Projekt da.
 
-**Auf der Startseite** stehen nicht alle offenen Aufgaben, sondern nur die,
-die eine Entscheidung verlangen: überfällige, heutige, terminlose. Der Rest
-wartet im Kalender. Eine Startseite, die alles zeigt, wird nach einer Woche
-überscrollt.
+**Auf der Startseite** steht der Bereich vollständig, nicht als Vorschau.
+Eine zusammengefasste Karte mit „alle 12 ↗" stand dort vorher und war der
+falsche Kompromiss: man sah, DASS etwas ansteht, und musste für jede Handlung
+doch weiterklicken.
 
 ---
 
@@ -213,10 +229,10 @@ und `habit_entries` (ein Tag, optional eine Variante). Siehe
 ist Tag + Variante, nicht der Tag allein — sonst liesse sich Kraft und
 Ausdauer am selben Tag nicht beides eintragen.
 
-**Planung** — `planung_projects` und `planung_tasks` (siehe
-`supabase/migrations/21_planung.sql`). Bewusst neue Namen: die alte
-`tasks`-Tabelle gehörte zum Zeit-Bereich und trug dessen Ballast; sie steht
-unberührt daneben.
+**Planung** — `planung_projects` und `planung_tasks` (mit `category`
+„Aufgabe"/„Habit"); siehe `supabase/migrations/21_planung.sql` und
+`22_planung_kategorie.sql`. Bewusst neue Namen: die alte `tasks`-Tabelle
+gehörte zum Zeit-Bereich und trug dessen Ballast; sie steht unberührt daneben.
 
 **Oberfläche** — `user_settings` (Hausfarbe, Farbnebel), eine Zeile je Nutzer
 
@@ -265,7 +281,7 @@ src/
     gewohnheiten-dialog.tsx   „Wann war das?" — Tag und Variante wählen
     gewohnheiten-raster.tsx   Ein Monat als klickbares Raster, mit Blättern
     klapp-karte.tsx           Karte zum Zuklappen, Zustand im localStorage
-    aufgaben-karte.tsx        Was heute ansteht — auf dem Dashboard
+    planung-bereich.tsx       Kalender + Aufgaben + Projekte, an zwei Orten
     planung-aufgaben.tsx      Die Liste, offen und erledigt getrennt
     planung-kalender.tsx      Monatsraster mit Ziehen und Fallenlassen
     einrichtung-hinweis.tsx   „Migration fehlt" statt stillem Ausblenden

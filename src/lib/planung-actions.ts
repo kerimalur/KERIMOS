@@ -13,6 +13,16 @@ import { createClient } from "@/lib/supabase/server";
 const txt = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 const istDatum = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s);
 
+/**
+ * "Aufgabe" oder "Habit", alles andere wird zu "Aufgabe".
+ *
+ * Die Prüfregel in der Datenbank lässt nur diese zwei zu — ein durchgereichter
+ * dritter Wert würde dort einen Fehler werfen, den niemand liest. Hier
+ * abzufangen ist freundlicher und ändert nichts an der Regel.
+ */
+const kategorie = (fd: FormData) =>
+  txt(fd, "category") === "Habit" ? "Habit" : "Aufgabe";
+
 /** Startseite und Planung zeigen dieselben Aufgaben. */
 function aktualisieren() {
   revalidatePath("/");
@@ -98,6 +108,7 @@ export async function aufgabeAnlegen(fd: FormData) {
     name,
     due_date: istDatum(datum) ? datum : null,
     project_id: projekt || null,
+    category: kategorie(fd),
   });
   if (error) throw new Error(`Aufgabe anlegen: ${error.message}`);
 
@@ -140,6 +151,7 @@ export async function aufgabeAendern(fd: FormData) {
     name,
     due_date: istDatum(datum) ? datum : null,
     project_id: projekt || null,
+    category: kategorie(fd),
   }).eq("id", id).eq("user_id", userId);
   if (error) throw new Error(`Aufgabe ändern: ${error.message}`);
 

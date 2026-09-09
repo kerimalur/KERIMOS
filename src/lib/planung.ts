@@ -29,12 +29,26 @@ export interface Projekt {
   gesamt: number;
 }
 
+/**
+ * "Aufgabe" oder "Habit" — der einzige Unterschied zwischen beiden.
+ *
+ * Strukturell sind sie dasselbe: eine Zeile mit Namen, Haken und optionalem
+ * Tag. Die Kategorie steuert nur, wie sie angezeigt und gefiltert werden.
+ * Ein eigenes Modell für Gewohnheiten hätte einen zweiten Kalender, eine
+ * zweite Checkbox-Logik und eine zweite Liste bedeutet — für einen
+ * Unterschied, der in Wahrheit ein Etikett ist.
+ */
+export type Kategorie = "Aufgabe" | "Habit";
+
+export const KATEGORIEN: Kategorie[] = ["Aufgabe", "Habit"];
+
 export interface Aufgabe {
   id: string;
   name: string;
   erledigt: boolean;
   /** ISO-Datum oder null. Nur Aufgaben mit Datum stehen im Kalender. */
   faellig: string | null;
+  kategorie: Kategorie;
   projektId: string | null;
   projektName: string | null;
   projektFarbe: string | null;
@@ -73,6 +87,8 @@ create table if not exists planung_tasks (
   name       text not null,
   done       boolean not null default false,
   due_date   date,
+  category   text not null default 'Aufgabe'
+    check (category in ('Aufgabe', 'Habit')),
   -- set null, nicht cascade: ein geloeschtes Projekt reisst keine Arbeit mit.
   project_id uuid references planung_projects(id) on delete set null,
   created_at timestamptz not null default now(),
@@ -85,6 +101,8 @@ create index if not exists idx_planung_tasks_datum
   on planung_tasks(user_id, due_date) where due_date is not null;
 create index if not exists idx_planung_tasks_projekt
   on planung_tasks(project_id);
+create index if not exists idx_planung_tasks_kategorie
+  on planung_tasks(user_id, category) where done = false;
 
 alter table planung_tasks enable row level security;
 
@@ -112,7 +130,7 @@ export async function ladePlanung(): Promise<PlanungStand> {
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true }),
     supabase.from("planung_tasks")
-      .select("id, name, done, due_date, project_id")
+      .select("id, name, done, due_date, project_id, category")
       // Offene zuerst, darin die mit dem nächsten Datum. Aufgaben ohne Datum
       // ganz unten: sie drängen nicht, sollen aber nicht verschwinden.
       .order("done", { ascending: true })
@@ -120,10 +138,14 @@ export async function ladePlanung(): Promise<PlanungStand> {
       .order("created_at", { ascending: true }),
   ]);
 
-  // 42P01 = Tabelle fehlt. Jeder andere Fehler wäre etwas anderes und soll
-  // nicht als „noch nicht eingerichtet" durchgehen.
+  // 42P01 = Tabelle fehlt, 42703 = Spalte fehlt (Migration 22 noch nicht
+  // gelaufen). Beides heisst „noch nicht eingerichtet"; jeder andere Fehler
+  // wäre etwas anderes und soll nicht als solcher durchgehen.
   if (error) {
-    return { projekte: [], aufgaben: [], tabelleFehlt: error.code === "42P01" };
+    return {
+      projekte: [], aufgaben: [],
+      tabelleFehlt: ["42P01", "42703"].includes(error.code),
+    };
   }
 
   const rohProjekte = ((projektRows ?? []) as unknown as Record<string, unknown>[])
@@ -146,6 +168,7 @@ export async function ladePlanung(): Promise<PlanungStand> {
         name: String(t.name ?? ""),
         erledigt: t.done === true,
         faellig,
+        kategorie: t.category === "Habit" ? "Habit" : "Aufgabe",
         projektId,
         projektName: projekt?.name ?? null,
         projektFarbe: projekt?.farbe ?? null,

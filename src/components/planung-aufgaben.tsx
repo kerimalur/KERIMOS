@@ -2,6 +2,7 @@ import {
   aufgabeAbhaken, aufgabeAendern, aufgabeLoeschen, erledigteAufraeumen,
 } from "@/lib/planung-actions";
 import type { Aufgabe, Projekt } from "@/lib/planung";
+import { KATEGORIEN } from "@/lib/planung";
 import { Button, Card, CardTitle, Empty, Input, Select, cx } from "@/components/ui";
 import { dateLabel } from "@/lib/format";
 
@@ -16,6 +17,10 @@ import { dateLabel } from "@/lib/format";
  * Die erledigten stehen in einem `<details>`: das klappt ohne eine Zeile
  * JavaScript zu und merkt sich nichts — beim nächsten Aufruf ist es wieder
  * zu, was hier die richtige Vorgabe ist. Man will sehen, was offen ist.
+ *
+ * Habits stehen in derselben Liste wie alles andere, mit einem ↻ davor. Sie
+ * sind Aufgaben mit einem Etikett — eine getrennte Liste hätte bedeutet, an
+ * zwei Orten nachzusehen, was heute dran ist.
  */
 export function PlanungAufgaben({
   aufgaben, projekte,
@@ -98,9 +103,13 @@ function AufgabenZeile({ a, projekte }: { a: Aufgabe; projekte: Projekt[] }) {
         </button>
       </form>
 
-      <span className={cx("min-w-0 flex-1 truncate text-sm",
+      <span className={cx("flex min-w-0 flex-1 items-center gap-1.5 truncate text-sm",
         a.erledigt ? "text-ink-faint line-through" : "text-ink")}>
-        {a.name}
+        {a.kategorie === "Habit" && (
+          <span aria-hidden title="Habit"
+            className="shrink-0 text-[11px] text-ink-faint">↻</span>
+        )}
+        <span className="truncate">{a.name}</span>
       </span>
 
       {a.projektName && (
@@ -140,6 +149,10 @@ function AufgabenZeile({ a, projekte }: { a: Aufgabe; projekte: Projekt[] }) {
               {projekte.map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
+            </Select>
+            <Select name="category" defaultValue={a.kategorie}
+              aria-label="Art" className="w-28 py-1 text-xs">
+              {KATEGORIEN.map((k) => <option key={k} value={k}>{k}</option>)}
             </Select>
             <Button type="submit" variant="ghost" className="px-2.5 py-1 text-xs">
               Speichern

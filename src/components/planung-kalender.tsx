@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { aufgabeVerschieben } from "@/lib/planung-actions";
+import { aufgabeVerschieben, aufgabeAbhaken } from "@/lib/planung-actions";
 import { monatPlus, monatsLabel } from "@/lib/planung-kalender";
 import type { Aufgabe } from "@/lib/planung";
 import type { KalenderTag } from "@/lib/planung-kalender";
@@ -28,14 +28,25 @@ const WOCHENTAGE = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
  * **Was gespeichert wird.** `aufgabeVerschieben` schreibt `due_date` in die
  * Datenbank. Das Ziehen ist also keine Ansichtssache: nach einem Neuladen
  * steht die Aufgabe dort, wo man sie hingelegt hat.
+ *
+ * **Die Checkbox in der Kachel** ruft dieselbe Aktion wie die Liste darunter
+ * (`aufgabeAbhaken`) — es gibt einen Eintrag und einen Haken, nicht zwei.
+ * Habits sehen dabei aus wie alles andere: sie sind Aufgaben mit einem
+ * Etikett, kein zweites Modell.
  */
 export function PlanungKalender({
-  monat, tage, aufgaben,
+  monat, tage, aufgaben, basis = "/planung",
 }: {
   monat: string;
   tage: KalenderTag[];
   /** Alle Aufgaben MIT Datum. Die ohne stehen in der Ablage daneben. */
   aufgaben: Aufgabe[];
+  /**
+   * Wohin das Blaettern zeigt. Der Kalender steht auf der Startseite UND
+   * unter /planung; ein fest verdrahteter Pfad wuerde einen von beiden beim
+   * Monatswechsel auf die andere Seite werfen.
+   */
+  basis?: string;
 }) {
   const [gezogen, setGezogen] = useState<string | null>(null);
   const [ueber, setUeber] = useState<string | null>(null);
@@ -72,7 +83,7 @@ export function PlanungKalender({
   return (
     <Card>
       <div className="mb-3 flex items-center justify-between gap-2">
-        <Link href={`/planung?monat=${monatPlus(monat, -1).slice(0, 7)}`} scroll={false}
+        <Link href={`${basis}?monat=${monatPlus(monat, -1).slice(0, 7)}`} scroll={false}
           aria-label="Monat zurück"
           className="rounded-lg px-2 py-0.5 text-ink-muted transition
                      hover:bg-sand hover:text-ink-soft">
@@ -81,7 +92,7 @@ export function PlanungKalender({
         <span className="font-display text-sm font-bold text-ink">
           {monatsLabel(monat)}
         </span>
-        <Link href={`/planung?monat=${monatPlus(monat, 1).slice(0, 7)}`} scroll={false}
+        <Link href={`${basis}?monat=${monatPlus(monat, 1).slice(0, 7)}`} scroll={false}
           aria-label="Monat vor"
           className="rounded-lg px-2 py-0.5 text-ink-muted transition
                      hover:bg-sand hover:text-ink-soft">
@@ -119,18 +130,44 @@ export function PlanungKalender({
                   <div key={a.id} draggable
                     onDragStart={() => setGezogen(a.id)}
                     onDragEnd={() => { setGezogen(null); setUeber(null); }}
-                    title={`${a.name}${a.projektName ? ` · ${a.projektName}` : ""}`}
+                    title={[
+                      a.name,
+                      a.kategorie === "Habit" ? "Habit" : null,
+                      a.projektName,
+                    ].filter(Boolean).join(" · ")}
                     className={cx(
-                      "cursor-grab truncate rounded px-1.5 py-0.5 text-[10px] leading-tight",
-                      "active:cursor-grabbing",
-                      a.erledigt
-                        ? "bg-sand text-ink-faint line-through"
-                        : "text-ink-on",
+                      "flex cursor-grab items-center gap-1 rounded px-1 py-0.5",
+                      "text-[10px] leading-tight active:cursor-grabbing",
+                      a.erledigt ? "bg-sand text-ink-faint" : "text-ink-on",
                       gezogen === a.id && "opacity-40")}
                     style={a.erledigt ? undefined : {
                       background: a.projektFarbe ?? "#9A8C74",
                     }}>
-                    {a.name}
+                    {/* Abhaken direkt in der Kachel. Eigenes Formular, damit
+                        der Klick genau diesen Eintrag schickt — und nicht
+                        das Ziehen ausloest: ein Knopf faengt den Zeiger ab. */}
+                    <form action={aufgabeAbhaken} className="shrink-0 leading-none">
+                      <input type="hidden" name="id" value={a.id} />
+                      <input type="hidden" name="done" value={a.erledigt ? "0" : "1"} />
+                      <button type="submit" draggable={false}
+                        aria-label={a.erledigt ? "wieder öffnen" : "erledigt"}
+                        className={cx(
+                          "grid h-[13px] w-[13px] place-items-center rounded-[3px]",
+                          "border text-[9px] transition active:scale-90",
+                          a.erledigt
+                            ? "border-ink-faint/50 text-ink-faint"
+                            : "border-ink-on/50 text-transparent hover:bg-ink-on/20")}>
+                        ✓
+                      </button>
+                    </form>
+                    {/* Ein Habit ist optisch dasselbe wie eine Aufgabe, nur
+                        mit Etikett — genau das ist der Punkt am Modell. */}
+                    {a.kategorie === "Habit" && (
+                      <span aria-hidden className="shrink-0 opacity-70">↻</span>
+                    )}
+                    <span className={cx("truncate", a.erledigt && "line-through")}>
+                      {a.name}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -158,12 +195,16 @@ export function PlanungKalender({
           <div key={a.id} draggable
             onDragStart={() => setGezogen(a.id)}
             onDragEnd={() => { setGezogen(null); setUeber(null); }}
-            title={a.projektName ? `${a.name} · ${a.projektName}` : a.name}
+            title={[a.name, a.kategorie === "Habit" ? "Habit" : null, a.projektName]
+              .filter(Boolean).join(" · ")}
             className={cx(
-              "cursor-grab truncate rounded-lg px-2 py-1 text-[11px] text-ink-on",
-              "active:cursor-grabbing",
+              "flex cursor-grab items-center gap-1 truncate rounded-lg px-2 py-1",
+              "text-[11px] text-ink-on active:cursor-grabbing",
               gezogen === a.id && "opacity-40")}
             style={{ background: a.projektFarbe ?? "#9A8C74" }}>
+            {a.kategorie === "Habit" && (
+              <span aria-hidden className="shrink-0 opacity-70">↻</span>
+            )}
             {a.name}
           </div>
         ))}
