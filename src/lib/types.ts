@@ -3,9 +3,6 @@ export type AccountType = "checking" | "savings" | "investment" | "trading" | "c
 export type CategoryKind = "income" | "expense";
 export type TxnSource = "manual" | "csv" | "recurring";
 export type RecurrenceInterval = "weekly" | "monthly" | "quarterly" | "semiannual" | "yearly";
-export type ActivityKind = "job" | "trading" | "project" | "learning" | "training" | "admin" | "life";
-export type GoalKind = "financial" | "time" | "milestone";
-export type GoalStatus = "active" | "paused" | "done" | "dropped";
 
 export const ACCOUNT_TYPE_LABEL: Record<AccountType, string> = {
   checking: "Konto", savings: "Sparkonto", investment: "Anlagen",
@@ -74,24 +71,6 @@ export interface MonthlyCashflow {
   savings: number;
 }
 
-export interface Activity {
-  id: string; user_id: string; name: string; kind: ActivityKind;
-  bucket: TimeBucket; color: string;
-  counts_toward_goal: boolean; hourly_rate: number | null;
-  /** Schlaf zählt nicht als Wachzeit und wird aus der Lückenrechnung herausgehalten. */
-  is_sleep: boolean;
-  calendar_patterns: string[]; sort_order: number; archived: boolean;
-}
-
-export interface Goal {
-  id: string; user_id: string; title: string; description: string | null;
-  kind: GoalKind; target_amount: number | null; unit: string | null;
-  start_date: string; target_date: string | null;
-  linked_category_ids: string[]; linked_activity_ids: string[];
-  manual_progress: number | null; weekly_time_budget_hours: number | null;
-  status: GoalStatus; sort_order: number;
-}
-
 export interface Scenario {
   id: string; user_id: string; name: string; description: string | null;
   income_factor: number; expense_delta_monthly: number; one_off_cost: number;
@@ -105,93 +84,6 @@ export interface RunwayInputs {
 }
 
 /* ------------------------------------------------------------- Zeit-Modul */
-
-export type TimeBucket =
-  | "ziel" | "arbeit" | "pflicht" | "regeneration" | "sozial" | "spass" | "leerlauf";
-
-export const BUCKET_ORDER: TimeBucket[] = [
-  "ziel", "arbeit", "pflicht", "regeneration", "sozial", "spass", "leerlauf",
-];
-
-export const BUCKET_LABEL: Record<TimeBucket, string> = {
-  ziel: "Ziele",
-  arbeit: "Arbeit",
-  pflicht: "Pflicht",
-  regeneration: "Regeneration",
-  sozial: "Soziales",
-  spass: "Spass",
-  leerlauf: "Leerlauf",
-};
-
-export const BUCKET_HINT: Record<TimeBucket, string> = {
-  ziel: "Zahlt auf deine Ziele ein",
-  arbeit: "Lohnarbeit",
-  pflicht: "Muss sein, bringt aber nichts voran",
-  regeneration: "Bewusste Erholung",
-  sozial: "Zeit mit Menschen",
-  spass: "Bewusst genossene Freizeit",
-  leerlauf: "Verbrannt, ohne Gegenwert",
-};
-
-export const BUCKET_COLOR: Record<TimeBucket, string> = {
-  ziel: "#5B8C7B",          // gedecktes Grün
-  arbeit: "#C4A882",        // Sand
-  pflicht: "#A8A093",       // warmes Grau
-  regeneration: "#8FA6B8",  // stilles Blau
-  sozial: "#D2A05F",        // Bernstein
-  spass: "#BE8DA4",         // Altrosa
-  leerlauf: "#B9847A",      // Terrakotta
-};
-
-export const UNACCOUNTED_COLOR = "#E0D9CA";
-
-export interface DailyTime {
-  user_id: string;
-  entry_date: string;
-  logged_minutes: number;
-  ziel_minutes: number;
-  arbeit_minutes: number;
-  pflicht_minutes: number;
-  regeneration_minutes: number;
-  sozial_minutes: number;
-  spass_minutes: number;
-  leerlauf_minutes: number;
-  sleep_hours: number | null;
-  energy: number | null;
-  waking_minutes: number;
-  unaccounted_minutes: number;
-}
-
-export interface TimeEntry {
-  id: string; user_id: string; activity_id: string;
-  entry_date: string; minutes: number; note: string | null;
-  source: "manual" | "calendar"; calendar_event_id: string | null;
-  start_minute: number | null; confirmed: boolean;
-}
-
-export interface DayCheckin {
-  id: string; user_id: string; entry_date: string;
-  energy: number | null; sleep_hours: number | null; note: string | null;
-}
-
-export interface WeeklyBucket {
-  user_id: string; week_start: string; bucket: TimeBucket; minutes: number;
-}
-
-export interface WeeklyActivity {
-  user_id: string; week_start: string; activity_id: string;
-  name: string; bucket: TimeBucket; color: string;
-  counts_toward_goal: boolean; minutes: number; entry_count: number;
-}
-
-export interface ActivityValue {
-  activity_id: string; user_id: string; name: string;
-  kind: ActivityKind; bucket: TimeBucket; color: string;
-  counts_toward_goal: boolean; hourly_rate: number | null;
-  hours: number; net_amount: number;
-  effective_hourly: number | null; notional_value: number | null;
-  first_entry: string | null; last_entry: string | null;
-}
 
 export interface AccountStats {
   account_id: string; user_id: string;
@@ -257,108 +149,9 @@ export interface NavLink {
   image_url: string | null;
   /** Sichtbarer Bildausschnitt, wie CSS object-position. */
   image_position: string;
-  /** Aktivität, die beim Öffnen vorgeschlagen wird. */
-  activity_id: string | null;
-  track_time: boolean;
   color: string;
   sort_order: number;
   open_count: number;
   last_opened_at: string | null;
   archived: boolean;
-}
-
-export type FocusStatus = "open" | "logged" | "dismissed";
-
-export interface FocusSession {
-  id: string;
-  user_id: string;
-  label: string;
-  link_id: string | null;
-  link_ids: string[];
-  activity_id: string | null;
-  started_at: string;
-  ended_at: string | null;
-  minutes: number | null;
-  status: FocusStatus;
-  time_entry_id: string | null;
-}
-
-export interface GoalProgress {
-  id: string; user_id: string; title: string; description: string | null;
-  kind: GoalKind; target_amount: number | null; unit: string | null;
-  start_date: string; target_date: string | null;
-  linked_category_ids: string[]; linked_activity_ids: string[];
-  manual_progress: number | null; weekly_time_budget_hours: number | null;
-  status: GoalStatus; sort_order: number;
-  progress: number; milestone_count: number; milestones_done: number;
-}
-
-export interface GoalMilestone {
-  id: string; user_id: string; goal_id: string;
-  title: string; target_date: string | null; done_at: string | null; sort_order: number;
-}
-
-export interface WeeklyReview {
-  id: string; user_id: string; week_start: string;
-  goal_hours: number | null; total_hours: number | null;
-  income: number | null; expenses: number | null;
-  net_worth: number | null; runway_months: number | null;
-  went_well: string | null; went_poorly: string | null; next_week_focus: string | null;
-  created_at: string;
-}
-
-export const GOAL_KIND_LABEL: Record<GoalKind, string> = {
-  financial: "Geldbetrag",
-  time: "Stunden",
-  milestone: "Meilensteine",
-};
-
-/* --------------------------------------------------------------- Aufgaben */
-
-/**
- * Lebensbereich einer Aufgabe. Startet mit denselben sieben Bereichen wie die
- * Zeit-Buckets, ist aber frei erweiterbar - deshalb eine eigene Tabelle und
- * kein Enum. `bucket` hält die Verbindung zur Zeiterfassung, wo es eine gibt.
- */
-export interface LifeArea {
-  id: string;
-  user_id: string;
-  name: string;
-  bucket: TimeBucket | null;
-  color: string;
-  sort_order: number;
-  archived: boolean;
-}
-
-export interface Task {
-  id: string;
-  user_id: string;
-  title: string;
-  details: string | null;
-  life_area_id: string | null;
-  /** Deadline. NULL heisst: irgendwann. */
-  due_on: string | null;
-  /** 0 = normal, 1 = wichtig. */
-  priority: number;
-  /** Gesetzt heisst erledigt. */
-  done_at: string | null;
-  sort_order: number;
-  created_at: string;
-}
-
-export interface Subtask {
-  id: string;
-  user_id: string;
-  task_id: string;
-  title: string;
-  done_at: string | null;
-  sort_order: number;
-}
-
-/** Aufgabe samt Bereichsnamen und Stand der Unteraufgaben. */
-export interface TaskView extends Task {
-  areaName: string | null;
-  areaColor: string | null;
-  subtasks: Subtask[];
-  subtasksDone: number;
 }

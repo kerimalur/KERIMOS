@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { resetMoney, resetTime, type ResetCounts } from "@/lib/actions";
+import { resetMoney, type ResetCounts } from "@/lib/actions";
 import { Button, Card, CardTitle, Input, Label, cx } from "@/components/ui";
 
 interface Item { key: string; label: string; hint: string; countKey: string }
@@ -21,24 +21,18 @@ const GELD: Item[] = [
     hint: "Löscht zwingend auch die Import-Regeln, die darauf zeigen" },
 ];
 
-const ZEIT: Item[] = [
-  { key: "entries", label: "Zeiteinträge", countKey: "time_entries",
-    hint: "Alle erfassten Blöcke im Kalender" },
-  { key: "checkins", label: "Tages-Notizen", countKey: "day_checkins",
-    hint: "Energie, Schlafdauer und Notizen" },
-  { key: "reviews", label: "Wochen-Rückblicke", countKey: "weekly_reviews",
-    hint: "Eingefrorene Wochenkennzahlen" },
-  { key: "activities", label: "Aktivitäten", countKey: "activities",
-    hint: "Löscht zwingend auch alle Zeiteinträge" },
-];
-
+/**
+ * Nur noch Geld: der Zeit-Bereich ist am 09.09.2026 entfallen, und mit ihm
+ * die Aktion `resetTime`. Die Zeilen in `time_entries`, `day_checkins` und
+ * `weekly_reviews` bleiben unangetastet in der Datenbank stehen — ein Knopf,
+ * der Daten eines Bereichs löscht, den es nicht mehr gibt, ist keine Aufräum-
+ * hilfe, sondern ein Unfall, der darauf wartet zu passieren.
+ */
 export function ResetPanel({ counts }: { counts: ResetCounts }) {
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="max-w-xl">
       <Section title="Geld zurücksetzen" items={GELD} counts={counts} kind="money"
-        note="Betrifft ausschliesslich den Geld-Bereich. Deine Zeitdaten bleiben unberührt." />
-      <Section title="Zeit zurücksetzen" items={ZEIT} counts={counts} kind="time"
-        note="Betrifft ausschliesslich den Zeit-Bereich. Deine Buchungen bleiben unberührt." />
+        note="Betrifft ausschliesslich den Geld-Bereich." />
     </div>
   );
 }
@@ -47,7 +41,7 @@ function Section({
   title, items, counts, kind, note,
 }: {
   title: string; items: Item[]; counts: ResetCounts;
-  kind: "money" | "time"; note: string;
+  kind: "money"; note: string;
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -77,7 +71,7 @@ function Section({
     fd.set("confirm", confirm);
     for (const item of items) if (selected.has(item.key)) fd.set(item.key, "on");
     try {
-      const res = kind === "money" ? await resetMoney(fd) : await resetTime(fd);
+      const res = await resetMoney(fd);
       setResult(res);
       setSelected(new Set());
       setConfirm("");

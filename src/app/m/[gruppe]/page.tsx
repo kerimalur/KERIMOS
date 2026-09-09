@@ -6,18 +6,14 @@ import { Launcher } from "@/components/launcher";
 import { TradingCard } from "@/components/trading-card";
 import { Card, Stat, Empty } from "@/components/ui";
 import { chf, dateLabel } from "@/lib/format";
-import {
-  fmtHours, pct, summarizeWeek, weekStart as toWeekStart, addDays, heuteISO,
-} from "@/lib/time";
+
 import { createGymClient, gymConfigured, type BodyWeightEntry } from "@/lib/supabase/gym";
 import {
   createMenuClient, fetchEssenOverview, MEAL_LABEL,
   type EssenTag, type ShoppingItem,
 } from "@/lib/supabase/menu";
 import { ShoppingList } from "@/components/shopping-list";
-import type {
-  Activity, DailyTime, FocusSession, NavLink, RunwayInputs, WeeklyBucket,
-} from "@/lib/types";
+import type { NavLink, RunwayInputs } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -33,41 +29,6 @@ async function GeldKarte() {
         <Stat label="Liquide" value={chf(Number(i.liquid ?? 0))} />
         <Stat label="Ø Einnahmen" value={chf(Number(i.avg_income ?? 0))} sub="letzte 3 Monate" />
         <Stat label="Ø Ausgaben" value={chf(Number(i.avg_expenses ?? 0))} sub="letzte 3 Monate" />
-      </div>
-    </Card>
-  );
-}
-
-/** Kleine Live-Karte für den Zeit-Modus: die laufende Woche. */
-async function ZeitKarte() {
-  const supabase = await createClient();
-  const week = toWeekStart(heuteISO());
-  const [{ data: daily }, { data: buckets }] = await Promise.all([
-    supabase.from("v_daily_time").select("*")
-      .gte("entry_date", week).lte("entry_date", addDays(week, 6)),
-    supabase.from("v_weekly_buckets").select("*").eq("week_start", week),
-  ]);
-  const days = ((daily ?? []) as DailyTime[]).map((d) => ({
-    ...d,
-    logged_minutes: Number(d.logged_minutes), ziel_minutes: Number(d.ziel_minutes),
-    arbeit_minutes: Number(d.arbeit_minutes), pflicht_minutes: Number(d.pflicht_minutes),
-    regeneration_minutes: Number(d.regeneration_minutes),
-    sozial_minutes: Number(d.sozial_minutes), spass_minutes: Number(d.spass_minutes),
-    leerlauf_minutes: Number(d.leerlauf_minutes),
-    sleep_hours: d.sleep_hours === null ? null : Number(d.sleep_hours),
-    waking_minutes: Number(d.waking_minutes),
-    unaccounted_minutes: Number(d.unaccounted_minutes),
-  }));
-  if (days.length === 0) return null;
-  const s = summarizeWeek(days, (buckets ?? []) as WeeklyBucket[]);
-  return (
-    <Card>
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Stat label="Woche an Zielen" value={pct(s.goalShare)}
-          tone={s.goalShare >= 0.15 ? "good" : "warn"} />
-        <Stat label="Erfasst" value={fmtHours(s.totalLogged)} />
-        <Stat label="Unerfasst" value={fmtHours(s.totalUnaccounted)}
-          tone={s.totalUnaccounted > s.totalLogged ? "bad" : "neutral"} />
       </div>
     </Card>
   );
@@ -255,7 +216,6 @@ export default async function ModusPage({
         {/* Live-Karte des Modus */}
         {n.includes("trad") && <TradingCard />}
         {n.includes("geld") && <GeldKarte />}
-        {n.includes("zeit") && <ZeitKarte />}
         {n.includes("gym") && <GymKarte />}
         {/* "Essen" hat seit der Übernahme eigene Seiten unter /m/Essen -
             diese Karten greifen nur noch, falls eine Gruppe anders heisst. */}

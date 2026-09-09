@@ -8,9 +8,9 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "check:gewohnheiten": "npx -y tsx tools/checks/gewohnheiten.mts",
     "check:meal-swap": "node tools/checks/meal-swap.mjs",
     "check:essen-bonus": "npx -y tsx tools/checks/essen-bonus.mts",
-    "check:morgen": "npx -y tsx tools/checks/morgen.mts",
     "check:cot": "npx -y tsx tools/checks/cot.mts",
     "check:saison": "npx -y tsx tools/checks/saison.mts",
     "check:auswertung": "npx -y tsx tools/checks/auswertung.mts",
@@ -26,15 +26,10 @@
     "check:duplikat": "npx -y tsx tools/checks/duplikat.mts",
     "check:konfluenzen": "npx -y tsx tools/checks/konfluenzen.mts",
     "check:screenshots": "npx -y tsx tools/checks/screenshots.mts",
-    "check:heute": "npx -y tsx tools/checks/heute.mts",
     "check:kategorien": "npx -y tsx tools/checks/kategorien.mts",
     "check:kerzen": "npx -y tsx tools/checks/kerzen.mts",
     "check:server-actions": "npx -y tsx tools/checks/server-actions.mts",
-    "check:tagesrueckblick": "npx -y tsx tools/checks/tagesrueckblick.mts",
-    "check:abgleich": "npx -y tsx tools/checks/abgleich.mts",
-    "check:wochenrueckblick": "npx -y tsx tools/checks/wochenrueckblick.mts",
-    "check:naehrwerte": "npx -y tsx tools/checks/naehrwerte.mts",
-    "check:schnell-training": "npx -y tsx tools/checks/schnell-training.mts"
+    "check:naehrwerte": "npx -y tsx tools/checks/naehrwerte.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

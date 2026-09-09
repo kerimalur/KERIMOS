@@ -1,4 +1,3 @@
-import { createClient } from "@/lib/supabase/server";
 import { createGymClient, gymConfigured } from "@/lib/supabase/gym";
 import { fetchTodayMenu, menuConfigured } from "@/lib/supabase/menu";
 import { fetchWeather } from "@/lib/weather";
@@ -16,12 +15,10 @@ import { heuteISO, ZONE } from "@/lib/time";
  * mit, ob man mit dem Motorrad zur Schicht fährt.
  */
 export async function Tagessatz() {
-  const supabase = await createClient();
   const heute = heuteISO();
   const gym = gymConfigured() ? createGymClient() : null;
 
-  const [{ data: schichten }, menu, wetter, letzteEinheit] = await Promise.all([
-    supabase.from("shifts").select("id, name").limit(5),
+  const [menu, wetter, letzteEinheit] = await Promise.all([
     menuConfigured() ? fetchTodayMenu() : Promise.resolve(null),
     fetchWeather(),
     (async () => {
@@ -83,7 +80,7 @@ export async function Tagessatz() {
         </h1>
         <p className="mt-1 text-sm text-ink-soft">
           <span className="capitalize">{wochentag}</span>
-          {schichten && schichten.length > 0 ? " · " : " · "}
+          {" · "}
           {satz}
         </p>
       </div>

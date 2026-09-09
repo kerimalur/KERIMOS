@@ -1,10 +1,9 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { AppointmentsCard } from "@/components/appointments-card";
 import { Tagessatz } from "@/components/tagessatz";
 import { GewichtHeute } from "@/components/gewicht-heute";
+import { GewohnheitenKarte } from "@/components/gewohnheiten-karte";
 import { GvaLinienKarte } from "@/components/gva-linien-karte";
-import { HeuteWichtig } from "@/components/heute-wichtig";
 import { DisplayModeToggle } from "@/components/display-mode-toggle";
 import { Logo } from "@/components/logo";
 import { QuickSearch } from "@/components/quick-search";
@@ -13,10 +12,7 @@ import { WeeklyGoalsCard } from "@/components/weekly-goals";
 import { seedLinks } from "@/lib/actions";
 import { fetchModusKennzahlen } from "@/lib/modus-kennzahlen";
 import { fetchWeeklyGoals } from "@/lib/weekly-goals";
-import { ladeWochenziele } from "@/lib/wochenziele";
-import { wochenpaar } from "@/lib/wochenrueckblick";
 import { MODE_ORDER, MODE_DIRECT, MODE_AUS } from "@/lib/modes";
-import { weekStart as toWeekStart, heuteISO, heuteWochentag } from "@/lib/time";
 import type { NavLink } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -30,41 +26,25 @@ export const dynamic = "force-dynamic";
  * Dingen vorbei, die gerade nicht zählten.
  *
  * Jetzt beantwortet sie drei Fragen und sonst nichts:
- *   1. Was ist heute anders (ein Satz, Wetter, die Termine des Tages)
- *   2. Was verlangt eine Entscheidung (nur wenn es etwas gibt)
+ *   1. Was ist heute anders (ein Satz, das Wetter)
+ *   2. Was ist heute schon getan (die Gewohnheiten, die aktiven Trades)
  *   3. Wo arbeitest du jetzt (die Modi, mit ihren wichtigsten Zahlen)
  *
- * Reihenfolge seit 21.08.2026, von Kerim vorgegeben: Kopfzeile mit Suche und
- * Farbumschalter, dann die Woche, dann was heute zaehlt, dann die Termine,
- * dann Trading, dann die Modi. Der Zeitstrahl ist raus — er zeigte eine
- * Erfassung, die es nicht mehr gibt.
+ * Beim Umbau vom 09.09.2026 ist der ganze Zeit-Bereich entfallen — Termine,
+ * Aufgaben, Tages- und Wochenrückblick, Wochenziele, Schichten, Zen. Damit
+ * sind auch die Karten weg, die von dort gespeist wurden („Heute das
+ * Wichtigste", die Termine, der Rückblick-Hinweis). An ihre Stelle tritt der
+ * Habit-Tracker: eine Zeile pro Gewohnheit, ein Druck, fertig.
  *
  * Steht nichts an, ist die Seite fast leer. Das ist das Ziel, kein Mangel.
  */
 export default async function Start() {
-  // Früher wurden Handys hier auf /heute umgeleitet, weil die Startseite
-  // zu voll für kleine Bildschirme war. Seit sie nur noch Tagessatz,
-  // Entscheidungen und Modi zeigt, passt sie überall - und ein Handy soll
-  // dieselben Möglichkeiten haben wie der Rechner. /heute bleibt als
-  // schlanke Erfassungsansicht erreichbar.
   const supabase = await createClient();
-  // Welche Woche der Rückblick gerade meint, entscheidet `wochenpaar()`:
-  // am Wochenende die endende Woche, Mo-Fr die davor. Vorher stand hier fest
-  // „die Vorwoche" — sonntags war das die falsche und der Hinweis zeigte auf
-  // ein Formular, das gar nicht dran war.
-  const faelligeWoche = wochenpaar(heuteISO()).rueckblick;
 
-  const laufendeWoche = toWeekStart(heuteISO());
-
-  const [
-    { data: linkRows }, { data: lastReview }, kennzahlen, wochenziele, zielListe,
-  ] = await Promise.all([
+  const [{ data: linkRows }, kennzahlen] = await Promise.all([
     supabase.from("links").select("*").eq("archived", false)
       .order("group_name").order("sort_order"),
-    supabase.from("weekly_reviews").select("id").eq("week_start", faelligeWoche).maybeSingle(),
     fetchModusKennzahlen(),
-    fetchWeeklyGoals(),
-    ladeWochenziele(laufendeWoche),
   ]);
 
   const links = (linkRows ?? []) as NavLink[];
@@ -76,7 +56,7 @@ export default async function Start() {
           <h1 className="font-display text-lg font-bold text-ink">Navigator einrichten</h1>
           <p className="mt-2 text-sm text-ink-muted">
             KerimOS legt dir Kacheln für deine Modi an — Traden, Gym, Essen,
-            Zeit. Alles danach änderbar.
+            Lernen. Alles danach änderbar.
           </p>
           <form action={seedLinks} className="mt-5">
             <Button type="submit" className="w-full">Kacheln anlegen</Button>
@@ -86,15 +66,11 @@ export default async function Start() {
     );
   }
 
-  // Sonntag (0) und Montag (1): sanft erinnern, solange der Rückblick fehlt
-  const wochentag = heuteWochentag();
-  // Samstag bis Dienstag. Danach bleibt das Nachholfenster offen, aber ein
-  // Banner, das die ganze Woche steht, liest niemand mehr.
-  const reviewFehlt = !lastReview && [6, 0, 1, 2].includes(wochentag);
+  const wochenpuls = await fetchWeeklyGoals();
 
   const gruppen = new Map<string, NavLink[]>();
   for (const l of links) {
-    // Ausgeblendete Gruppen (aktuell "Geld") bleiben in der Datenbank stehen,
+    // Ausgeblendete Gruppen ("Geld", "Zeit") bleiben in der Datenbank stehen,
     // erscheinen aber nicht mehr. Loeschen waere unumkehrbar fuer nichts.
     if (MODE_AUS.has(l.group_name)) continue;
     const list = gruppen.get(l.group_name) ?? [];
@@ -129,37 +105,16 @@ export default async function Start() {
       </div>
 
       <div className="mb-6">
-        <WeeklyGoalsCard data={wochenziele} ziele={zielListe.ziele}
-          weekStart={laufendeWoche} />
+        <WeeklyGoalsCard data={wochenpuls} />
       </div>
 
-      {/* Was heute eine Entscheidung braucht. Jede Karte blendet sich selbst
-          aus, wenn nichts ansteht - dann steht hier schlicht nichts. */}
+      {/* Was heute noch offen ist. Jede Karte blendet sich selbst aus, wenn
+          nichts ansteht - dann steht hier schlicht nichts. */}
       <div className="mb-7 space-y-3">
-        <HeuteWichtig />
-        <AppointmentsCard />
+        <GewohnheitenKarte
+          leer="Noch keine Gewohnheit. Leg die erste an — es dauert zehn Sekunden." />
         <GvaLinienKarte />
         <GewichtHeute />
-
-        {reviewFehlt && (
-          <Link href="/rueckblick"
-            className="block rounded-2xl border border-warn/30 bg-warn-tint px-5 py-3
-                       text-sm text-ink-soft transition hover:border-warn/60">
-            Der Wochenrückblick fehlt noch — fünf Minuten, und dabei stehen
-            gleich die Ziele für die nächste Woche. →
-          </Link>
-        )}
-
-        {/* Zen: eine Uhr und ein leerer Bildschirm. Ersetzt die
-            Fokus-Sitzungen, die am Ende nach jeder Sitzung eine Erfassung
-            verlangten — genau das, was abgeschafft wurde. */}
-        <Link href="/zen"
-          className="flex items-center justify-between rounded-2xl border border-line/70
-                     bg-card px-5 py-3 text-sm text-ink-soft shadow-card transition
-                     hover:border-line-strong active:scale-[0.99]">
-          <span>Zen-Modus — Uhr an, Bildschirm leer</span>
-          <span className="text-ink-faint">→</span>
-        </Link>
       </div>
 
       <div className="mb-3 text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted">

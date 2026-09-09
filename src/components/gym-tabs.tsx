@@ -8,27 +8,18 @@ import { cx } from "@/components/ui";
  * Auf dem Handy klebt sie unten am Rand, am Computer sitzt sie oben.
  */
 /**
- * Seit die Garmin-Uhr das Tracking übernimmt, haben sich die Gewichte
- * verschoben: geplant wird nicht mehr in KerimOS, sondern auf der Uhr.
- * "Plan" ist damit kein täglicher Weg mehr und rutscht unter "Mehr" -
- * gelöscht wird nichts, manuelles Erfassen bleibt der Notfallweg.
+ * Drei Reiter, seit der Umbau vom 09.09.2026 die Planung und die Auswertung
+ * entfernt hat: Trainingstage, Übungen, Kalender, Muskelbalance, Fortschritt
+ * je Übung und das manuelle Erfassen sind weg. Sie setzten alle eine Eingabe
+ * voraus, die seit der Uhr niemand mehr macht.
  *
- * "Tage" steht wieder oben: die Trainingstage sind von der Übersicht
- * verschwunden (dort gehört nur die Übersicht hin), und unter "Mehr" hätte
- * sie niemand mehr gefunden.
+ * Was bleibt, ist der Weg durch den Bereich: war ich da (Übersicht), was war
+ * (Verlauf), was hat die Uhr geschickt (Garmin).
  */
 const TABS = [
   { href: "/gym", label: "Übersicht" },
-  { href: "/gym/trainingstage", label: "Tage" },
   { href: "/gym/verlauf", label: "Verlauf" },
   { href: "/gym/garmin", label: "Garmin" },
-  { href: "/gym/einstellungen", label: "Mehr" },
-];
-
-/** Unterseiten, die unter "Mehr" einsortiert sind. */
-const UNTER_MEHR = [
-  "/gym/uebungen", "/gym/fortschritt", "/gym/kalender", "/gym/workout",
-  "/gym/balance",
 ];
 
 /**
@@ -38,13 +29,8 @@ const UNTER_MEHR = [
  */
 export function GymTabs({ offeneImporte = 0 }: { offeneImporte?: number }) {
   const path = usePathname();
-  const aktiv = (href: string) => {
-    if (href === "/gym") return path === href;
-    if (href === "/gym/einstellungen") {
-      return path.startsWith(href) || UNTER_MEHR.some((p) => path.startsWith(p));
-    }
-    return path.startsWith(href);
-  };
+  const aktiv = (href: string) =>
+    href === "/gym" ? path === href : path.startsWith(href);
 
   const hinweis = (href: string) =>
     href === "/gym/garmin" && offeneImporte > 0 ? offeneImporte : null;

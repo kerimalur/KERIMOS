@@ -7,7 +7,13 @@ import { Logo } from "./logo";
 // Gym fehlt hier bewusst: dieser Bereich bringt seine eigene Tab-Leiste mit
 // (siehe app/gym/layout.tsx), wie der Essen-Bereich auch. Zwei Navigationen
 // übereinander verwirren mehr, als sie helfen.
-type Section = "zeit" | "trading" | null;
+//
+// Seit dem 09.09.2026 gibt es nur noch EINEN Bereich mit eigener Leiste:
+// Trading. Der Zeit-Bereich (Termine, Rückblick, Schichten) ist entfallen.
+// Die Struktur bleibt trotzdem als Tabelle stehen und wird nicht auf einen
+// festen Trading-Kopf eingedampft — sie kostet nichts und der nächste
+// Bereich mit Unterseiten hängt sich hier ohne Umbau ein.
+type Section = "trading" | null;
 
 /**
  * Ein Eintrag der Hauptnavigation.
@@ -29,41 +35,6 @@ interface NavConfig {
   primary: NavLink[];
   secondary: NavLink[];
 }
-
-/**
- * Zeit: erfasst wird nichts mehr.
- *
- * Die minutengenaue Erfassung hat zwei Fragen beantworten sollen - "was mache
- * ich eigentlich?" und "wo habe ich neben der Arbeit Platz?". Die erste
- * beantwortet der Tagesrueckblick besser und in einer Minute statt in vielen,
- * die zweite die Wochenansicht. Erfassen kostete taeglich Zeit und wurde
- * deshalb nicht gemacht; drei Saetze am Abend kosten eine Minute.
- *
- * Raus sind: /zeit, /quick, /aktivitaeten, /achse, /heute, /fokus, /ziele.
- * Siehe ../../TRADING-UMBAU.md.
- */
-/**
- * Zeit ist auf drei Dinge zusammengestrichen (Stand 23.08.2026).
- *
- * **Termine** — jetzt mit Aufgaben zusammen: beides notiert man im selben
- * Moment, und die Aufgaben-Seite war beim letzten Zuschnitt weggefallen,
- * während die Tabelle blieb.
- *
- * **Rückblick** — Tag und Woche auf einer Seite. Vorher drei Einträge
- * („Heute", „Rückblick", „Woche"), von denen zwei dieselbe Woche zeigten
- * und einer an einer Zeiterfassung hing, die es nicht mehr gibt.
- *
- * **Schichten** — der Dienstplan, unverändert.
- */
-const ZEIT: NavConfig = {
-  home: { href: "/termine", label: "Termine" },
-  primary: [
-    { href: "/rueckblick", label: "Rückblick", auch: ["/rueckblick/heute"] },
-  ],
-  secondary: [
-    { href: "/schichten", label: "Schichten" },
-  ],
-};
 
 /**
  * Trading: sechs Bereiche in EINER Zeile, keine zweite Reihe mehr.
@@ -97,18 +68,16 @@ const TRADING: NavConfig = {
   secondary: [],
 };
 
-const ZEIT_PATHS = ["/termine", "/rueckblick", "/schichten"];
 const TRADING_PATHS = ["/trading"];
-// "/", "/links", "/gym" und "/m/…" gehören zu keinem Bereich - dort zeigt
-// die Navigation nichts bzw. der Bereich bringt seine eigene Leiste mit.
+// "/", "/links", "/gym", "/gewohnheiten" und "/m/…" gehören zu keinem Bereich -
+// dort zeigt die Navigation nichts bzw. der Bereich bringt seine eigene
+// Leiste mit.
 
 const SECTION_LABEL: Record<Exclude<Section, null>, string> = {
-  zeit: "Zeit",
   trading: "Trading",
 };
 
 function sectionOf(path: string): Section {
-  if (ZEIT_PATHS.some((p) => path === p || path.startsWith(p + "/"))) return "zeit";
   if (TRADING_PATHS.some((p) => path === p || path.startsWith(p + "/"))) return "trading";
   return null;
 }
@@ -116,7 +85,7 @@ function sectionOf(path: string): Section {
 export function Nav({ email }: { email?: string }) {
   const path = usePathname();
   const section = sectionOf(path);
-  const config = section === "zeit" ? ZEIT : TRADING;
+  const config = TRADING;
 
   /**
    * Aktiv ist der längste passende Eintrag, nicht jeder passende.

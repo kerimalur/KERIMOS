@@ -3,19 +3,15 @@ import { createClient } from "@/lib/supabase/server";
 import { createLink, updateLink, deleteLink, seedLinks } from "@/lib/actions";
 import { Button, Card, CardTitle, Input, Label, Select, Badge, Empty } from "@/components/ui";
 import { TileImage } from "@/components/tile-image";
-import { BUCKET_LABEL, LINK_KIND_LABEL, type Activity, type NavLink } from "@/lib/types";
+import { LINK_KIND_LABEL, type NavLink } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 export default async function LinksPage() {
   const supabase = await createClient();
-  const [{ data }, { data: acts }] = await Promise.all([
-    supabase.from("links").select("*").eq("archived", false)
-      .order("group_name").order("sort_order"),
-    supabase.from("activities").select("*").eq("archived", false).order("name"),
-  ]);
+  const { data } = await supabase.from("links").select("*")
+    .eq("archived", false).order("group_name").order("sort_order");
   const links = (data ?? []) as NavLink[];
-  const activities = (acts ?? []) as Activity[];
 
   const groups = [...new Set(links.map((l) => l.group_name))];
 
@@ -26,9 +22,7 @@ export default async function LinksPage() {
           <h1 className="font-display text-xl font-bold text-ink">Kacheln</h1>
           <p className="mt-1 max-w-2xl text-sm text-ink-muted">
             Was hier steht, erscheint auf der Startseite. Ein Bild ersetzt das Symbol.
-            Wählst du bei einer Kachel unter „zählt als“ eine Aktivität, startet ihr
-            Öffnen eine Fokus-Sitzung — bei der Rückkehr fragt KerimOS, wie lange du
-            weg warst. Ein Klick auf „Speichern“ sichert die ganze Zeile.
+            Ein Klick auf „Speichern“ sichert die ganze Zeile.
             Die Reihenfolge verschiebst du direkt auf der Startseite über „Anordnen“.
             Lokale Ordner kann ein Browser nicht öffnen — ein Klick legt den Pfad in die
             Zwischenablage, Win+E und Strg+V bringen dich hin.
@@ -80,18 +74,6 @@ export default async function LinksPage() {
                         className="w-28" aria-label="Gruppe" />
                       <Input name="sort_order" type="number" defaultValue={l.sort_order}
                         className="w-16" aria-label="Reihenfolge" />
-                      <label className="flex items-center gap-1.5">
-                        <span className="text-xs text-ink-muted">zählt als</span>
-                        <Select name="activity_id" defaultValue={l.activity_id ?? ""}
-                          className="w-44 text-xs">
-                          <option value="">— nicht mitzählen —</option>
-                          {activities.map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {a.name} ({BUCKET_LABEL[a.bucket]})
-                            </option>
-                          ))}
-                        </Select>
-                      </label>
                       {l.open_count > 0 && <Badge>{l.open_count}×</Badge>}
                       <Button variant="ghost" type="submit" className="px-2.5 py-1 text-xs">
                         Speichern
@@ -149,17 +131,6 @@ export default async function LinksPage() {
               <Label htmlFor="color">Farbe</Label>
               <input id="color" name="color" type="color" defaultValue="#5FC2A6"
                 className="h-9 w-full rounded-xl border border-line bg-card" />
-            </div>
-            <div>
-              <Label htmlFor="activity_id">Öffnen zählt als</Label>
-              <Select id="activity_id" name="activity_id" defaultValue="">
-                <option value="">— nicht mitzählen —</option>
-                {activities.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name} ({BUCKET_LABEL[a.bucket]})
-                  </option>
-                ))}
-              </Select>
             </div>
             <Button type="submit" className="w-full">Anlegen</Button>
           </form>

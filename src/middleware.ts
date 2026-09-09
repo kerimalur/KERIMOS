@@ -21,10 +21,10 @@ export const config = {
   //
   // REGEL: Ein neuer Endpunkt, der von aussen angestossen wird, muss HIER
   // eingetragen werden — sonst scheitert er lautlos mit einer Weiterleitung,
-  // und im Workflow sieht man nur "HTTP 307". Genau das ist morgen-anstoss,
-  // wochen-erinnerung und abend-erinnerung passiert.
+  // und im Workflow sieht man nur "HTTP 307". Genau das ist den drei
+  // Zeit-Erinnerungen passiert, die es seit dem 09.09.2026 nicht mehr gibt.
   //
   // Muss ein einziges Zeichenketten-Literal sein - Next.js liest den Wert
   // statisch aus, zusammengesetzte Ausdrücke lassen den Build scheitern.
-  matcher: ["/((?!api/garmin-sync|api/gva-alarm|api/morgen-anstoss|api/abend-erinnerung|api/wochen-erinnerung|_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  matcher: ["/((?!api/garmin-sync|api/gva-alarm|_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
 };

@@ -224,12 +224,6 @@ export function TileCard({
           </span>
         </span>
         <span className="flex shrink-0 items-center gap-2">
-          {link.track_time && !arranging && (
-            <span className="rounded bg-accent-tint px-1.5 py-0.5 text-[10px] text-accent-soft"
-              title="Öffnen startet die Zeiterfassung">
-              Zeit
-            </span>
-          )}
           <span className="text-ink-faint">
             {arranging ? "⠿" : link.kind === "folder" ? "⧉" : link.kind === "web" ? "↗" : "→"}
           </span>

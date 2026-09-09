@@ -1,7 +1,5 @@
 import { Card, CardTitle, Bar, cx } from "@/components/ui";
 import type { WeeklyGoals } from "@/lib/weekly-goals";
-import type { Wochenziel } from "@/lib/wochenziele";
-import { WochenzielListe } from "@/components/wochenziel-liste";
 
 /** Eine Zeile: Label, Stand/Ziel und ein Balken. */
 function GoalRow({
@@ -34,45 +32,24 @@ function GoalRow({
 }
 
 /**
- * „Diese Woche" — zwei Ebenen in einer Karte.
+ * „Diese Woche" — die Zahlen, die sich von selbst zählen.
  *
- * Oben die selbst gesetzten Ziele (abhakbar, gesetzt im Rückblick), darunter
- * die drei Zahlen, die sich von selbst zählen. Bewusst dieselbe Karte und
- * nicht zwei: Beides beantwortet dieselbe Frage — läuft die Woche? Zwei
- * Karten übereinander mit derselben Überschrift wären eine Trennung, die es
- * im Kopf nicht gibt.
+ * Die selbst gesetzten Wochenziele standen früher oben in derselben Karte.
+ * Sie hingen am Wochenrückblick und sind mit dem Zeit-Bereich entfallen; wie
+ * oft Kerim im Gym war, beantwortet jetzt der Habit-Tracker. Übrig bleibt,
+ * was ohne Eingabe entsteht: die Backtest-Trades und die Schritte der Uhr.
  */
-export function WeeklyGoalsCard({
-  data, ziele = [], weekStart,
-}: {
-  data: WeeklyGoals;
-  ziele?: Wochenziel[];
-  weekStart: string;
-}) {
-  if (!data.trades && !data.gym && !data.steps && ziele.length === 0) return null;
+export function WeeklyGoalsCard({ data }: { data: WeeklyGoals }) {
+  if (!data.trades && !data.steps) return null;
 
   return (
     <Card>
       <CardTitle>Diese Woche</CardTitle>
 
-      {ziele.length > 0 && (
-        <div className="mb-4">
-          <WochenzielListe ziele={ziele} weekStart={weekStart} />
-        </div>
-      )}
-
       <div className="space-y-3.5">
         {data.trades && (
           <GoalRow label="Backtest-Trades" current={data.trades.current}
             target={data.trades.target} color="#8B94B8" />
-        )}
-        {data.gym && (
-          <>
-            <GoalRow label="Kraft" current={data.gym.kraft} target={data.gym.kraftZiel}
-              color="#C68D6B" />
-            <GoalRow label="Ausdauer" current={data.gym.ausdauer}
-              target={data.gym.ausdauerZiel} color="#6E9B76" ueberErfuellt />
-          </>
         )}
         {data.steps && (
           <GoalRow label="Schritte diese Woche" current={data.steps.current}

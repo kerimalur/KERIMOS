@@ -26,13 +26,6 @@ export interface ModusZeile {
 
 export type ModusDaten = Record<string, ModusZeile[]>;
 
-const std = (min: number) => {
-  const h = Math.floor(min / 60);
-  const m = Math.round(min % 60);
-  if (h === 0) return `${m} min`;
-  return m === 0 ? `${h} h` : `${h} h ${m} min`;
-};
-
 const nr = (n: number) => Math.round(n).toLocaleString("de-CH");
 
 export async function fetchModusKennzahlen(): Promise<ModusDaten> {
@@ -43,7 +36,7 @@ export async function fetchModusKennzahlen(): Promise<ModusDaten> {
   const supabase = await createClient();
   const gym = gymConfigured() ? createGymClient() : null;
 
-  const [gymTeil, essenTeil, geldTeil, zeitTeil, tradenTeil] = await Promise.all([
+  const [gymTeil, essenTeil, geldTeil, tradenTeil] = await Promise.all([
     // ---------------------------------------------------------------- Gym
     (async (): Promise<ModusZeile[]> => {
       if (!gym) return [];
@@ -162,34 +155,6 @@ export async function fetchModusKennzahlen(): Promise<ModusDaten> {
       return zeilen;
     })(),
 
-    // --------------------------------------------------------------- Zeit
-    (async (): Promise<ModusZeile[]> => {
-      // v_daily_time, nicht daily_time - es ist eine View. Der falsche Name
-      // lieferte stumm null Zeilen, die Kachel blieb deshalb leer.
-      const { data } = await supabase
-        .from("v_daily_time")
-        .select("ziel_minutes, unaccounted_minutes, logged_minutes")
-        .eq("entry_date", heute).limit(1);
-
-      const d = data?.[0] as {
-        ziel_minutes: number; unaccounted_minutes: number; logged_minutes: number;
-      } | undefined;
-
-      if (!d) return [{ text: "Heute noch nichts erfasst", betont: true }];
-
-      const zeilen: ModusZeile[] = [];
-      zeilen.push({ text: `${std(Number(d.logged_minutes ?? 0))} erfasst` });
-      if (Number(d.ziel_minutes) > 0) {
-        zeilen.push({ text: `davon ${std(Number(d.ziel_minutes))} an Zielen` });
-      }
-      if (Number(d.unaccounted_minutes) >= 30) {
-        zeilen.push({
-          text: `${std(Number(d.unaccounted_minutes))} offen`, betont: true,
-        });
-      }
-      return zeilen;
-    })(),
-
     // ------------------------------------------------------------- Traden
     (async (): Promise<ModusZeile[]> => {
       const zeilen: ModusZeile[] = [];
@@ -237,7 +202,6 @@ export async function fetchModusKennzahlen(): Promise<ModusDaten> {
   if (gymTeil.length) daten.Gym = gymTeil;
   if (essenTeil.length) daten.Essen = essenTeil;
   if (geldTeil.length) daten.Geld = geldTeil;
-  if (zeitTeil.length) daten.Zeit = zeitTeil;
 
   return daten;
 }

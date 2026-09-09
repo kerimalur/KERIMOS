@@ -5,7 +5,8 @@ import {
 } from "@/lib/supabase/trading";
 import { gruppiereNachKategorie, farbPunkt } from "@/lib/trading/kategorien";
 import { GruppenBox } from "@/components/trading/gruppen-box";
-import { Card, CardTitle, Badge } from "@/components/ui";
+import { KlappKarte } from "@/components/klapp-karte";
+import { Badge } from "@/components/ui";
 import { heuteISO } from "@/lib/time";
 
 /** JPY-Paare rechnen mit 0.01 Pip, alles andere mit 0.0001. */
@@ -23,6 +24,13 @@ function pips(pair: string, a: number, b: number): number {
  *
  * Die Karte blendet sich komplett aus, wenn nichts ansteht - gleiche Regel
  * wie bei allen anderen Karten der Startseite.
+ *
+ * Zwei Ebenen zum Zuklappen, beide bleiben über das Schliessen der App hinweg
+ * so, wie Kerim sie gelassen hat: die ganze Karte (`KlappKarte`) und jede
+ * Kategorie darin (`GruppenBox`). Damit lässt sich alles wegräumen oder genau
+ * die eine Kategorie offen lassen, die heute zählt. Wie viele Linien erreicht
+ * sind, steht auch im zugeklappten Zustand daneben - sonst müsste man
+ * aufklappen, um zu sehen, ob es sich lohnt.
  */
 export async function GvaLinienKarte() {
   if (!tradingConfigured()) return null;
@@ -56,15 +64,26 @@ export async function GvaLinienKarte() {
   const gruppen = gruppiereNachKategorie(linien, kategorien)
     .map((g) => ({ ...g, zeilen: [...g.zeilen].sort(nachAbstand) }));
 
+  const erreicht = linien.filter((l) => {
+    const preis = preise.get(l.pair.toUpperCase());
+    return preis !== undefined && pips(l.pair, preis, l.line_level!) < 1;
+  }).length;
+
   return (
-    <Card>
-      <div className="mb-3 flex items-baseline justify-between gap-2">
-        <CardTitle className="mb-0">Aktive Trades</CardTitle>
-        <Link href="/trading" className="text-xs text-accent-soft hover:underline">
+    <KlappKarte
+      schluessel="start:trades"
+      titel="Aktive Trades"
+      zusatz={
+        <span className="ml-1 flex items-center gap-2">
+          <span className="tabular text-[11px] text-ink-faint">{linien.length}</span>
+          {erreicht > 0 && <Badge tone="bad">{erreicht} erreicht</Badge>}
+        </span>
+      }
+      aktion={
+        <Link href="/trading" className="shrink-0 text-xs text-accent-soft hover:underline">
           verwalten ↗
         </Link>
-      </div>
-
+      }>
       <div className="space-y-3">
         {gruppen.map((g) => {
           const liste = (
@@ -124,6 +143,6 @@ export async function GvaLinienKarte() {
           );
         })}
       </div>
-    </Card>
+    </KlappKarte>
   );
 }

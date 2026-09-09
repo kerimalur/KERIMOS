@@ -1,9 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  registerLinkOpen, reorderLinks, startFocus, startFocusForActivity,
-} from "@/lib/actions";
+import { registerLinkOpen, reorderLinks } from "@/lib/actions";
 import { cx } from "@/components/ui";
 import { TileCard } from "@/components/tile-card";
 import type { NavLink } from "@/lib/types";
@@ -19,8 +17,6 @@ export function Launcher({ links }: { links: NavLink[] }) {
   const [order, setOrder] = useState<NavLink[]>(links);
   const [dragged, setDragged] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  // Vor dem Öffnen fragen, ob eine Fokus-Sitzung mitlaufen soll
-  const [pendingLink, setPendingLink] = useState<NavLink | null>(null);
 
   // Nach dem Neuladen der Serverdaten die lokale Reihenfolge übernehmen
   const source = arranging ? order : links;
@@ -74,32 +70,16 @@ export function Launcher({ links }: { links: NavLink[] }) {
       return;
     }
 
-    // Web und Bereiche: zuerst fragen, ob die Zeit mitlaufen soll
-    setPendingLink(link);
-  }
-
-  function proceed(mitFokus: boolean) {
-    const link = pendingLink;
-    if (!link) return;
-    setPendingLink(null);
+    // Web und Bereiche: direkt auf. Bis zum 09.09.2026 stand hier erst die
+    // Frage „Fokus starten?" — sie legte eine Zeile in `focus_sessions` an,
+    // die seit dem Wegfall der Zeiterfassung niemand mehr gelesen oder
+    // geschlossen hat. Ein Zwischenschritt, der nichts bewirkt, kostet bei
+    // jedem einzelnen Öffnen einen Klick.
     void registerLinkOpen(link.id);
 
     // Web-Ziele synchron öffnen - nach einem await blockt der Popup-Schutz
     if (link.kind === "web") {
       window.open(link.target, "_blank", "noopener,noreferrer");
-    }
-
-    if (mitFokus) {
-      void (async () => {
-        if (link.track_time) {
-          await startFocus(link.id);
-        } else {
-          const fd = new FormData();
-          fd.set("link_ids", link.id);
-          await startFocusForActivity(fd);
-        }
-        router.refresh();
-      })();
     }
 
     if (link.kind === "section") router.push(link.target);
@@ -189,28 +169,6 @@ export function Launcher({ links }: { links: NavLink[] }) {
         <p className="rounded-xl bg-accent-tint px-4 py-2.5 text-sm text-accent-soft">
           Kacheln ziehen und fallen lassen — auch in eine andere Gruppe. „Fertig“ speichert.
         </p>
-      )}
-
-      {pendingLink && (
-        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-accent bg-accent-tint px-4 py-3">
-          <span className="text-sm text-ink">
-            <span className="font-medium">{pendingLink.title}</span> öffnen — Fokus starten?
-          </span>
-          <span className="ml-auto flex items-center gap-2">
-            <button onClick={() => proceed(true)}
-              className="rounded-xl bg-accent px-3.5 py-1.5 text-sm font-medium text-ink-on transition hover:bg-accent-soft">
-              Mit Fokus
-            </button>
-            <button onClick={() => proceed(false)}
-              className="rounded-xl border border-line bg-card px-3.5 py-1.5 text-sm text-ink-soft transition hover:border-line-strong">
-              Nur öffnen
-            </button>
-            <button onClick={() => setPendingLink(null)}
-              className="px-1 text-xs text-ink-muted transition hover:text-ink-soft">
-              Abbrechen
-            </button>
-          </span>
-        </div>
       )}
 
       {!query && !arranging && recent.length > 0 && (

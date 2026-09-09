@@ -1,15 +1,18 @@
 # KerimOS
 
-Startpunkt für alles: ein Navigator, von dem aus du deine Projekte,
-Werkzeuge und Ordner erreichst — plus zwei eigene Bereiche für Geld und Zeit.
+Startpunkt für alles: eine Startseite, von der aus du deine Bereiche,
+Werkzeuge und Ordner erreichst — plus die Bereiche, die vollständig hier
+laufen: Trading, Gym, Essen und die Gewohnheiten.
 
-Die Startseite ist ein durchsuchbares Kachelraster. Tippen filtert, Enter
-öffnet, Pfeiltasten wählen. Interne Bereiche springen direkt, Webadressen
-öffnen in einem neuen Tab, lokale Ordner landen als Pfad in der Zwischenablage
-— mehr darf ein Browser dort nicht.
+Die Startseite beantwortet drei Fragen und sonst nichts: Was ist heute anders
+(ein Satz, das Wetter). Was ist heute schon getan (die Gewohnheiten, die
+aktiven Trades). Wo arbeitest du jetzt (die Modi als Kacheln). Steht nichts
+an, ist die Seite fast leer. Das ist das Ziel, kein Mangel.
 
-**Stand:** Geld-Modul, Runway-Simulator und Zeit-Modul mit Wochen-Auswertung
-sind gebaut. Die Ziel-Ampel ist im Datenmodell angelegt.
+**Stand (09.09.2026):** Der Zeit-Bereich ist entfallen — Termine, Aufgaben,
+Tages- und Wochenrückblick, Wochenziele, Schichten, Zen und die drei
+Erinnerungs-Endpunkte dazu. Das Gym ist auf Haken, Verlauf und Garmin-Import
+zusammengestrichen. Neu ist der Habit-Tracker unter `/gewohnheiten`.
 
 ---
 
@@ -17,17 +20,12 @@ sind gebaut. Die Ziel-Ampel ist im Datenmodell angelegt.
 
 | Bereich | Funktion |
 |---|---|
-| **Cockpit** | Runway ohne Einkommen, Liquidität, Monatssaldo, Cashflow-Chart, letzte Buchungen |
-| **Runway** | Szenario-Simulator mit Reglern für Pensum, Ausgaben und Einmalkosten + Vermögensverlauf |
-| **Transaktionen** | Erfassen, kategorisieren, löschen — Kategorie direkt in der Liste änderbar |
-| **Konten** | Mehrere Konten, Runway-Zugehörigkeit pro Konto, Saldo-Korrektur per Stichtag |
-| **Fixkosten** | Wiederkehrende Posten in fünf Rhythmen, automatisch auf Monatswerte umgerechnet |
-| **Kategorien** | Fix vs. variabel, Monatsbudget, Farbe |
-| **Import** | CSV-Bankauszug mit Spalten-Zuordnung, Dublettenschutz, Auto-Kategorisierung per Regeln |
-| **Zeit** | Tages-Check-in in ~30 Sekunden, 24-Stunden-Balken, unerfasste Zeit als eigene Kennzahl |
-| **Woche** | Verteilung nach Lebensbereich, Vergleich zur Vorwoche, grösste Posten, Stundenwert-Matrix |
-| **Aktivitäten** | Zuordnung zu Lebensbereich, Stundenlohn, Ziel-Flag, Schlaf-Kennzeichen |
-| **Navigator** | Startseite als Kachelraster mit Suche, Tastatursteuerung und „zuletzt benutzt“ |
+| **Startseite** | Tagessatz mit Wetter, Suche über alle Kacheln, Gewohnheiten, aktive Trades, Modi-Kacheln mit ihren Kennzahlen |
+| **Gewohnheiten** | Ein Haken pro Tag je Gewohnheit, Zählung nach Woche / 30 Tagen / gesamt, Serie, Raster über vier Wochen zum Nachtragen |
+| **Trading** | Übersicht (aktive Trades), Cockpit, Confluence-Ranking, Journal, Backtest, Alarme |
+| **Gym** | War ich da (Haken), Verlauf der Einheiten, Garmin-Import samt Prüfschritt, Körpergewicht |
+| **Essen** | Plan, Rezepte, Lebensmittel, Einkauf, Meal Prep, Nährwerte |
+| **Kacheln** | `/links` — was auf der Startseite und in den Modi steht |
 
 ---
 
@@ -43,183 +41,103 @@ Läuft auf http://localhost:3000.
 
 ### Einmalig im Supabase-Dashboard
 
-Projekt **Kompass** (`fhgrjqvunxbfhujoxmcn`), Authentication → Sign In / Providers:
+Projekt **Kompass** (`fhgrjqvunxbfhujoxmcn`), Authentication → Sign In /
+Providers:
 
-- **Confirm email** ausschalten, wenn du dich ohne Bestätigungsmail anmelden willst.
-  Für eine App, die nur du nutzt, ist das der bequemere Weg.
+- **Confirm email** ausschalten, wenn du dich ohne Bestätigungsmail anmelden
+  willst. Für eine App, die nur du nutzt, ist das der bequemere Weg.
 
-Danach auf `/login` ein Konto anlegen. Beim ersten Start fragt KerimOS nach
-zwei Zahlen (Liquidität und Fixkosten) und legt Konto, Kategorien und
-Fixkostenposten selbst an.
+Danach auf `/login` ein Konto anlegen und die Migrationen unter
+`supabase/migrations/` im SQL-Editor ausführen — zuletzt `19_habits.sql`,
+sonst bleibt `/gewohnheiten` leer und zeigt stattdessen das nötige SQL an.
 
 ### Deployment auf Vercel
 
-Damit der Navigator seinen Zweck erfüllt, muss er erreichbar sein, ohne dass
-du vorher etwas startest. Einmalig:
+Das Repository liegt unter <https://github.com/kerimalur/KERIMOS> und ist auf
+vercel.com importiert. Unter **Settings → Environment Variables** stehen die
+Werte aus `.env.local`:
 
-```bash
-cd "C:\\Projekte\\Claude Cowork\\KerimOS"
-git init
-git add .
-git commit -m "KerimOS: Navigator, Geld- und Zeit-Modul"
-git remote add origin https://github.com/kerimalur/KERIMOS.git
-git push -u origin main
-```
-
-Das Repository liegt unter <https://github.com/kerimalur/KERIMOS>.
-
-Danach auf vercel.com das Repository importieren. Unter **Settings →
-Environment Variables** die beiden Werte aus `.env.local` eintragen:
-
-| Name | Wert |
+| Name | Wofür |
 |---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | `https://fhgrjqvunxbfhujoxmcn.supabase.co` |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | siehe `.env.local` |
+| `NEXT_PUBLIC_SUPABASE_URL` | Hauptdatenbank (Kompass) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | dieselbe, öffentlicher Schlüssel |
+| `GYM_SUPABASE_URL` | Gym-Projekt, eigene Datenbank |
+| `GYM_SUPABASE_SERVICE_ROLE_KEY` | dessen `service_role`-Schlüssel |
 
-Beide sind öffentliche Schlüssel — der Schutz kommt aus Row Level Security,
-nicht aus der Geheimhaltung des Keys. Sonst ist nichts nötig: kein
-Build-Kommando, keine serverseitigen Secrets.
+Die beiden `NEXT_PUBLIC_`-Werte sind öffentlich — der Schutz kommt aus Row
+Level Security, nicht aus der Geheimhaltung des Keys. Die beiden Gym-Werte
+tragen bewusst kein `NEXT_PUBLIC_`: der `service_role`-Schlüssel umgeht
+sämtliche Zugriffsregeln und darf den Browser nie erreichen.
 
 `.env.local` steht in `.gitignore` und landet nicht im Repository.
 
 ---
 
-## Das Zeit-Modul
+## Die Gewohnheiten
 
-### Die Leitfrage
+Der Tracker kennt zwei Dinge: eine Gewohnheit und die Tage, an denen sie getan
+wurde. Eine Zeile in `habit_entries` heisst „an diesem Tag getan" — es gibt
+kein `done`-Flag, der fehlende Eintrag ist das Nein. Sonst hätte jeder Tag
+seit Beginn eine Zeile, und die Zählung müsste zwischen „nicht getan" und
+„nie gefragt" unterscheiden.
 
-Nicht „wie viel habe ich gearbeitet", sondern **wo ist die Zeit geblieben, von der
-ich es selbst nicht mehr weiss**. Deshalb rechnet KerimOS nicht von unten nach oben
-(Summe der Einträge), sondern von oben nach unten:
+Alles, was angezeigt wird — Serie, Wochenzahl, Gesamtzahl — ist aus diesen
+Tagen gerechnet und nirgends gespeichert. Es gibt also keinen zweiten Stand,
+der veralten könnte.
 
-```
-Wachzeit    = 24 h − Schlaf (aus dem Check-in, sonst Profil-Standardwert)
-Unerfasst   = Wachzeit − Summe der erfassten Blöcke
-```
+Abgehakt wird dort, wo man ohnehin hinschaut: auf der Startseite und im
+Gym-Bereich. `/gewohnheiten` ist für den Verlauf und die Verwaltung da. Im
+Raster lässt sich ein vergangener Tag nachtragen — man merkt am Mittwoch, dass
+Montag fehlt, und ohne diesen Weg stimmt die Zahl ab da nie wieder.
 
-Die unerfasste Zeit ist eine eigene, sichtbare Kennzahl — im Tagesbalken als
-graues Segment, in der Wochenansicht als eigener Posten neben den Lebensbereichen.
-Sie schrumpft nur, wenn du sie zuordnest.
-
-### Sieben Lebensbereiche
-
-| Bereich | Bedeutung |
-|---|---|
-| **Ziele** | Zahlt auf deine Ziele ein: Trading, Coding, Lernen, Sport |
-| **Arbeit** | Lohnarbeit |
-| **Pflicht** | Muss sein, bringt aber nichts voran: Haushalt, Admin, Weg |
-| **Regeneration** | Bewusste Erholung |
-| **Soziales** | Zeit mit Menschen |
-| **Spass** | Bewusst genossene Freizeit |
-| **Leerlauf** | Verbrannt, ohne Gegenwert |
-
-Der Unterschied zwischen *Spass* und *Leerlauf* ist der Punkt: eine Serie, die du
-bewusst schaust, ist etwas anderes als eine Stunde, die dir das Handy genommen hat.
-
-### Erfassen in 30 Sekunden
-
-Auf `/zeit` wählst du oben eine Schrittweite (15 min bis 8 h) und klickst dann die
-Aktivitäten an. Jeder Klick addiert, Rechtsklick zieht wieder ab. Mehrere Klicks auf
-dieselbe Aktivität summieren sich in einem Eintrag — die Tagesliste bleibt kurz.
-
-Schlafdauer und Energie trägst du im Check-in ein. Die Schlafdauer ist nicht Kosmetik:
-sie bestimmt die Wachzeit und damit, wie gross die Lücke wirklich ist.
-
-### Stundenwert-Matrix
-
-Auf `/woche` steht, was eine Stunde je Aktivität eingebracht hat:
-
-```
-Ertrag           = Summe der Buchungen, die dieser Aktivität zugeordnet sind
-CHF pro Stunde   = Ertrag ÷ erfasste Stunden
-Ansatz           = hinterlegter Stundenlohn (optional, für bezahlte Tätigkeiten)
-```
-
-Buchungen ordnest du auf `/transaktionen` über das Aktivitäts-Feld zu — Lohn zum
-Koch-Job, realisierte Gewinne zum Trading. Bei Projekten steht am Anfang eine Null.
-Das ist der Ausgangspunkt, nicht das Urteil.
+`bereich` entscheidet, wo eine Gewohnheit steht: `gym` im Gym-Bereich, alles
+andere auf der Startseite.
 
 ---
 
-## Wie der Runway gerechnet wird
+## Das Gym
 
-```
-Liquidität   = Summe aller Konten mit "im Runway berücksichtigen"
-             − einmalige Zusatzkosten des Szenarios
+Erfasst wird auf der Uhr. Der Garmin-Import holt die Einheiten ab, ein
+Prüfschritt (`/gym/garmin`) ordnet die Übungen zu, und danach stehen sie mit
+Sätzen und Gewichten im Verlauf (`/gym/verlauf`). Der Haken auf der Übersicht
+zählt daneben nur, wie oft du da warst — er ersetzt nicht, was die Uhr
+aufzeichnet.
 
-Einkommen    = Ø Einnahmen der letzten 3 vollen Monate × Pensum-Faktor
-Ausgaben     = Ø Ausgaben der letzten 3 vollen Monate + Ausgaben-Delta
-
-Saldo        = Einkommen − Ausgaben
-Runway       = Saldo ≥ 0  →  unbegrenzt
-               Saldo < 0  →  Liquidität ÷ |Saldo|   (in Monaten)
-```
-
-**Solange noch keine Transaktionsdaten vorliegen**, greift KerimOS auf die
-hinterlegten Fixkosten zurück, damit die Zahl vom ersten Tag an stimmt.
-Das Cockpit weist ausdrücklich darauf hin, wenn das der Fall ist.
-
-Die Fortschreibung ist bewusst linear — ohne Zinsen, ohne Teuerung, ohne
-Rendite-Annahmen. Lieber eine konservative Zahl, der du glaubst, als eine
-optimistische, der du nicht traust.
-
-### Kontostände
-
-Jedes Konto hat eine **Basis** (Betrag + Stichtag). Der Saldo ist
-`Basis + alle Transaktionen nach dem Stichtag`. Über „Kontostand korrigieren"
-setzt du eine neue Basis — praktisch, wenn du nicht jede Buchung erfasst:
-einmal im Monat den echten Stand eintragen, und alles stimmt wieder.
+Muskelbalance, Fortschritt je Übung, Trainingstage, Kalenderplanung und das
+manuelle Erfassen sind am 09.09.2026 entfallen. Sie setzten alle eine Eingabe
+voraus, die seit der Uhr niemand mehr macht, und die Zahlen daraus haben nie
+eine Entscheidung verändert. Die Daten in der Gym-Datenbank bleiben
+unangetastet.
 
 ---
 
 ## Datenmodell
 
-Bereits angelegt, auch für die noch nicht gebauten Etappen:
-
-**Geld** — `accounts`, `account_snapshots`, `categories`, `transactions`,
-`recurring_items`, `import_rules`, `scenarios`
-
-**Zeit** — `activities` (mit `bucket`, `hourly_rate`, `calendar_patterns`),
-`time_entries` (mit optionaler `start_minute`), `day_checkins`
-
-**Ziele** — `goals`, `goal_milestones`, `weekly_reviews`
+**Gewohnheiten** — `habits`, `habit_entries` (siehe
+`supabase/migrations/19_habits.sql`)
 
 **Navigator** — `links` (Bereich, Webadresse oder lokaler Pfad) mit
 Nutzungszähler über `register_link_open()`
 
-**Views** — `v_account_balances`, `v_monthly_cashflow`, `v_category_monthly`,
-`v_daily_time` (Tag inkl. unerfasster Zeit), `v_weekly_buckets`,
-`v_weekly_activities`, `v_activity_value` (Stundenwert-Matrix)
+**Gym** (eigenes Supabase-Projekt) — `training_days`, `exercises`,
+`workout_sessions`, `exercise_logs`, `cardio_logs`, `body_weight_entries`,
+`garmin_import_sessions`, `garmin_daily`
 
-**Funktion** — `runway_inputs(months_lookback)`
+**Essen** (eigenes Projekt) — Rezepte, Plan, Lebensmittel, Einkaufsliste
+
+**Trading** — Watchlist, Kategorien, Alarme, Journal, Backtest; Details in
+`supabase/trading/` und `TRADING-UMBAU.md`
+
+Aus dem Geld-Bereich stehen `accounts`, `transactions` und die zugehörigen
+Views noch in der Datenbank. Der Bereich ist seit dem 21.08.2026
+ausgeblendet (`MODE_AUS` in `src/lib/modes.ts`); gelöscht wurde nichts.
+Dasselbe gilt seit dem 09.09.2026 für die Tabellen des Zeit-Bereichs.
 
 Alle Tabellen haben Row Level Security; jede Zeile gehört genau einem
 `auth.users`-Eintrag. Views laufen mit `security_invoker`, erben also die
-Policies der zugrunde liegenden Tabellen.
-
-Die Migrationen liegen im Supabase-Projekt. In den Repo holst du sie mit:
-
-```bash
-npx supabase link --project-ref fhgrjqvunxbfhujoxmcn
-npx supabase db pull
-```
-
----
-
-## Was als Nächstes kommt
-
-**Google-Calendar-Import**
-Das Feld `activities.calendar_patterns` ist vorbereitet: Titel-Muster, über die
-Kalendereinträge automatisch einer Aktivität zugeordnet werden. Nötig dafür ist ein
-eigener Google-OAuth-Client.
-
-**Ziel-Ampel**
-`goals` und `goal_milestones` stehen in der DB. Jedes Ziel bekommt ein Zeit- und ein
-Geldbudget mit Deadline und zeigt grün/gelb/rot, ob du im Plan bist.
-
-**Wochen-Review am Sonntag**
-`weekly_reviews` friert die Kennzahlen einer Woche ein, dazu drei Fragen: was lief,
-was nicht, worauf nächste Woche. Damit wird der Verlauf über Monate lesbar.
+Policies der zugrunde liegenden Tabellen. Die Gym-Datenbank hat eine eigene
+Anmeldung — dort greift KerimOS serverseitig mit dem `service_role`-Schlüssel
+zu, weil ein KerimOS-Nutzer dort nicht existiert.
 
 ---
 
@@ -228,30 +146,31 @@ was nicht, worauf nächste Woche. Damit wird der Verlauf über Monate lesbar.
 ```
 src/
   app/
-    page.tsx              Cockpit
-    zeit/                 Tages-Check-in
-    woche/                Wochen-Auswertung + Stundenwert-Matrix
-    runway/               Szenario-Simulator
-    transaktionen/  konten/  fixkosten/  kategorien/  aktivitaeten/  import/
-    login/  auth/signout/
+    page.tsx              Startseite
+    gewohnheiten/         Habit-Tracker: Verlauf und Verwaltung
+    gym/                  Übersicht, verlauf/, garmin/
+    trading/              Übersicht, cockpit/, ranking/, journal/, backtest/, …
+    m/[gruppe]/           Arbeitsplatz eines Modus
+    m/Essen/              Plan, Rezepte, Lebensmittel, Einkauf, Prep
+    links/  login/  auth/signout/  zuruecksetzen/
+    api/gva-alarm/        Alarme auf die GVA-Linien (Vercel-Cron)
   components/
-    day-checkin.tsx       Schnellerfassung, Tagesbalken, Check-in
-    day-bar.tsx           24-Stunden-Balken mit Legende
-    runway-simulator.tsx  Regler, Presets, Verlaufschart
-    csv-import.tsx        Datei, Spalten-Mapping, Vorschau
-    week-nav.tsx  cashflow-chart.tsx  setup-wizard.tsx  nav.tsx  ui.tsx
+    gewohnheiten-karte.tsx    Die Haken — Startseite und Gym
+    gewohnheiten-raster.tsx   Vier Wochen als klickbares Raster
+    klapp-karte.tsx           Karte zum Zuklappen, Zustand im localStorage
+    gva-linien-karte.tsx      Aktive Trades auf der Startseite
+    trading/  essen/  gym/    Bereichs-Bausteine
+    ui.tsx                    Card, Button, Badge, Stat, Bar
   lib/
-    runway.ts             Runway-Mathematik
-    time.ts               Wochenlogik, Tageszerlegung, Lückenberechnung
-    csv.ts                Parser für Schweizer Datums- und Betragsformate
-    actions.ts            Server Actions
-    money.ts  format.ts  types.ts
-    supabase/             Browser-, Server- und Middleware-Client
+    gewohnheiten.ts           Laden und Zählen
+    gewohnheiten-actions.ts   Abhaken, anlegen, ändern, archivieren
+    actions.ts                Server Actions (Essen, Gym-Verlauf, Kacheln)
+    supabase/                 Browser-, Server-, Gym-, Menu- und Trading-Client
+tools/checks/                 Kontrollskripte, mit reinem Node ausführbar
 ```
 
-`runway.ts`, `time.ts` und `csv.ts` sind absichtlich frei von Framework- und
-DB-Abhängigkeiten — alle drei sind mit reinem Node testbar.
-
+Die Dateien unter `lib/` sind, wo es geht, frei von Framework- und
+DB-Abhängigkeiten — dann sind sie über `npm run check:*` prüfbar.
 
 ---
 
