@@ -101,12 +101,24 @@ function Dialog({
   const [kontostand, setKontostand] = useState(
     trade.accountBalance !== null ? String(trade.accountBalance) : "");
   const [prozent, setProzent] = useState(startProzent);
+  // Entweder Prozent aufs Konto oder direkt der Betrag in Franken. Vorbelegt
+  // ist Prozent, wenn ein Kontostand bekannt ist — sonst geht es nur in CHF.
+  const [art, setArt] = useState<"prozent" | "franken">(
+    trade.accountBalance ? "prozent" : "franken");
+  const [franken, setFranken] = useState(
+    trade.profitAmount !== null ? String(trade.profitAmount) : "");
   const [risiko, setRisiko] = useState(
     trade.riskAmount !== null ? String(trade.riskAmount) : "");
 
   const k = zahl(kontostand);
   const p = zahl(prozent);
-  const betrag = p !== null && k !== null && k > 0 ? runde((k * p) / 100) : trade.profitAmount;
+  const f = zahl(franken);
+  const betrag = art === "franken"
+    ? f
+    : p !== null && k !== null && k > 0 ? runde((k * p) / 100) : trade.profitAmount;
+  // Die jeweils andere Grösse zur Anzeige.
+  const prozentGerechnet = art === "franken" && f !== null && k !== null && k > 0
+    ? runde((f / k) * 100) : null;
   const rz = zahl(risiko);
   const rGerechnet = ergebnis === "breakeven" ? 0
     : rz !== null && rz > 0 && betrag !== null ? runde(betrag / rz) : null;
@@ -174,6 +186,17 @@ function Dialog({
           <h3 className="mb-3 text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted">
             Ergebnis
           </h3>
+          <input type="hidden" name="eingabe" value={art} />
+          <div className="mb-3 inline-flex rounded-xl bg-sand p-1">
+            {([["prozent", "in %"], ["franken", "in CHF"]] as const).map(([wert, label]) => (
+              <button key={wert} type="button" onClick={() => setArt(wert)}
+                className={cx("rounded-lg px-3.5 py-1 text-sm font-medium transition",
+                  art === wert ? "bg-card text-ink" : "text-ink-muted hover:text-ink-soft")}>
+                {label}
+              </button>
+            ))}
+          </div>
+
           <div className="grid gap-3 sm:grid-cols-3">
             <div>
               <Label htmlFor="tj-result">Ausgang</Label>
@@ -185,31 +208,57 @@ function Dialog({
                 <option value="breakeven">Breakeven</option>
               </Select>
             </div>
+            {art === "prozent" ? (
+              <div>
+                <Label htmlFor="tj-prozent">Gewinn / Verlust in %</Label>
+                <Input id="tj-prozent" name="prozent" inputMode="decimal"
+                  value={prozent} onChange={(e) => setProzent(e.target.value)}
+                  placeholder="z.B. 2.4 oder -1" />
+              </div>
+            ) : (
+              <div>
+                <Label htmlFor="tj-franken">Gewinn / Verlust in CHF</Label>
+                <Input id="tj-franken" name="franken" inputMode="decimal"
+                  value={franken} onChange={(e) => setFranken(e.target.value)}
+                  placeholder="z.B. 240 oder -100" />
+              </div>
+            )}
             <div>
-              <Label htmlFor="tj-balance">Kontostand beim Einstieg</Label>
+              <Label htmlFor="tj-balance">
+                Kontostand beim Einstieg{art === "franken" && " (optional)"}
+              </Label>
               <Input id="tj-balance" name="accountBalance" inputMode="decimal"
                 value={kontostand} onChange={(e) => setKontostand(e.target.value)}
                 placeholder="z.B. 10000" />
-            </div>
-            <div>
-              <Label htmlFor="tj-prozent">Gewinn / Verlust in %</Label>
-              <Input id="tj-prozent" name="prozent" inputMode="decimal"
-                value={prozent} onChange={(e) => setProzent(e.target.value)}
-                placeholder="z.B. 2.4 oder -1" />
             </div>
           </div>
 
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
             <div className="rounded-xl bg-sand/60 px-3 py-2">
-              <p className="text-[11px] text-ink-faint">Betrag (gerechnet)</p>
-              <p className={cx("tabular text-base font-medium",
-                betrag !== null && betrag > 0 ? "text-good-bright"
-                  : betrag !== null && betrag < 0 ? "text-bad-bright" : "text-ink")}>
-                {betrag === null ? "—" : `${betrag > 0 ? "+" : ""}${betrag.toFixed(2)}`}
-              </p>
+              {art === "prozent" ? (
+                <>
+                  <p className="text-[11px] text-ink-faint">Betrag (gerechnet)</p>
+                  <p className={cx("tabular text-base font-medium",
+                    betrag !== null && betrag > 0 ? "text-good-bright"
+                      : betrag !== null && betrag < 0 ? "text-bad-bright" : "text-ink")}>
+                    {betrag === null ? "—" : `${betrag > 0 ? "+" : ""}${betrag.toFixed(2)} CHF`}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-[11px] text-ink-faint">Aufs Konto (gerechnet)</p>
+                  <p className={cx("tabular text-base font-medium",
+                    prozentGerechnet !== null && prozentGerechnet > 0 ? "text-good-bright"
+                      : prozentGerechnet !== null && prozentGerechnet < 0 ? "text-bad-bright"
+                        : "text-ink")}>
+                    {prozentGerechnet === null ? "— (Kontostand fehlt)"
+                      : `${prozentGerechnet > 0 ? "+" : ""}${prozentGerechnet.toFixed(2)} %`}
+                  </p>
+                </>
+              )}
             </div>
             <div>
-              <Label htmlFor="tj-risk">Risiko (Betrag, für das R)</Label>
+              <Label htmlFor="tj-risk">Risiko in CHF (für das R)</Label>
               <Input id="tj-risk" name="riskAmount" inputMode="decimal"
                 value={risiko} onChange={(e) => setRisiko(e.target.value)}
                 placeholder="z.B. 100" />
@@ -229,8 +278,9 @@ function Dialog({
             </div>
           </div>
           <p className="mt-2 text-[11px] text-ink-faint">
-            Mit Prozent und Kontostand rechnet das System den Betrag selbst —
-            der Wert der Brücke wird dann ersetzt. Mit Risiko folgt auch das R.
+            Prozent oder Franken — eins reicht. Bei Prozent rechnet das System
+            den Betrag aus dem Kontostand. Der Wert der Brücke wird ersetzt;
+            mit Risiko folgt auch das R.
           </p>
         </section>
 

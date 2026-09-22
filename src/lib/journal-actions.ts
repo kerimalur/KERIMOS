@@ -242,10 +242,11 @@ export async function tradeLoeschen(fd: FormData) {
  * alles überschrieben, was dort nicht stand — und einen laufenden Trade
  * nebenbei auf „geschlossen" gesetzt.
  *
- * Betrag aus Prozent: Die Brücke liest den Gewinn aus MT5, und der stimmt
+ * Betrag korrigieren: Die Brücke liest den Gewinn aus MT5, und der stimmt
  * nicht immer (Teilschliessungen, Kommission, Swap auf einer anderen
- * Position). Kerim kennt aber den Prozentwert aufs Konto. Steht er da, gilt
- * Betrag = Kontostand × Prozent — und das R folgt aus Betrag ÷ Risiko.
+ * Position). Kerim gibt deshalb entweder den Prozentwert aufs Konto an
+ * (Betrag = Kontostand × Prozent) oder direkt den Betrag in Franken. Das R
+ * folgt aus Betrag ÷ Risiko.
  *
  * Gibt eine Meldung zurück statt zu werfen, damit der Dialog sie anzeigen
  * kann (meist: Migration noch nicht gelaufen).
@@ -262,10 +263,14 @@ export async function tradeJournalSpeichern(
   const risiko = num(fd, "riskAmount");
   const rEingabe = num(fd, "rMultiple");
 
-  // Betrag: aus Prozent, wenn beides da ist — sonst der bisherige Wert.
-  const betrag = prozent !== null && kontostand !== null && kontostand > 0
-    ? Math.round(kontostand * prozent) / 100
-    : num(fd, "profitAmount");
+  // Betrag: entweder direkt in Franken oder aus Prozent × Kontostand.
+  // Fehlt die gewählte Angabe, bleibt der bisherige Wert der Brücke.
+  const franken = num(fd, "franken");
+  const betrag = txt(fd, "eingabe") === "franken"
+    ? (franken ?? num(fd, "profitAmount"))
+    : prozent !== null && kontostand !== null && kontostand > 0
+      ? Math.round(kontostand * prozent) / 100
+      : num(fd, "profitAmount");
 
   // Ergebnis: was gewählt ist; ohne Wahl aus dem Vorzeichen des Betrags.
   const gewaehlt = txt(fd, "result");
