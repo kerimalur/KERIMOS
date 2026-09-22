@@ -10,6 +10,8 @@ import { saubereName, STANDARD_KONFLUENZEN } from "@/lib/trading/konfluenzen";
 import {
   pruefeBild, bildPfad, pfadAusUrl, EIMER,
 } from "@/lib/trading/screenshots";
+import { antwortenAusFormular } from "@/lib/trading/journal-fragen";
+import { lageFesthalten } from "@/lib/trading/lage-festhalten";
 
 /**
  * Schreibzugriffe aufs Trading-Journal.
@@ -229,6 +231,107 @@ export async function tradeLoeschen(fd: FormData) {
   if (!id) return;
   await supabase.from("trades").delete().eq("id", id).eq("user_id", userId);
   journalAktualisieren();
+}
+
+/**
+ * Einen Trade im Journal nachbearbeiten — der Dialog hinter „bearbeiten".
+ *
+ * Seit 22.09.2026. Anders als `tradeSpeichern` schreibt diese Aktion NUR die
+ * Felder, die der Dialog zeigt. Das ist der Punkt: die Brücke liefert Preise,
+ * Lots, Status und Datum; ein Speichern über das volle Formular hätte davon
+ * alles überschrieben, was dort nicht stand — und einen laufenden Trade
+ * nebenbei auf „geschlossen" gesetzt.
+ *
+ * Betrag aus Prozent: Die Brücke liest den Gewinn aus MT5, und der stimmt
+ * nicht immer (Teilschliessungen, Kommission, Swap auf einer anderen
+ * Position). Kerim kennt aber den Prozentwert aufs Konto. Steht er da, gilt
+ * Betrag = Kontostand × Prozent — und das R folgt aus Betrag ÷ Risiko.
+ *
+ * Gibt eine Meldung zurück statt zu werfen, damit der Dialog sie anzeigen
+ * kann (meist: Migration noch nicht gelaufen).
+ */
+export async function tradeJournalSpeichern(
+  fd: FormData,
+): Promise<{ fehler: string | null; hinweis: string | null }> {
+  const { supabase, userId } = await zugang();
+  const id = txt(fd, "id");
+  if (!id) return { fehler: "Trade fehlt.", hinweis: null };
+
+  const kontostand = num(fd, "accountBalance");
+  const prozent = num(fd, "prozent");
+  const risiko = num(fd, "riskAmount");
+  const rEingabe = num(fd, "rMultiple");
+
+  // Betrag: aus Prozent, wenn beides da ist — sonst der bisherige Wert.
+  const betrag = prozent !== null && kontostand !== null && kontostand > 0
+    ? Math.round(kontostand * prozent) / 100
+    : num(fd, "profitAmount");
+
+  // Ergebnis: was gewählt ist; ohne Wahl aus dem Vorzeichen des Betrags.
+  const gewaehlt = txt(fd, "result");
+  const ergebnis = ["win", "loss", "breakeven"].includes(gewaehlt)
+    ? gewaehlt as "win" | "loss" | "breakeven"
+    : betrag === null ? null : betrag > 0 ? "win" : betrag < 0 ? "loss" : "breakeven";
+
+  // R: aus Betrag ÷ Risiko, sonst die Eingabe mit dem Vorzeichen des Ergebnisses.
+  let r: number;
+  if (ergebnis === "breakeven") r = 0;
+  else if (risiko !== null && risiko > 0 && betrag !== null) {
+    r = Math.round((betrag / risiko) * 100) / 100;
+  } else {
+    const roh = Math.abs(rEingabe ?? 0);
+    r = ergebnis === "loss" ? -(roh || 1) : roh;
+  }
+
+  const zeile: Record<string, unknown> = {
+    result: ergebnis,
+    account_balance: kontostand,
+    profit_amount: betrag,
+    risk_amount: risiko,
+    r_multiple: r,
+    notes: txt(fd, "notes"),
+    confluences: fd.getAll("confluences").map(String).filter(Boolean),
+    journal_fragen: antwortenAusFormular((k) => txt(fd, k), ergebnis),
+    updated_at: new Date().toISOString(),
+  };
+
+  let { error } = await supabase.from("trades").update(zeile)
+    .eq("id", id).eq("user_id", userId);
+
+  // Spalte fehlt noch → ohne die Antworten speichern und es sagen.
+  let hinweis: string | null = null;
+  if (error && /journal_fragen/.test(error.message)) {
+    delete zeile.journal_fragen;
+    ({ error } = await supabase.from("trades").update(zeile)
+      .eq("id", id).eq("user_id", userId));
+    hinweis = "Gespeichert — aber ohne die Antworten auf die Fragen: die Spalte "
+      + "journal_fragen fehlt noch. Migration supabase/trading/05_journal_und_hit_meldung.sql "
+      + "in der Trading-Datenbank ausführen.";
+  }
+  if (error) return { fehler: `Speichern: ${error.message}`, hinweis: null };
+
+  journalAktualisieren();
+  return { fehler: null, hinweis };
+}
+
+/**
+ * Die Fundamentallage für einen älteren Trade nachtragen. Der Stichtag ist
+ * heute, nicht der Tag des Trades — der Dialog sagt das dazu.
+ */
+export async function lageNachtragen(fd: FormData): Promise<{ fehler: string | null }> {
+  const { supabase, userId } = await zugang();
+  const id = txt(fd, "id");
+  if (!id) return { fehler: "Trade fehlt." };
+
+  const { data } = await supabase.from("trades").select("id, symbol, side")
+    .eq("id", id).eq("user_id", userId).maybeSingle();
+  const t = data as { id: string; symbol: string; side: string | null } | null;
+  if (!t) return { fehler: "Trade nicht gefunden." };
+
+  const fehler = await lageFesthalten(
+    t.id, t.symbol, t.side === "short" ? "short" : "long", "nachgetragen");
+  if (!fehler) journalAktualisieren();
+  return { fehler };
 }
 
 // ---------------------------------------------------------------------------

@@ -66,7 +66,14 @@ function tfFuerSignal(s: Signal, p: ScreenerPair | undefined): GvaTf | null {
   return null;
 }
 
-export default async function CockpitSeite() {
+export default async function CockpitSeite({
+  searchParams,
+}: {
+  searchParams: Promise<{ paar?: string }>;
+}) {
+  const { paar: startRoh } = await searchParams;
+  const startPaar = startRoh ? sauber(startRoh) : null;
+
   if (!tradingConfigured()) return <JournalHinweis grund="keine-db" />;
   const userId = await tradingUserId();
   if (!userId) return <JournalHinweis grund="kein-user" />;
@@ -191,7 +198,7 @@ export default async function CockpitSeite() {
             und schläft nach längerer Pause ein — in einer Minute nochmal laden.
           </Empty>
         ) : (
-          <HitRaster gruppen={gruppen} />
+          <HitRaster gruppen={gruppen} startPaar={startPaar} />
         )}
       </Card>
 

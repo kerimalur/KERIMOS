@@ -11,7 +11,12 @@ import { TradeForm } from "@/components/trade-form";
 import { duplikatText, PIP_TOLERANZ } from "@/lib/trading/duplikat";
 import { konfluenzListe } from "@/lib/trading/konfluenzen";
 import { ScreenshotFeld } from "@/components/trading/screenshot-feld";
-import { Card, CardTitle, Stat, Badge, Empty } from "@/components/ui";
+import { TradeBearbeiten } from "@/components/trading/trade-journal-dialog";
+import {
+  werteFragenAus, frageFuer, labelFuer, LEARNING_KEY, MIN_JE_ANTWORT,
+} from "@/lib/trading/journal-fragen";
+import { URTEIL_LABEL } from "@/lib/trading/lage-snapshot";
+import { Card, CardTitle, Stat, Badge, Empty, cx } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -44,9 +49,17 @@ function FilterChip({
   );
 }
 
-function TradeZeile({ t }: { t: Trade }) {
+function TradeZeile({ t, konfluenzen, offen, bildfehler }: {
+  t: Trade;
+  konfluenzen: readonly string[];
+  /** Dialog direkt offen — nach einem Bild-Upload (`?bearbeiten=<id>`). */
+  offen: boolean;
+  bildfehler: string | null;
+}) {
   const r = signiertesR(t);
   const setups = SETUPS.filter((s) => t.setups[s.key]);
+  const lage = t.fundamentalSnapshot?.ranking.urteil;
+  const learning = t.antworten[LEARNING_KEY];
 
   return (
     <div className="border-t border-line/70 py-3 first:border-t-0">
@@ -68,11 +81,20 @@ function TradeZeile({ t }: { t: Trade }) {
           {r >= 0 ? "+" : ""}{r.toFixed(1)} R
         </span>
 
-        <Link href={`/trading/journal/trades?bearbeiten=${t.id}`}
-          title="Trade bearbeiten — Stop, R, Notizen nachtragen"
-          className="rounded-lg px-1.5 text-xs text-ink-faint transition hover:text-accent-soft">
-          bearbeiten
-        </Link>
+        <TradeBearbeiten
+          konfluenzen={konfluenzen}
+          startOffen={offen}
+          bilder={<ScreenshotFeld tradeId={t.id} bilder={t.screenshots}
+            fehler={offen ? bildfehler : null} />}
+          trade={{
+            id: t.id, pair: t.pair, direction: t.direction, date: t.date,
+            status: t.status, result: t.result, rMultiple: t.rMultiple,
+            riskAmount: t.riskAmount, accountBalance: t.accountBalance,
+            profitAmount: t.profitAmount, entryPrice: t.entryPrice,
+            exitPrice: t.exitPrice, lotSize: t.lotSize, notes: t.notes,
+            confluences: t.confluences, antworten: t.antworten,
+            fundamentalSnapshot: t.fundamentalSnapshot,
+          }} />
 
         <form action={tradeLoeschen}>
           <input type="hidden" name="id" value={t.id} />
@@ -84,10 +106,21 @@ function TradeZeile({ t }: { t: Trade }) {
         </form>
       </div>
 
-      {(setups.length > 0 || t.confluences.length > 0 || t.notes) && (
+      {(setups.length > 0 || t.confluences.length > 0 || t.notes || lage || learning) && (
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5 pl-[72px]">
+          {lage && lage !== "unbekannt" && (
+            <Badge tone={lage === "bestaetigt" ? "good" : lage === "dagegen" ? "bad" : "neutral"}
+              title={URTEIL_LABEL[lage]}>
+              Lage {lage === "bestaetigt" ? "✓" : lage === "dagegen" ? "✗" : "–"}
+            </Badge>
+          )}
           {setups.map((s) => <Badge key={s.key} tone="accent">{s.label}</Badge>)}
           {t.confluences.map((c) => <Badge key={c} tone="neutral">{c}</Badge>)}
+          {learning && (
+            <span className="text-xs italic text-ink-muted" title={learning}>
+              „{learning.length > 70 ? learning.slice(0, 70) + "…" : learning}"
+            </span>
+          )}
           {t.notes && (
             <span className="text-xs text-ink-muted" title={t.notes}>
               {t.notes.length > 90 ? t.notes.slice(0, 90) + "…" : t.notes}
@@ -134,47 +167,12 @@ export default async function TradesSeite({
    * `watchlistId` geht mit: nach dem Speichern verschwindet die Zeile von der
    * Übersicht, statt dort stehen zu bleiben.
    */
-  const s = computeJournalStats(trades);
 
   // Paar-Filter nur aus dem, was auch wirklich gehandelt wurde — eine Liste
   // mit 32 Einträgen, von denen 26 leer sind, hilft niemandem.
   const alleTrades = filter.pair || filter.result
     ? await fetchTrades({ sessionType: "live" }) : trades;
   const gehandelt = [...new Set(alleTrades.map((t) => t.pair))].sort();
-
-  const zuBearbeiten = sp.bearbeiten
-    ? (trades.find((t) => t.id === sp.bearbeiten)
-      ?? alleTrades.find((t) => t.id === sp.bearbeiten) ?? null)
-    : null;
-
-  /*
-   * Bearbeiten schlägt Neuanlegen: wer auf „bearbeiten" drückt, will nicht
-   * plötzlich ein leeres Formular. Bis zum 27.08.2026 gab es hier gar keinen
-   * Weg — die Liste bot nur Löschen an. Damit liess sich ein von der Brücke
-   * eingetragener Trade nicht korrigieren, und genau das brauchte Kerim: Stop
-   * und R nachtragen, wenn die Brücke sie nicht messen konnte.
-   */
-  const bearbeitung = zuBearbeiten ? {
-    id: zuBearbeiten.id,
-    pair: zuBearbeiten.pair,
-    direction: zuBearbeiten.direction,
-    date: zuBearbeiten.date,
-    result: zuBearbeiten.result ?? "win",
-    rMultiple: zuBearbeiten.rMultiple,
-    sessionType: zuBearbeiten.sessionType,
-    type: zuBearbeiten.type,
-    notes: zuBearbeiten.notes,
-    entryPrice: zuBearbeiten.entryPrice,
-    stopLoss: zuBearbeiten.stopLoss,
-    takeProfit: zuBearbeiten.takeProfit,
-    setups: {
-      dreiTagesGva: zuBearbeiten.setups.dreiTagesGva,
-      weeklyGva: zuBearbeiten.setups.weeklyGva,
-      dailyBos: zuBearbeiten.setups.dailyBos,
-      valueArea: zuBearbeiten.setups.valueArea,
-      marketStructure: zuBearbeiten.setups.marketStructure,
-    },
-  } : undefined;
 
   /*
    * Zurück aus der Duplikatwarnung: die Eingaben stehen in der Adresszeile,
@@ -203,7 +201,7 @@ export default async function TradesSeite({
   const doppelter = sp.doppelt
     ? (alleTrades.find((t) => t.id === sp.doppelt) ?? null) : null;
 
-  const vorgabe = ausAdresse ?? bearbeitung ?? (beobachtung ? {
+  const vorgabe = ausAdresse ?? (beobachtung ? {
     pair: beobachtung.pair,
     direction: (beobachtung.side === "short" ? "short" : "long") as "long" | "short",
     sessionType: "live" as const,
@@ -224,12 +222,43 @@ export default async function TradesSeite({
   const konfluenzen = konfluenzListe(
     eigeneKonfluenzen, alleTrades.flatMap((t) => t.confluences));
 
-  const offene = trades.filter((t) => t.status === "open");
-  const geschlossene = trades.filter((t) => t.status !== "open");
+  /*
+   * Filter nach einer Antwort (`?frage=einstieg&wert=zu_frueh`). Läuft hier
+   * und nicht in der Datenbank: die Antworten liegen als JSON, und bei ein
+   * paar hundert Trades ist das Filtern im Speicher schneller als jede Abfrage.
+   */
+  const frageFilter = sp.frage && sp.wert && frageFuer(sp.frage)
+    ? { key: sp.frage, wert: sp.wert } : null;
+  const gezeigt = frageFilter
+    ? trades.filter((t) => t.antworten[frageFilter.key] === frageFilter.wert)
+    : trades;
+
+  const s = computeJournalStats(gezeigt);
+
+  const offene = gezeigt.filter((t) => t.status === "open");
+  const geschlossene = gezeigt.filter((t) => t.status !== "open");
+
+  // Auswertung und Learnings immer über ALLE Live-Trades, nicht über die
+  // Filterauswahl — sonst zeigt die Tabelle nach einem Klick nur noch eine Zeile.
+  const bloecke = werteFragenAus(alleTrades
+    .filter((t) => t.status !== "open")
+    .map((t) => ({ ergebnis: t.result, r: signiertesR(t), antworten: t.antworten })))
+    .filter((b) => b.beantwortet > 0);
+  const learnings = alleTrades
+    .filter((t) => t.antworten[LEARNING_KEY])
+    .slice(0, 12);
+
+  const zeileProps = (t: Trade) => ({
+    t, konfluenzen,
+    offen: sp.bearbeiten === t.id,
+    bildfehler: sp.bildfehler ?? null,
+  });
 
   const q = (aenderung: Record<string, string | undefined>) => {
     const p = new URLSearchParams();
-    const zusammen = { paar: sp.paar, ergebnis: sp.ergebnis, ...aenderung };
+    const zusammen = {
+      paar: sp.paar, ergebnis: sp.ergebnis, frage: sp.frage, wert: sp.wert, ...aenderung,
+    };
     for (const [k, v] of Object.entries(zusammen)) if (v) p.set(k, v);
     const qs = p.toString();
     return qs ? `/trading/journal/trades?${qs}` : "/trading/journal/trades";
@@ -264,10 +293,6 @@ export default async function TradesSeite({
         konfluenzen={konfluenzen}
         vorgabe={vorgabe}
         offenStart={Boolean(vorgabe)}
-        bilder={zuBearbeiten ? (
-          <ScreenshotFeld tradeId={zuBearbeiten.id} bilder={zuBearbeiten.screenshots}
-            fehler={sp.bildfehler ?? null} />
-        ) : null}
       />
 
       <Card>
@@ -280,6 +305,17 @@ export default async function TradesSeite({
             <FilterChip aktiv={sp.ergebnis === "loss"} href={q({ ergebnis: "loss" })}>Verlust</FilterChip>
             <FilterChip aktiv={sp.ergebnis === "breakeven"} href={q({ ergebnis: "breakeven" })}>BE</FilterChip>
           </div>
+          {frageFilter && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="w-20 shrink-0 text-xs text-ink-faint">Antwort</span>
+              <span className="rounded-xl bg-accent px-3 py-1.5 text-sm font-medium text-ink-on">
+                {frageFuer(frageFilter.key)?.frage} {labelFuer(frageFilter.key, frageFilter.wert)}
+              </span>
+              <FilterChip aktiv={false} href={q({ frage: undefined, wert: undefined })}>
+                ✕ aufheben
+              </FilterChip>
+            </div>
+          )}
           {gehandelt.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="w-20 shrink-0 text-xs text-ink-faint">Paar</span>
@@ -322,7 +358,7 @@ export default async function TradesSeite({
             Positionen des Setups zu sind.
           </p>
           <div>
-            {offene.map((t) => <TradeZeile key={t.id} t={t} />)}
+            {offene.map((t) => <TradeZeile key={t.id} {...zeileProps(t)} />)}
           </div>
         </Card>
       )}
@@ -334,17 +370,95 @@ export default async function TradesSeite({
         </CardTitle>
         {geschlossene.length === 0 ? (
           <Empty>
-            {sp.paar || sp.ergebnis
+            {sp.paar || sp.ergebnis || frageFilter
               ? "Kein Trade passt zu diesem Filter."
               : "Noch kein abgeschlossener Trade. Das Formular oben ist der "
                 + "Anfang — oder die MT5-Brücke trägt ihn selbst ein."}
           </Empty>
         ) : (
           <div>
-            {geschlossene.map((t) => <TradeZeile key={t.id} t={t} />)}
+            {geschlossene.map((t) => <TradeZeile key={t.id} {...zeileProps(t)} />)}
           </div>
         )}
       </Card>
+
+      {/* Auswertung nach den Journal-Fragen. Jede Antwort ist ein Filter —
+          ein Klick zeigt die Trades dahinter. */}
+      <Card>
+        <CardTitle>Auswertung nach Fragen</CardTitle>
+        {bloecke.length === 0 ? (
+          <p className="text-sm text-ink-muted">
+            Noch keine Antworten. Beantworte die Fragen im Bearbeiten-Dialog
+            deiner Trades — ab {MIN_JE_ANTWORT} Trades je Antwort wird eine
+            Winrate aussagekräftig.
+          </p>
+        ) : (
+          <div className="grid gap-5 md:grid-cols-2">
+            {bloecke.map((b) => (
+              <div key={b.key}>
+                <p className="mb-1.5 text-sm font-medium text-ink-soft">
+                  {b.frage}
+                  <span className="ml-2 text-[11px] font-normal text-ink-faint">
+                    {b.beantwortet} beantwortet
+                  </span>
+                </p>
+                <ul className="space-y-1">
+                  {b.zeilen.filter((z) => z.n > 0).map((z) => (
+                    <li key={z.wert}>
+                      <Link href={q({ frage: b.key, wert: z.wert })}
+                        className="grid grid-cols-[1fr_auto_auto_auto] items-baseline gap-3
+                                   rounded-lg px-2 py-1 text-xs transition hover:bg-sand/70">
+                        <span className="text-ink-soft">{z.label}</span>
+                        <span className="tabular text-ink-faint">{z.n}×</span>
+                        <span className={cx("tabular w-12 text-right",
+                          z.n < MIN_JE_ANTWORT ? "text-ink-faint"
+                            : z.winrate !== null && z.winrate >= 50 ? "text-good-bright"
+                              : "text-bad-bright")}>
+                          {z.winrate === null ? "—" : `${z.winrate.toFixed(0)} %`}
+                        </span>
+                        <span className={cx("tabular w-14 text-right",
+                          z.schnittR === null ? "text-ink-faint"
+                            : z.schnittR > 0 ? "text-good-bright" : z.schnittR < 0
+                              ? "text-bad-bright" : "text-ink-muted")}>
+                          {z.schnittR === null ? "—"
+                            : `${z.schnittR > 0 ? "+" : ""}${z.schnittR.toFixed(2)} R`}
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
+        {bloecke.length > 0 && (
+          <p className="mt-3 text-[11px] text-ink-faint">
+            Winrate aus Gewinnen und Verlusten, Ø R über alle geschlossenen
+            Trades mit dieser Antwort. Grau = weniger als {MIN_JE_ANTWORT} Trades,
+            noch Zufall.
+          </p>
+        )}
+      </Card>
+
+      {learnings.length > 0 && (
+        <Card>
+          <CardTitle>Learnings</CardTitle>
+          <ul className="space-y-2">
+            {learnings.map((t) => (
+              <li key={t.id} className="text-sm">
+                <span className="tabular mr-2 text-xs text-ink-faint">
+                  {t.date.slice(8, 10)}.{t.date.slice(5, 7)}.
+                </span>
+                <span className="mr-2 font-medium text-ink">{t.pair}</span>
+                <span className={signiertesR(t) < 0 ? "text-bad-bright" : "text-good-bright"}>
+                  {signiertesR(t) >= 0 ? "+" : ""}{signiertesR(t).toFixed(1)} R
+                </span>
+                <p className="mt-0.5 text-ink-soft">{t.antworten[LEARNING_KEY]}</p>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
     </div>
   );
 }

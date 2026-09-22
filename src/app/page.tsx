@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Logo } from "@/components/logo";
+import { OffeneHits } from "@/components/trading/offene-hits";
 import type { NavLink } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -19,9 +20,14 @@ export const dynamic = "force-dynamic";
  * steht nur nicht mehr im Weg. Die Datenbanktabellen sind ebenfalls
  * unangetastet geblieben.
  *
- * Was hier NICHT mehr steht und auch nicht zurückkommen soll, solange die
- * Seite zwei Kacheln hat: Tagessatz, Wetter, Suche, Kennzahlen auf den
- * Kacheln, aktive Trades. Jede dieser Karten war einzeln vernünftig; zusammen
+ * Seit 22.09.2026 steht unter den Kacheln wieder genau EINE Karte: die
+ * GVA-Hits, die auf eine Entscheidung warten (components/trading/offene-hits).
+ * Aktiv genommene und verworfene Hits stehen dort nicht — sie sind entschieden.
+ * Ohne offenen Hit verschwindet die Karte, und die Seite ist wieder zwei
+ * Kacheln.
+ *
+ * Was hier NICHT mehr steht und auch nicht zurückkommen soll: Tagessatz,
+ * Wetter, Suche, Kennzahlen auf den Kacheln, aktive Trades. Jede dieser Karten war einzeln vernünftig; zusammen
  * waren sie der Grund, warum die Seite unlesbar wurde.
  */
 export default async function Start() {
@@ -95,6 +101,10 @@ export default async function Start() {
             </Link>
           );
         })}
+      </div>
+
+      <div className="mt-6">
+        <OffeneHits />
       </div>
     </div>
   );

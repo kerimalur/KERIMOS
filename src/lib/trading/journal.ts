@@ -2,6 +2,8 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 import type { Konfluenz } from "@/lib/trading/konfluenzen";
 import { createTradingClient } from "@/lib/supabase/trading";
+import { alsAntworten, type Antworten } from "@/lib/trading/journal-fragen";
+import { alsSnapshot, type LageSnapshot } from "@/lib/trading/lage-snapshot";
 
 /**
  * Journal-Datenschicht — der Teil des GVA-Screeners, der nach KerimOS umgezogen
@@ -163,6 +165,10 @@ export interface Trade {
   confluences: string[];
   /** Plan-Befolgung 0–100. Null = nicht bewertet. */
   adherenceScore: number | null;
+  /** Antworten auf die Journal-Fragen (lib/trading/journal-fragen.ts). */
+  antworten: Antworten;
+  /** Eingefrorene Fundamentallage zum Zeitpunkt des Trades. */
+  fundamentalSnapshot: LageSnapshot | null;
   createdAt: string;
 }
 
@@ -290,6 +296,8 @@ function zuTrade(r: Row): Trade {
     // Datenbank. `undefined` (Spalte nicht da) und `null` (nicht bewertet)
     // laufen deshalb bewusst auf denselben Wert hinaus.
     adherenceScore: zahl(r.adherence_score),
+    antworten: alsAntworten(r.journal_fragen),
+    fundamentalSnapshot: alsSnapshot(r.fundamental_snapshot),
     createdAt: String(r.created_at ?? ""),
   };
 }
@@ -323,7 +331,12 @@ const TRADE_SPALTEN =
   "account_balance, screenshots, profit_amount, " +
   "entry_price, exit_price, stop_loss, take_profit, lot_size, session_type, status, session, " +
   "notes, comment, strategy_id, outlook_id, setup_daily_bos, setup_value_area, " +
-  "setup_market_structure, setup_weekly_gva, setup_3day_gva, confluences, created_at";
+  "setup_market_structure, setup_weekly_gva, setup_3day_gva, confluences, created_at, "
+  + "journal_fragen, fundamental_snapshot";
+
+/** Ohne die zwei Journal-Spalten vom 22.09.2026 — Rückfall bis zur Migration. */
+const TRADE_SPALTEN_OHNE_JOURNAL = TRADE_SPALTEN
+  .replace(", journal_fragen, fundamental_snapshot", "");
 
 /**
  * Derselbe Satz ohne die zwei Nachzügler vom 27.08.2026 — der Rückfall, wenn
@@ -333,7 +346,7 @@ const TRADE_SPALTEN =
  * hiesse, dass sie beim nächsten Feld auseinanderläuft und der Rückfall
  * plötzlich andere Daten liefert als der Normalfall.
  */
-const TRADE_SPALTEN_ALT = TRADE_SPALTEN
+const TRADE_SPALTEN_ALT = TRADE_SPALTEN_OHNE_JOURNAL
   .replace("risk_amount, ", "")
   .replace("account_balance, ", "")
   .replace("screenshots, ", "");
@@ -378,6 +391,7 @@ export async function fetchTrades(filter: TradeFilter = {}): Promise<Trade[]> {
   };
 
   let { data, error } = await bauen(TRADE_SPALTEN);
+  if (error) ({ data, error } = await bauen(TRADE_SPALTEN_OHNE_JOURNAL));
   if (error) ({ data } = await bauen(TRADE_SPALTEN_ALT));
 
   return ((data ?? []) as unknown as Row[]).map(zuTrade);

@@ -63,8 +63,19 @@ export interface Gruppe {
 /** Spaltenraster — einmal definiert, damit Kopf und Zeilen nicht auseinanderlaufen. */
 const RASTER = "grid grid-cols-[3px_1fr_58px_28px] sm:grid-cols-[3px_1fr_72px_34px_92px_84px]";
 
-export function HitRaster({ gruppen }: { gruppen: Gruppe[] }) {
-  const [offen, setOffen] = useState<Kachel | null>(null);
+export function HitRaster({ gruppen, startPaar = null }: {
+  gruppen: Gruppe[];
+  /**
+   * Öffnet beim Laden direkt das Popup dieses Paares — Ziel der Push-Meldung
+   * und des „ansehen"-Links auf der Startseite (`/trading/cockpit?paar=…`).
+   * Nur wenn das Paar einen Hit hat; sonst gäbe es kein Popup.
+   */
+  startPaar?: string | null;
+}) {
+  const [offen, setOffen] = useState<Kachel | null>(() =>
+    startPaar
+      ? gruppen.flatMap((g) => g.kacheln).find((k) => k.paar === startPaar && k.hit) ?? null
+      : null);
   const [zu, setZu] = useState<Set<string>>(new Set());
 
   const umschalten = (titel: string) =>

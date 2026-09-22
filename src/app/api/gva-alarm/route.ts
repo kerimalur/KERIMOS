@@ -4,10 +4,13 @@ import { fetchScreener, type ScreenerPair } from "@/lib/supabase/trading";
 import { ladeEinstellungen, heuteGesendet } from "@/lib/alarm/einstellungen";
 import { pruefe, type Alarmart } from "@/lib/alarm/regeln";
 import { verschicke, type Meldung } from "@/lib/alarm/versand";
+import { meldeNeueHits, lageFuerNeueTrades } from "@/lib/alarm/hit-meldung";
 import { heuteISO, heuteMinuten, ZONE } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+// 60 statt 30: seit 22.09.2026 hält der Lauf auch die Fundamentallage neuer
+// Trades fest, und die COT-Abfrage braucht beim kalten Cache ihre Zeit.
+export const maxDuration = 60;
 
 /**
  * Prüft die selbst gezeichneten GVA-Linien gegen die Live-Preise des
@@ -18,6 +21,11 @@ export const maxDuration = 30;
  *           um den Chart aufzumachen)
  *   hit   - die Linie ist erreicht oder durchschritten
  *   zeit  - eine frei gesetzte Uhrzeit ist da (z.B. 08:00 Sessionstart)
+ *
+ * Seit 22.09.2026 zusätzlich:
+ *   - neue GVA-Hits aus dem Screener (Status „new") als Push, einmal je
+ *     Signal — siehe lib/alarm/hit-meldung.ts
+ *   - die Fundamentallage frisch importierter Live-Trades einfrieren
  *
  * Verschickt wird über `lib/alarm/versand`: Web-Push und Telegram, je nach
  * dem, was unter /trading/alarme/einstellungen eingeschaltet ist. Die Regeln
@@ -91,6 +99,10 @@ export async function GET(request: NextRequest) {
   const heute = heuteISO();
   const jetztMinuten = heuteMinuten();
 
+  // Unabhängig von Kanälen und Ruhezeit: die Lage neuer Live-Trades
+  // einfrieren (siehe lib/alarm/hit-meldung.ts). Scheitert still.
+  const lageBericht = await lageFuerNeueTrades(supabase).catch(() => null);
+
   const [{ werte: einst, hinweis }, { data }] = await Promise.all([
     ladeEinstellungen(),
     supabase
@@ -117,8 +129,20 @@ export async function GET(request: NextRequest) {
   const linien = ((data ?? []) as Linie[])
     .filter((l) => !l.show_until || l.show_until >= heute);
 
+  // Neue Screener-Hits melden — VOR dem Abbruch „keine Linien", denn Hits
+  // kommen auch ohne eine einzige selbst gezeichnete Linie.
+  let heuteSchon = await heuteGesendet(heute);
+  const hits = await meldeNeueHits(supabase, einst, {
+    jetztMinuten, heute, bereitsGesendet: heuteSchon,
+  });
+  heuteSchon += hits.berichte.length;
+
   if (linien.length === 0) {
-    return NextResponse.json({ ok: true, geprueft: 0, gesendet: 0, hinweis: "keine aktiven Linien" });
+    return NextResponse.json({
+      ok: true, geprueft: 0, gesendet: hits.gesendet, hinweis: "keine aktiven Linien",
+      hits: hits.berichte, ...(hits.hinweis ? { hitHinweis: hits.hinweis } : {}),
+      ...(lageBericht ? { lage: lageBericht } : {}),
+    });
   }
 
   const screener = await fetchScreener();
@@ -129,10 +153,9 @@ export async function GET(request: NextRequest) {
 
   const berichte: string[] = [];
   const unterdrueckt: string[] = [];
-  let gesendet = 0;
-  // Startwert aus alarm_log, damit die Tagesgrenze über alle Cron-Läufe
-  // hinweg gilt und nicht in jedem Lauf bei null anfängt.
-  let heuteSchon = await heuteGesendet(heute);
+  let gesendet = hits.gesendet;
+  // heuteSchon: Startwert aus alarm_log (oben geladen), damit die Tagesgrenze
+  // über alle Cron-Läufe hinweg gilt — plus die Hit-Meldungen dieses Laufs.
 
   /**
    * Meldet **einmal je Linie und Art — endgültig**, wenn die Regeln zustimmen.
@@ -256,6 +279,9 @@ export async function GET(request: NextRequest) {
     },
     heuteGesamt: heuteSchon,
     berichte,
+    hits: hits.berichte,
+    ...(hits.hinweis ? { hitHinweis: hits.hinweis } : {}),
+    ...(lageBericht ? { lage: lageBericht } : {}),
     unterdrueckt,
     ...(hinweis ? { einstellungen: hinweis } : {}),
   });
