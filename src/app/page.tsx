@@ -6,12 +6,7 @@ import type { NavLink } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 /**
- * Drei Kacheln. Das ist die ganze Startseite.
- *
- * Seit 21.09.2026 ist „Woche" die dritte: ein kleiner Organizer, in dem
- * Training (Push/Pull/Ausdauer), Essen nach Plan, Gewicht, Wochenziele und
- * die Vorhaben für freie Zeit nur noch angetippt werden. Bewusst schmal —
- * kein Zurück zur Planung mit Projekten, Kalender und Meilensteinen.
+ * Zwei Kacheln. Das ist die ganze Startseite.
  *
  * Am 09.09.2026 hat Kerim KerimOS radikal zusammengestrichen: Gym, die
  * Gewohnheiten, die Planung mit Projekten und Kalender, die
@@ -36,7 +31,7 @@ export default async function Start() {
    * Die Bilder kommen weiterhin aus `links` — mehr wird von der Tabelle nicht
    * mehr gebraucht.
    *
-   * Die Kacheln selbst stehen fest im Code: bei drei Stück ist eine
+   * Die Kacheln selbst stehen fest im Code: bei zwei Stück ist eine
    * Verwaltungsseite mit Gruppen, Reihenfolge und Symbolen mehr Maschinerie
    * als Inhalt. Das Bild aber hat Kerim selbst gesetzt, und es ist das
    * Einzige, was diese Seite ansehnlich macht — deshalb diese eine Abfrage.
@@ -44,7 +39,7 @@ export default async function Start() {
    */
   const { data } = await supabase.from("links")
     .select("target, image_url, image_position")
-    .in("target", ["/trading", "/m/Essen", "/woche"]);
+    .in("target", ["/trading", "/m/Essen"]);
 
   const bilder = new Map(
     ((data ?? []) as Pick<NavLink, "target" | "image_url" | "image_position">[])
@@ -54,14 +49,13 @@ export default async function Start() {
   const kacheln = [
     { name: "Trading", ziel: "/trading", farbe: "#8B94B8", zeichen: "◈" },
     { name: "Essen", ziel: "/m/Essen", farbe: "#C4A882", zeichen: "▤" },
-    { name: "Woche", ziel: "/woche", farbe: "#C68D6B", zeichen: "◷" },
   ];
 
   return (
     <div className="py-10">
       <Logo inverted className="mb-8 h-11 w-11 rounded-2xl" />
 
-      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-5 sm:grid-cols-2">
         {kacheln.map((k, i) => {
           const bild = bilder.get(k.ziel);
 

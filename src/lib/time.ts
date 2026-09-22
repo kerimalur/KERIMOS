@@ -55,20 +55,6 @@ export function dayNameShort(date: string): string {
   return new Date(date + "T12:00:00").toLocaleDateString("de-CH", { weekday: "short" });
 }
 
-export function dayName(date: string): string {
-  return new Date(date + "T12:00:00").toLocaleDateString("de-CH", { weekday: "long" });
-}
-
-/** "15.09. – 21.09." für den Wochenwähler. */
-export function weekLabel(weekStartISO: string): string {
-  const start = new Date(weekStartISO + "T12:00:00");
-  const end = new Date(start);
-  end.setDate(end.getDate() + 6);
-  const f = (d: Date) =>
-    d.toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit" });
-  return `${f(start)} – ${f(end)}`;
-}
-
 /* ------------------------------------------------------ Tages-Zusammensetzung */
 
 /** Erfasste Zeit übersteigt die Wachzeit - dann stimmt etwas nicht. */

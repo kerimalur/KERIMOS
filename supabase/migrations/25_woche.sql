@@ -1,4 +1,8 @@
 -- ============================================================================
+--
+-- HINWEIS: Der Bereich „Woche" wurde am 22.09.2026 wieder entfernt (Kerim
+-- fuehrt das jetzt physisch am Whiteboard). Die Tabellen bleiben bestehen.
+-- Backup des Codes: ../_backup/kerimos-woche-2026-09-21 bzw. Commit 81b7726.
 -- 25_woche.sql — Bereich „Woche" (21.09.2026)
 --
 -- Ersetzt Gym und Zeit in der Oberfläche. Gehört in die KerimOS-Hauptdatenbank

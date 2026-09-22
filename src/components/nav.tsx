@@ -68,7 +68,7 @@ const TRADING: NavConfig = {
 };
 
 const TRADING_PATHS = ["/trading"];
-// "/", "/woche" und "/m/Essen" gehören zu keinem Bereich - dort zeigt die Navigation
+// "/" und "/m/Essen" gehören zu keinem Bereich - dort zeigt die Navigation
 // nur die Abmelden-Zeile bzw. der Bereich bringt seine eigene Leiste mit.
 
 const SECTION_LABEL: Record<Exclude<Section, null>, string> = {
