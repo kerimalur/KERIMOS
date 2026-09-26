@@ -41,46 +41,57 @@ export const BRETT_BILD = "/kompass-board.jpg";
 /** Seitenverhältnis der Collage — hält die Ausschnitte an ihrem Platz. */
 export const BRETT_VERHAELTNIS = "5 / 4";
 
+/*
+ * Die vierzehn Felder decken die Collage LÜCKENLOS ab: fünf Spalten
+ * (0–17, 17–35.5, 35.5–58, 58–80.8, 80.8–100 — die gemessenen Nähte des
+ * Bildes), und in jeder Spalte summieren sich die Höhen auf 100.
+ *
+ * Das ist der Unterschied zur ersten Fassung vom Vormittag: dort sassen die
+ * Felder nur auf den Fotos und liessen die dunklen Zwischenräume der Collage
+ * frei. Das sah aus wie ein halbleeres Brett. Jetzt schlucken die
+ * Nachbarfelder diese Ränder — der dunkle Streifen über dem Gym-Foto gehört
+ * zum Cockpit, die dunkle Fläche oben in Spalte 4 ist ein eigenes Feld. Die
+ * einzige Fuge ist die 3px Polsterung zwischen den Kacheln.
+ */
 export const KACHELN: Kachel[] = [
-  // ── Mitte, das grösste Feld: was Kerim am häufigsten öffnet.
-  { id: "cockpit", name: "Cockpit", unterzeile: "GVA-Hits", art: "intern",
-    ziel: "/trading/cockpit", x: 35.5, y: 9.9, w: 22.5, h: 49.6 },
-
-  { id: "journal", name: "Journal", unterzeile: "Trades & Konto", art: "intern",
-    ziel: "/trading/journal", x: 35.5, y: 63, w: 22.5, h: 37 },
-
-  { id: "fundamentals", name: "Fundamentals", unterzeile: "Drei Ebenen", art: "intern",
-    ziel: "/trading/fundamentals", x: 58, y: 23, w: 22.8, h: 37 },
-
-  { id: "waehrungen", name: "Währungen", unterzeile: "Einzeln, ungepaart", art: "intern",
-    ziel: "/trading/waehrungen", x: 80.8, y: 9.9, w: 19.2, h: 40.8 },
-
-  { id: "trades", name: "Aktive Trades", unterzeile: "Was gerade läuft", art: "intern",
-    ziel: "/trading", x: 17, y: 0, w: 18.5, h: 35.1 },
-
-  { id: "backtest", name: "Backtest", unterzeile: "Üben und auswerten", art: "intern",
-    ziel: "/trading/backtest", x: 17, y: 59.5, w: 18.5, h: 40.5 },
-
-  { id: "alarme", name: "Alarme", unterzeile: "Push & Telegram", art: "intern",
-    ziel: "/trading/einstellungen", x: 58, y: 72.5, w: 22.8, h: 27.5 },
-
+  /* ── Spalte 1 (0–17) ────────────────────────────────────────────────── */
+  { id: "vantage", name: "Vantage", unterzeile: "Broker", art: "extern",
+    ziel: "https://www.vantagemarkets.com/", x: 0, y: 0, w: 17, h: 50.7 },
   { id: "essen", name: "Essen", unterzeile: "Plan & Einkauf", art: "intern",
     ziel: "/m/Essen", x: 0, y: 50.7, w: 17, h: 15.1 },
-
-  // ── Nach draussen.
-  { id: "tradingview", name: "TradingView", unterzeile: "Öffnet die App", art: "app",
-    ziel: "tradingview://", ersatz: "https://www.tradingview.com/chart/",
-    x: 17, y: 35.1, w: 18.5, h: 24.4 },
-
   { id: "kalender", name: "Kalender", unterzeile: "Google", art: "extern",
     ziel: "https://calendar.google.com/calendar/r", x: 0, y: 65.8, w: 17, h: 34.2 },
 
-  // ── Noch offen. Kerim weiss, dass er mehr braucht, aber noch nicht was.
+  /* ── Spalte 2 (17–35.5) ─────────────────────────────────────────────── */
+  { id: "trades", name: "Aktive Trades", unterzeile: "Was gerade läuft", art: "intern",
+    ziel: "/trading", x: 17, y: 0, w: 18.5, h: 35.1 },
+  { id: "tradingview", name: "TradingView", unterzeile: "Öffnet die App", art: "app",
+    ziel: "tradingview://", ersatz: "https://www.tradingview.com/chart/",
+    x: 17, y: 35.1, w: 18.5, h: 24.4 },
+  { id: "backtest", name: "Backtest", unterzeile: "Üben und auswerten", art: "intern",
+    ziel: "/trading/backtest", x: 17, y: 59.5, w: 18.5, h: 40.5 },
+
+  /* ── Spalte 3 (35.5–58) — das grösste Feld, was am häufigsten aufgeht ── */
+  { id: "cockpit", name: "Cockpit", unterzeile: "GVA-Hits", art: "intern",
+    ziel: "/trading/cockpit", x: 35.5, y: 0, w: 22.5, h: 61.5 },
+  { id: "journal", name: "Journal", unterzeile: "Trades & Konto", art: "intern",
+    ziel: "/trading/journal", x: 35.5, y: 61.5, w: 22.5, h: 38.5 },
+
+  /* ── Spalte 4 (58–80.8) ─────────────────────────────────────────────── */
+  { id: "wirtschaftskalender", name: "Wirtschaftskalender", unterzeile: "Forex Factory",
+    art: "extern", ziel: "https://www.forexfactory.com/calendar",
+    x: 58, y: 0, w: 22.8, h: 23 },
+  { id: "fundamentals", name: "Fundamentals", unterzeile: "Drei Ebenen", art: "intern",
+    ziel: "/trading/fundamentals", x: 58, y: 23, w: 22.8, h: 38.5 },
+  { id: "alarme", name: "Alarme", unterzeile: "Push & Telegram", art: "intern",
+    ziel: "/trading/einstellungen", x: 58, y: 61.5, w: 22.8, h: 38.5 },
+
+  /* ── Spalte 5 (80.8–100) ────────────────────────────────────────────── */
+  { id: "waehrungen", name: "Währungen", unterzeile: "Einzeln, ungepaart", art: "intern",
+    ziel: "/trading/waehrungen", x: 80.8, y: 0, w: 19.2, h: 50.7 },
   { id: "frei-1", name: "frei", unterzeile: "sag mir, was hier hin soll", art: "frei",
-    ziel: "", x: 0, y: 0, w: 17, h: 50.7 },
-  { id: "frei-2", name: "frei", unterzeile: "sag mir, was hier hin soll", art: "frei",
     ziel: "", x: 80.8, y: 50.7, w: 19.2, h: 19.3 },
-  { id: "frei-3", name: "frei", unterzeile: "sag mir, was hier hin soll", art: "frei",
+  { id: "frei-2", name: "frei", unterzeile: "sag mir, was hier hin soll", art: "frei",
     ziel: "", x: 80.8, y: 70, w: 19.2, h: 30 },
 ];
 

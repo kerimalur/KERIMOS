@@ -29,9 +29,13 @@ import {
 export function Brett() {
   return (
     <>
+      {/* Die Breite ist an die HÖHE gekoppelt, nicht an den Textcontainer:
+          bei 5:4 entscheidet der kürzere Weg, wie gross das Brett werden
+          darf. 110vh mal 0.8 sind 88vh Höhe — es füllt den Bildschirm, ohne
+          dass man scrollen muss, um die untere Reihe zu sehen. */}
       <div
         className="relative mx-auto hidden md:block"
-        style={{ width: "min(100%, 96vh)", aspectRatio: BRETT_VERHAELTNIS }}
+        style={{ width: "min(100%, 110vh)", aspectRatio: BRETT_VERHAELTNIS }}
       >
         {KACHELN.map((k) => (
           <div key={k.id} className="absolute p-[3px]"

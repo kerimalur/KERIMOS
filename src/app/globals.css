@@ -6,6 +6,11 @@
 
 body {
   @apply bg-paper text-ink antialiased;
+  /* Die Startseite bricht mit `mx-[calc(50%-50vw)]` auf volle Fensterbreite
+     aus. 100vw zählt die Scrollleiste mit, das Sichtfeld nicht — ohne diese
+     Zeile entsteht dadurch ein waagerechter Balken von ein paar Pixeln,
+     der sich wie ein Fehler anfühlt. */
+  overflow-x: hidden;
   /* Der Grund ist kein flaches Schwarz, sondern ein warmer Verlauf.
      Die driftenden Farbwolken liegen darüber (siehe .kt-bg). */
   background-image: radial-gradient(120% 90% at 20% 0%, #221C14 0%, #15110C 55%, #0C0A08 100%);
