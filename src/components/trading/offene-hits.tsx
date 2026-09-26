@@ -1,10 +1,7 @@
 import Link from "next/link";
-import { fetchSignale, type Signal } from "@/lib/trading/journal";
-import { fetchWatchlist, tradingConfigured } from "@/lib/supabase/trading";
+import { ladeOffeneHits, sauberesPaar as sauber } from "@/lib/trading/offene-signale";
 import { signalUebernehmen, signalVerwerfen } from "@/lib/journal-actions";
 import { Card, CardTitle, Badge } from "@/components/ui";
-
-const sauber = (p: string) => p.replace(/[^A-Za-z]/g, "").toUpperCase();
 
 /** "vor 12 min" · "vor 3 h" · "vor 2 Tagen" */
 function wieLange(iso: string): string {
@@ -30,21 +27,7 @@ function wieLange(iso: string): string {
  * Steht nichts an, verschwindet die Karte ganz.
  */
 export async function OffeneHits() {
-  if (!tradingConfigured()) return null;
-
-  const [signale, aktive] = await Promise.all([fetchSignale(["new"]), fetchWatchlist()]);
-
-  const inListe = (s: Signal) => aktive.some((w) =>
-    sauber(w.pair) === sauber(s.pair) && w.line_level !== null
-    && Math.abs(w.line_level - s.lineLevel) < Math.max(1e-6, Math.abs(s.lineLevel) * 1e-5));
-
-  // fetchSignale liefert absteigend nach hit_at → erstes je Paar ist das jüngste.
-  const jePaar = new Map<string, Signal>();
-  for (const s of signale) {
-    const k = sauber(s.pair);
-    if (!jePaar.has(k)) jePaar.set(k, s);
-  }
-  const offen = [...jePaar.values()].filter((s) => !inListe(s));
+  const offen = await ladeOffeneHits();
   if (offen.length === 0) return null;
 
   return (

@@ -30,7 +30,8 @@
     "check:server-actions": "npx -y tsx tools/checks/server-actions.mts",
     "check:naehrwerte": "npx -y tsx tools/checks/naehrwerte.mts",
     "check:konto": "npx -y tsx tools/checks/konto-verlauf.mts",
-    "check:makro": "npx -y tsx tools/checks/makro.mts"
+    "check:makro": "npx -y tsx tools/checks/makro.mts",
+    "check:start": "npx -y tsx tools/checks/start.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
