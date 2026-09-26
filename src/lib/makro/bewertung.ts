@@ -209,7 +209,33 @@ function ebeneWirtschaft(e: Eingabe): EbenenBild {
     },
   ];
 
-  return fasse(1, teile);
+  return fasse(1, teile.map((t) => veraltetPruefen(t, hv(e, t.key).stand)));
+}
+
+/**
+ * Ein Wert, der älter als ein Jahr ist, zählt nicht mehr mit.
+ *
+ * FRED stellt OECD-Reihen still ein: der Frühindikator endet bei den meisten
+ * Ländern Anfang 2024, liefert aber weiter diesen letzten Wert. Ohne diese
+ * Prüfung stünde er als „aktuell" in der Rechnung. Der Wert bleibt sichtbar,
+ * nur der Score fällt weg — und der Text sagt warum.
+ */
+export const VERALTET_MONATE = 12;
+
+export function veraltetPruefen(t: Teil, stand: string | null, heute = new Date()): Teil {
+  if (!stand || t.wert === null) return t;
+  const d = new Date(`${stand.slice(0, 10)}T12:00:00Z`);
+  if (Number.isNaN(d.getTime())) return t;
+  const monate = (heute.getUTCFullYear() - d.getUTCFullYear()) * 12
+    + (heute.getUTCMonth() - d.getUTCMonth());
+  if (monate <= VERALTET_MONATE) return t;
+  const wann = d.toLocaleDateString("de-CH", { month: "2-digit", year: "numeric", timeZone: "UTC" });
+  return {
+    ...t,
+    score: null,
+    text: `Veraltet — letzter Wert vom ${wann}, die Quelle liefert nichts Neueres. `
+      + "Zählt nicht mit; trag ihn von Hand ein, wenn du einen aktuellen hast.",
+  };
 }
 
 /* ---------------------------------------------------------- Ebene 2 */

@@ -22,55 +22,76 @@ import "server-only";
 export interface SerienDefinition {
   feld: string;
   label: string;
-  /** IDs in der Reihenfolge, in der sie versucht werden. */
+  /**
+   * Kandidaten-IDs. Alle werden versucht, genommen wird die mit dem
+   * JÜNGSTEN Wert (bei Gleichstand die weiter vorne). Grund: FRED stellt
+   * OECD-Reihen still ein — sie liefern dann weiter Werte, nur alte. „Erste
+   * ID, die antwortet" hätte so die Arbeitslosenquote der Eurozone von 2023
+   * genommen.
+   *
+   * `ID@pc1` heisst: FRED rechnet selbst die Veränderung zum Vorjahr in
+   * Prozent (units=pc1). Für BIP-Reihen, die nur als Niveau existieren.
+   */
   ids: string[];
   /** Was die Zahl bedeutet — steht auf der Seite. */
   einheit: string;
 }
 
 /** Je Währung die Serien, die FRED liefert. */
+const BIP = (ids: string[]): SerienDefinition =>
+  ({ feld: "bip_yoy", label: "BIP zum Vorjahr", einheit: "%", ids });
+
 export const FRED_SERIEN: Record<string, SerienDefinition[]> = {
   USD: [
-    { feld: "arbeitslos", label: "Arbeitslosenquote", einheit: "%", ids: ["LRHUTTTTUSM156S", "UNRATE"] },
+    { feld: "arbeitslos", label: "Arbeitslosenquote", einheit: "%", ids: ["UNRATE", "LRHUTTTTUSM156S"] },
     { feld: "fruehindikator", label: "OECD-Frühindikator", einheit: "Index", ids: ["USALOLITONOSTSAM"] },
     { feld: "rendite_10j", label: "10-Jahres-Rendite", einheit: "%", ids: ["DGS10", "IRLTLT01USM156N"] },
     { feld: "bip_yoy", label: "BIP zum Vorjahr", einheit: "%", ids: ["A191RO1Q156NBEA"] },
   ],
   EUR: [
-    { feld: "arbeitslos", label: "Arbeitslosenquote", einheit: "%", ids: ["LRHUTTTTEZM156S", "LRHUTTTTDEM156S"] },
+    { feld: "arbeitslos", label: "Arbeitslosenquote", einheit: "%", ids: ["LRHUTTTTEZM156S", "LRHUTTTTEAM156S", "LRHUTTTTDEM156S"] },
     { feld: "fruehindikator", label: "OECD-Frühindikator", einheit: "Index", ids: ["EA19LOLITONOSTSAM", "DEULOLITONOSTSAM"] },
     { feld: "rendite_10j", label: "10-Jahres-Rendite", einheit: "%", ids: ["IRLTLT01EZM156N", "IRLTLT01DEM156N"] },
-    { feld: "bip_yoy", label: "BIP zum Vorjahr", einheit: "%", ids: ["CLVMNACSCAB1GQEA19"] },
+    // Früher ohne @pc1 — damit stand das BIP-NIVEAU (2.9 Mio. EUR) als
+    // „Veränderung in %" in der Rechnung.
+    BIP(["CLVMNACSCAB1GQEA19@pc1", "CLVMNACSCAB1GQEA20@pc1", "CLVMNACSCAB1GQDE@pc1"]),
   ],
   GBP: [
     { feld: "arbeitslos", label: "Arbeitslosenquote", einheit: "%", ids: ["LRHUTTTTGBM156S"] },
     { feld: "fruehindikator", label: "OECD-Frühindikator", einheit: "Index", ids: ["GBRLOLITONOSTSAM"] },
     { feld: "rendite_10j", label: "10-Jahres-Rendite", einheit: "%", ids: ["IRLTLT01GBM156N"] },
+    BIP(["NGDPRSAXDCGBQ@pc1", "CLVMNACSCAB1GQUK@pc1"]),
   ],
   JPY: [
     { feld: "arbeitslos", label: "Arbeitslosenquote", einheit: "%", ids: ["LRHUTTTTJPM156S"] },
     { feld: "fruehindikator", label: "OECD-Frühindikator", einheit: "Index", ids: ["JPNLOLITONOSTSAM"] },
     { feld: "rendite_10j", label: "10-Jahres-Rendite", einheit: "%", ids: ["IRLTLT01JPM156N"] },
+    BIP(["JPNRGDPEXP@pc1", "NGDPRSAXDCJPQ@pc1"]),
   ],
   AUD: [
     { feld: "arbeitslos", label: "Arbeitslosenquote", einheit: "%", ids: ["LRHUTTTTAUM156S"] },
     { feld: "fruehindikator", label: "OECD-Frühindikator", einheit: "Index", ids: ["AUSLOLITONOSTSAM"] },
     { feld: "rendite_10j", label: "10-Jahres-Rendite", einheit: "%", ids: ["IRLTLT01AUM156N"] },
+    BIP(["NGDPRSAXDCAUQ@pc1", "AUSGDPRQDSMEI@pc1"]),
   ],
   NZD: [
     { feld: "arbeitslos", label: "Arbeitslosenquote", einheit: "%", ids: ["LRHUTTTTNZQ156S", "LRHUTTTTNZM156S"] },
     { feld: "fruehindikator", label: "OECD-Frühindikator", einheit: "Index", ids: ["NZLLOLITONOSTSAM"] },
     { feld: "rendite_10j", label: "10-Jahres-Rendite", einheit: "%", ids: ["IRLTLT01NZM156N"] },
+    BIP(["NGDPRSAXDCNZQ@pc1", "NZLGDPRQDSMEI@pc1"]),
   ],
   CAD: [
     { feld: "arbeitslos", label: "Arbeitslosenquote", einheit: "%", ids: ["LRHUTTTTCAM156S"] },
     { feld: "fruehindikator", label: "OECD-Frühindikator", einheit: "Index", ids: ["CANLOLITONOSTSAM"] },
     { feld: "rendite_10j", label: "10-Jahres-Rendite", einheit: "%", ids: ["IRLTLT01CAM156N"] },
+    BIP(["NGDPRSAXDCCAQ@pc1", "CANGDPRQDSMEI@pc1"]),
   ],
   CHF: [
-    { feld: "arbeitslos", label: "Arbeitslosenquote", einheit: "%", ids: ["LRHUTTTTCHM156S"] },
+    // Die Monatsreihe gibt es für die Schweiz nicht (HTTP 400) — nur Quartale.
+    { feld: "arbeitslos", label: "Arbeitslosenquote", einheit: "%", ids: ["LRHUTTTTCHQ156S", "LRUNTTTTCHQ156S", "LRHUTTTTCHM156S"] },
     { feld: "fruehindikator", label: "OECD-Frühindikator", einheit: "Index", ids: ["CHELOLITONOSTSAM"] },
     { feld: "rendite_10j", label: "10-Jahres-Rendite", einheit: "%", ids: ["IRLTLT01CHM156N"] },
+    BIP(["CLVMNACSCAB1GQCH@pc1", "NGDPRSAXDCCHQ@pc1"]),
   ],
 };
 
@@ -93,8 +114,9 @@ export interface Beobachtung {
  * einer Reihe zu landen, in der 0 etwas völlig anderes hiesse.
  */
 export async function holeSerie(
-  id: string, limit = 26,
+  kandidat: string, limit = 26,
 ): Promise<{ werte: Beobachtung[]; fehler: string | null }> {
+  const [id, units] = kandidat.split("@");
   const key = process.env.FRED_API_KEY;
   if (!key) return { werte: [], fehler: "FRED_API_KEY fehlt" };
 
@@ -104,6 +126,7 @@ export async function holeSerie(
   url.searchParams.set("file_type", "json");
   url.searchParams.set("sort_order", "desc");
   url.searchParams.set("limit", String(limit));
+  if (units) url.searchParams.set("units", units);
 
   try {
     const antwort = await fetch(url, { cache: "no-store" });
@@ -131,28 +154,26 @@ export interface SerienErgebnis {
   fehler: string | null;
 }
 
-/** Alle Serien einer Währung, mit Ersatz-IDs. */
+/** Alle Serien einer Währung — je Feld die Kandidaten-ID mit dem jüngsten Wert. */
 export async function holeWaehrung(ccy: string): Promise<SerienErgebnis[]> {
   const serien = FRED_SERIEN[ccy] ?? [];
   const ergebnisse: SerienErgebnis[] = [];
 
   for (const s of serien) {
-    let letzterFehler: string | null = "keine ID versucht";
-    let geschafft = false;
+    const versuche = await Promise.all(s.ids.map(async (id) => ({ id, ...(await holeSerie(id)) })));
+    const gut = versuche.filter((v) => !v.fehler && v.werte.length > 0);
 
-    for (const id of s.ids) {
-      const { werte, fehler } = await holeSerie(id);
-      if (!fehler && werte.length > 0) {
-        ergebnisse.push({ ccy, feld: s.feld, id, werte, fehler: null });
-        geschafft = true;
-        break;
-      }
-      letzterFehler = `${id}: ${fehler}`;
+    if (gut.length === 0) {
+      ergebnisse.push({
+        ccy, feld: s.feld, id: null, werte: [],
+        fehler: versuche.map((v) => `${v.id}: ${v.fehler}`).join(" · ") || "keine ID versucht",
+      });
+      continue;
     }
 
-    if (!geschafft) {
-      ergebnisse.push({ ccy, feld: s.feld, id: null, werte: [], fehler: letzterFehler });
-    }
+    const juengster = (v: typeof gut[number]) => v.werte[v.werte.length - 1].datum;
+    const beste = gut.reduce((a, b) => (juengster(b) > juengster(a) ? b : a));
+    ergebnisse.push({ ccy, feld: s.feld, id: beste.id, werte: beste.werte, fehler: null });
   }
 
   return ergebnisse;

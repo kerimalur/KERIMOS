@@ -72,6 +72,13 @@ export async function GET(request: NextRequest) {
         serie: e.id, geholt_am: new Date().toISOString(),
       }));
 
+      // Hat der Lauf eine andere Reihe gewählt als letztes Mal (frischere
+      // Kandidaten-ID, oder jetzt in % statt als Niveau), fliegen die Zeilen
+      // der alten raus — sonst stünde der Vorwert aus einer anderen Reihe
+      // neben dem Stand, und der Trendpfeil vergliche Äpfel mit Birnen.
+      await supabase.from("makro_reihen").delete()
+        .eq("ccy", ccy).eq("feld", e.feld).neq("serie", e.id!);
+
       const { error } = await supabase.from("makro_reihen")
         .upsert(zeilen, { onConflict: "ccy,feld,datum" });
 
