@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Brett } from "@/components/start/brett";
 import { Willkommen } from "@/components/start/willkommen";
 import { ladeOffeneHits } from "@/lib/trading/offene-signale";
@@ -10,6 +11,7 @@ import { ladeRoutinen } from "@/lib/routinen/laden";
 import { heuteFaellig, zusatz } from "@/lib/routinen/typen";
 import { ladeWochenziele, aktuelleWoche } from "@/lib/wochenziele/laden";
 import { WochenzieleKurz } from "@/components/wochenziele/kurz";
+import { RoutinenHeute } from "@/components/routinen/heute";
 import { heuteISO, heuteWochentag, addDays } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +29,8 @@ export const dynamic = "force-dynamic";
  * zusätzlich Wetter samt Regen, den Spruch des Tages und die heutigen
  * Routinen. Neben dem Brett stehen NUR die Wochenziele — Gruss, Wetter,
  * Spruch, Routinen und offene Hits gibt es ausschliesslich im Empfang
- * (bzw. die Hits auf der GVA-Übersicht).
+ * (bzw. die Hits auf der GVA-Übersicht). Später am selben Abend: links
+ * oben die Wochenziele, links unten die Routinen von heute zum Abhaken.
  *
  * Wer welche Kachel ist, steht in `lib/start/kacheln.ts` — eine Zeile pro
  * Feld. Umhängen heisst dort eine Zeile ändern, nicht hier etwas umbauen.
@@ -103,12 +106,23 @@ export default async function Start() {
             Gruss, Wetter, Spruch, Routinen — steht ausschliesslich im
             Scroll-Empfang). Schmaler als xl stehen sie über dem Brett.
           */}
-          {/* Mittig neben dem Brett, als eigene Karte klar abgesetzt
-              (Kerim, 26.09.2026: „etwas zentraler, nicht oben fixiert"). */}
-          <aside className="xl:w-[340px] xl:shrink-0 xl:self-center xl:pl-4">
-            <div className="rounded-2xl border border-line-strong/80 bg-card/85 p-5
-                            shadow-card backdrop-blur-sm">
+          {/* Links neben dem Brett: oben die Wochenziele, unten die Routinen
+              von heute — beide als eigene Karte (Kerim, 26.09.2026). Die
+              Spalte ist so hoch wie das Brett; die Karten sitzen an ihren
+              Enden. Schmaler als xl stehen beide über dem Brett. */}
+          <aside className="flex flex-col gap-4 xl:w-[340px] xl:shrink-0 xl:self-stretch xl:justify-between xl:pl-4">
+            <div className="rounded-2xl border border-line-strong/80 bg-card/85 p-5 shadow-card backdrop-blur-sm">
               <WochenzieleKurz ziele={wochenziele} gross />
+            </div>
+            <div className="rounded-2xl border border-line-strong/80 bg-card/85 p-5 shadow-card backdrop-blur-sm">
+              <Link href="/routinen"
+                className="mb-3 flex items-baseline justify-between border-b border-line/70 pb-2.5 hover:text-ink-soft">
+                <span className="font-display text-base font-bold text-ink">Routinen heute</span>
+                <span className="text-xs text-ink-muted">alle →</span>
+              </Link>
+              {heuteFaellig(routinen, wochentag, heute).length > 0
+                ? <RoutinenHeute ziele={routinen} wochentag={wochentag} heute={heute} />
+                : <p className="text-sm text-ink-faint">Heute steht nichts an.</p>}
             </div>
           </aside>
 
