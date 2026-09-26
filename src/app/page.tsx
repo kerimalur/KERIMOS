@@ -7,7 +7,7 @@ import type { NavLink } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 /**
- * Zwei Kacheln. Das ist die ganze Startseite.
+ * Drei Kacheln. Das ist die ganze Startseite.
  *
  * Am 09.09.2026 hat Kerim KerimOS radikal zusammengestrichen: Gym, die
  * Gewohnheiten, die Planung mit Projekten und Kalender, die
@@ -52,8 +52,14 @@ export default async function Start() {
       .map((l) => [l.target, l]),
   );
 
+  /*
+   * Drei Kacheln seit 26.09.2026: Trading ist in zwei Bereiche geteilt.
+   * Analyse ist alles vor dem Trade, Journal alles danach — und das sind
+   * zwei verschiedene Momente am Tag, also zwei Einstiege.
+   */
   const kacheln = [
-    { name: "Trading", ziel: "/trading", farbe: "#8B94B8", zeichen: "◈" },
+    { name: "Analyse", ziel: "/trading", farbe: "#8B94B8", zeichen: "◈" },
+    { name: "Journal", ziel: "/trading/journal", farbe: "#6E8FA8", zeichen: "▦" },
     { name: "Essen", ziel: "/m/Essen", farbe: "#C4A882", zeichen: "▤" },
   ];
 
@@ -61,7 +67,7 @@ export default async function Start() {
     <div className="py-10">
       <Logo inverted className="mb-8 h-11 w-11 rounded-2xl" />
 
-      <div className="grid gap-5 sm:grid-cols-2">
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {kacheln.map((k, i) => {
           const bild = bilder.get(k.ziel);
 

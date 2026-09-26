@@ -7,12 +7,21 @@ import { Logo } from "./logo";
 // Essen fehlt hier bewusst: der Bereich bringt seine eigene Tab-Leiste mit
 // (siehe components/essen-tabs.tsx). Zwei Navigationen übereinander
 // verwirren mehr, als sie helfen.
-//
-// Seit dem Radikalschnitt vom 09.09.2026 besteht KerimOS aus Trading und
-// Essen. Die Struktur bleibt trotzdem als Tabelle stehen und wird nicht auf
-// einen festen Trading-Kopf eingedampft — sie kostet nichts, und der nächste
-// Bereich mit Unterseiten hängt sich hier ohne Umbau ein.
-type Section = "trading" | null;
+
+/**
+ * Zwei Bereiche statt einem (26.09.2026).
+ *
+ * **Analyse** ist alles VOR dem Trade: Marktlage, Fundamentals, Alarme.
+ * **Journal** ist alles DANACH: eigene Trades, Backtest, Konten. Kerims
+ * Ansage: das sind zwei verschiedene Arbeiten zu verschiedenen Zeiten, und
+ * ein gemeinsamer Kopf mit sechs Einträgen zwingt bei jedem Klick zur
+ * Entscheidung, in welchem Modus man gerade ist.
+ *
+ * Die Adressen bleiben vorerst unter /trading/…: ein Umbenennen bräche
+ * Lesezeichen, den PWA-Shortcut und die Links in alten Push-Meldungen, ohne
+ * dass sich an der Bedienung etwas ändert.
+ */
+type Section = "analyse" | "journal" | null;
 
 /**
  * Ein Eintrag der Hauptnavigation.
@@ -35,55 +44,52 @@ interface NavConfig {
   secondary: NavLink[];
 }
 
-/**
- * Trading: sechs Bereiche in EINER Zeile, keine zweite Reihe mehr.
- *
- * Die alte Trennung in Haupt- und Nebenabschnitte war die Schwachstelle: bei
- * jeder neuen Seite musste man entscheiden, in welche Reihe sie gehoert, und
- * die Antwort war nie offensichtlich. Jetzt gilt eine Regel — oben der
- * Bereich, innerhalb des Bereichs die Ansicht (siehe components/trading/
- * bereich-tabs.tsx).
- *
- * Die Reihenfolge bildet den Arbeitsweg ab:
- *   Uebersicht     was habe ich mir selbst vorgenommen (nur die Watchlist)
- *   Cockpit        was ist gerade los am Chart (ein Raster, 28 Kacheln)
- *   Confluence     spricht die Fundamentallage dafuer (Ranking, Monty)
- *   Journal        was habe ich gemacht
- *   Backtest       traegt die Methode ueberhaupt (Auswertung, Kategorien,
- *                  Rueckblick auf die Lage eines vergangenen Handelstages)
- *   Einstellungen  Alarme und der Weg ins Labor
- *
- * Siehe ../../TRADING-UMBAU.md.
- */
-const TRADING: NavConfig = {
+const ANALYSE: NavConfig = {
   home: { href: "/trading", label: "Übersicht" },
   primary: [
     { href: "/trading/cockpit", label: "Cockpit" },
+    { href: "/trading/fundamentals", label: "Fundamentals" },
+    { href: "/trading/waehrungen", label: "Währungen" },
     { href: "/trading/ranking", label: "Confluence", auch: ["/trading/confluence"] },
-    { href: "/trading/journal", label: "Journal" },
-    { href: "/trading/backtest", label: "Backtest" },
-    { href: "/trading/einstellungen", label: "Einstellungen" },
+    { href: "/trading/einstellungen", label: "Alarme", auch: ["/trading/alarme"] },
   ],
   secondary: [],
 };
 
-const TRADING_PATHS = ["/trading"];
-// "/" und "/m/Essen" gehören zu keinem Bereich - dort zeigt die Navigation
-// nur die Abmelden-Zeile bzw. der Bereich bringt seine eigene Leiste mit.
+const JOURNAL: NavConfig = {
+  home: { href: "/trading/journal", label: "Journal" },
+  primary: [
+    { href: "/trading/backtest", label: "Backtest" },
+  ],
+  secondary: [],
+};
+
+// Journal zuerst prüfen: seine Pfade liegen unter /trading und würden sonst
+// von der Analyse eingefangen.
+const JOURNAL_PATHS = ["/trading/journal", "/trading/backtest"];
+const ANALYSE_PATHS = ["/trading"];
 
 const SECTION_LABEL: Record<Exclude<Section, null>, string> = {
-  trading: "Trading",
+  analyse: "Analyse",
+  journal: "Journal",
+};
+
+/** Der Einstieg in den jeweils anderen Bereich — ein Klick, kein Umweg. */
+const SECTION_HOME: Record<Exclude<Section, null>, string> = {
+  analyse: "/trading",
+  journal: "/trading/journal",
 };
 
 function sectionOf(path: string): Section {
-  if (TRADING_PATHS.some((p) => path === p || path.startsWith(p + "/"))) return "trading";
+  if (JOURNAL_PATHS.some((p) => path === p || path.startsWith(p + "/"))) return "journal";
+  if (ANALYSE_PATHS.some((p) => path === p || path.startsWith(p + "/"))) return "analyse";
   return null;
 }
 
 export function Nav({ email }: { email?: string }) {
   const path = usePathname();
   const section = sectionOf(path);
-  const config = TRADING;
+  const config = section === "journal" ? JOURNAL : ANALYSE;
 
   /**
    * Aktiv ist der längste passende Eintrag, nicht jeder passende.
@@ -123,13 +129,22 @@ export function Nav({ email }: { email?: string }) {
     <header className="sticky top-0 z-20 border-b border-line/70 bg-card/80 backdrop-blur-xl">
       <div className="mx-auto max-w-6xl px-5">
         <div className="flex flex-wrap items-center gap-x-1 gap-y-2 pt-4">
-          <Link href="/" className="mr-5 flex items-center gap-2.5 transition duration-150 ease-tactile active:scale-95"
-            title="Zurück zur Auswahl">
+          <Link href="/" className="mr-3 flex items-center transition duration-150 ease-tactile active:scale-95"
+            title="Zurück zur Startseite">
             <Logo inverted className="h-7 w-7 rounded-lg" />
-            <span className="font-display text-sm font-bold text-ink">
-              {SECTION_LABEL[section]}
-            </span>
           </Link>
+
+          {/* Bereichswechsel: Analyse ist vor dem Trade, Journal danach. */}
+          <div className="mr-4 flex items-center gap-1 rounded-xl bg-sand p-1">
+            {(["analyse", "journal"] as const).map((s) => (
+              <Link key={s} href={SECTION_HOME[s]}
+                className={cx(
+                  "rounded-lg px-3 py-1 font-display text-sm font-bold transition duration-150",
+                  section === s ? "bg-card text-ink shadow-card" : "text-ink-muted hover:text-ink-soft")}>
+                {SECTION_LABEL[s]}
+              </Link>
+            ))}
+          </div>
 
           <nav className="flex flex-wrap items-center gap-1">
             {[config.home, ...config.primary].map((l) => (
