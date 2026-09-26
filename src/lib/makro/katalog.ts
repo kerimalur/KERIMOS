@@ -190,3 +190,22 @@ export function oecdZuordnung(): { ccy: string; feld: string; set: OecdSet; land
   }
   return out;
 }
+
+/** Jede Stelle im Katalog, die von der Weltbank kommt (fürs Nachladen im Browser). */
+export function weltbankZuordnung(): { ccy: string; feld: string; indikator: string; land: string }[] {
+  const out: { ccy: string; feld: string; indikator: string; land: string }[] = [];
+  for (const [ccy, felder] of Object.entries(QUELLEN)) {
+    for (const [feld, qs] of Object.entries(felder)) {
+      for (const q of qs) if (q.typ === "weltbank") out.push({ ccy, feld, indikator: q.indikator, land: q.land });
+    }
+  }
+  return out;
+}
+
+/** Alle Kombinationen, die das Nachladen im Browser speichern darf — mit ihrem Seriennamen. */
+export function browserErlaubt(): Set<string> {
+  const s = new Set<string>();
+  for (const z of oecdZuordnung()) s.add(`${z.ccy}|${z.feld}|${OECD_SETS[z.set].name} · ${z.land}`);
+  for (const z of weltbankZuordnung()) s.add(`${z.ccy}|${z.feld}|Weltbank · ${z.indikator} · ${z.land}`);
+  return s;
+}

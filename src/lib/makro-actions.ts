@@ -128,10 +128,11 @@ export async function ereignisLoeschen(fd: FormData) {
 /**
  * Reihen, die der Browser selbst bei der OECD geholt hat, speichern.
  *
- * Warum der Umweg: die OECD weist Anfragen aus dem Vercel-Rechenzentrum ab
- * (HTTP 500), beantwortet dieselbe Anfrage aus Kerims Browser aber
- * anstandslos — und erlaubt sie dort ausdrücklich (CORS). Der Browser holt
- * also, der Server prüft und schreibt.
+ * Warum der Umweg: IMF und Weltbank weisen das Vercel-Rechenzentrum ab
+ * (HTTP 403 bzw. keine Antwort), und die OECD tat es zeitweise auch.
+ * Dieselben Anfragen aus Kerims Browser gehen — und OECD und Weltbank
+ * erlauben sie dort ausdrücklich (CORS). Der Browser holt also, der Server
+ * prüft und schreibt.
  *
  * Geprüft wird hart: nur angemeldet, nur bekannte Währung/Feld-Paare aus
  * dem Katalog, nur Zahlen und gültige Daten, höchstens 26 Werte. Geschrieben
@@ -145,12 +146,11 @@ export async function makroAusBrowser(reihen: {
   if (!data.user) return { fehler: "Nicht angemeldet." };
 
   const { makroDb, speichereReihe, berichtErgaenzen } = await import("@/lib/makro/speichern");
-  const { oecdZuordnung, OECD_SETS } = await import("@/lib/makro/katalog");
+  const { browserErlaubt } = await import("@/lib/makro/katalog");
   const db = makroDb();
   if (!db) return { fehler: "SUPABASE_SERVICE_ROLE_KEY fehlt." };
 
-  const erlaubt = new Map(oecdZuordnung().map((z) =>
-    [`${z.ccy}|${z.feld}|${OECD_SETS[z.set].name} · ${z.land}`, true]));
+  const erlaubt = browserErlaubt();
 
   const bericht: Record<string, string> = {};
   let gespeichert = 0;

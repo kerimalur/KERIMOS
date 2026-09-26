@@ -92,7 +92,9 @@ export async function holeWeltbank(indikator: string, land: string): Promise<Beo
   const bis = new Date().getUTCFullYear();
   const url = `https://api.worldbank.org/v2/country/${land}/indicator/${indikator}`
     + `?format=json&per_page=60&date=${bis - 8}:${bis}`;
-  const j = JSON.parse(await holeText(url)) as [unknown, { date: string; value: number | null }[] | null];
+  // Kurzer Timeout: die Weltbank antwortet dem Rechenzentrum oft gar nicht,
+  // und der Lauf hat insgesamt nur 60 Sekunden. Der Browser holt nach.
+  const j = JSON.parse(await holeText(url, 8000)) as [unknown, { date: string; value: number | null }[] | null];
   return sortiert((j?.[1] ?? [])
     .filter((x) => x.value !== null)
     .map((x) => ({ datum: `${x.date}-01-01`, wert: Number(x.value) })));

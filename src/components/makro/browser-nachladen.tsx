@@ -1,15 +1,15 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { OECD_SETS, oecdUrl, oecdZuordnung, type OecdSet } from "@/lib/makro/katalog";
+import { OECD_SETS, oecdUrl, oecdZuordnung, weltbankZuordnung, type OecdSet } from "@/lib/makro/katalog";
 import { parseOecdCsv } from "@/lib/makro/perioden";
 import { makroAusBrowser } from "@/lib/makro-actions";
 
 /**
- * Holt die OECD-Reihen im Browser und gibt sie dem Server zum Speichern.
+ * Holt OECD- und Weltbank-Reihen im Browser und gibt sie dem Server zum Speichern.
  *
- * Die OECD blockt das Vercel-Rechenzentrum, nicht aber den Browser (siehe
- * makroAusBrowser). Läuft von selbst, sobald die Seite offen ist — höchstens
+ * IMF und Weltbank blocken das Vercel-Rechenzentrum, nicht aber den Browser
+ * (siehe makroAusBrowser); die OECD tat es zeitweise auch. Läuft von selbst, sobald die Seite offen ist — höchstens
  * alle 12 Stunden, gemerkt im localStorage — und auf Knopfdruck jederzeit.
  * Drei Abfragen (eine je Dataset), weit unter dem Limit der OECD.
  */
@@ -25,7 +25,7 @@ export function BrowserNachladen() {
 
   const laden = useCallback(async () => {
     setLaeuft(true);
-    setText("Hole OECD-Daten im Browser …");
+    setText("Hole OECD- und Weltbank-Daten im Browser …");
     try {
       const abJahr = new Date().getUTCFullYear() - 3;
       const sets = [...new Set(oecdZuordnung().map((z) => z.set))] as OecdSet[];
@@ -42,12 +42,45 @@ export function BrowserNachladen() {
         }
       }));
 
+      // Weltbank: je Indikator EINE Abfrage für alle Länder. Jährlich, nur
+      // Messwerte — die Weltbank führt keine Prognosen.
+      const wb = new Map<string, Map<string, { datum: string; wert: number }[]>>();
+      const indikatoren = [...new Set(weltbankZuordnung().map((z) => z.indikator))];
+      await Promise.all(indikatoren.map(async (ind) => {
+        try {
+          const laender = [...new Set(weltbankZuordnung().filter((z) => z.indikator === ind).map((z) => z.land))];
+          const bis = new Date().getUTCFullYear();
+          const r = await fetch(`https://api.worldbank.org/v2/country/${laender.join(";")}/indicator/${ind}`
+            + `?format=json&per_page=500&date=${bis - 8}:${bis}`);
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const j = await r.json() as [unknown, { countryiso3code: string; date: string; value: number | null }[] | null];
+          const je = new Map<string, { datum: string; wert: number }[]>();
+          for (const x of j?.[1] ?? []) {
+            if (x.value === null) continue;
+            const l = je.get(x.countryiso3code) ?? [];
+            l.push({ datum: `${x.date}-01-01`, wert: Number(x.value) });
+            je.set(x.countryiso3code, l);
+          }
+          for (const [k, v] of je) je.set(k, v.sort((a, b) => a.datum.localeCompare(b.datum)));
+          wb.set(ind, je);
+        } catch (e) {
+          fehler.push(`Weltbank ${ind}: ${e instanceof Error ? e.message : "?"}`);
+        }
+      }));
+
+      const wbReihen = weltbankZuordnung().map((z) => ({
+        ccy: z.ccy, feld: z.feld,
+        serie: `Weltbank · ${z.indikator} · ${z.land}`,
+        werte: wb.get(z.indikator)?.get(z.land) ?? [],
+      }));
+
       const reihen = oecdZuordnung()
         .map((z) => ({
           ccy: z.ccy, feld: z.feld,
           serie: `${OECD_SETS[z.set].name} · ${z.land}`,
           werte: daten.get(z.set)?.get(z.land) ?? [],
         }))
+        .concat(wbReihen)
         .filter((r) => r.werte.length > 0);
 
       const antwort = await makroAusBrowser(reihen);
@@ -55,7 +88,7 @@ export function BrowserNachladen() {
         setText(`Speichern fehlgeschlagen: ${antwort.fehler}`);
       } else {
         try { localStorage.setItem(SCHLUESSEL, String(Date.now())); } catch { /* egal */ }
-        setText(`OECD im Browser: ${reihen.length} Reihen geholt, ${antwort.gespeichert} davon neuer als der Stand`
+        setText(`Im Browser: ${reihen.length} Reihen geholt, ${antwort.gespeichert} davon neuer als der Stand`
           + (fehler.length ? ` · Probleme: ${fehler.join(" · ")}` : ""));
         if (antwort.gespeichert > 0) router.refresh();
       }
@@ -79,7 +112,7 @@ export function BrowserNachladen() {
       <button type="button" onClick={() => void laden()} disabled={laeuft}
         className="rounded-lg border border-line bg-sand px-2 py-1 text-ink-soft transition
                    hover:text-ink disabled:opacity-50">
-        {laeuft ? "lädt …" : "OECD-Daten jetzt im Browser holen"}
+        {laeuft ? "lädt …" : "OECD- und Weltbank-Daten jetzt im Browser holen"}
       </button>
       {text && <span>{text}</span>}
     </div>
