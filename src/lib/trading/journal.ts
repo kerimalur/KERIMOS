@@ -698,63 +698,12 @@ export async function fetchKontoBuchungen(): Promise<KontoBuchung[]> {
   }));
 }
 
-export interface KontoStand {
-  konto: Konto;
-  /** Summe der Ein- minus Auszahlungen. */
-  einzahlungen: number;
-  auszahlungen: number;
-  /** Realisierter Gewinn aus Live-Trades mit erfasstem Betrag. */
-  handelsGewinn: number;
-  /** Startkapital + Ein- − Auszahlungen + Handelsgewinn. */
-  berechnet: number;
-  /** Differenz zum in der Datenbank hinterlegten Stand. */
-  abweichung: number;
-  /** Live-Trades dieses Kontotyps. */
-  trades: number;
-}
-
-/**
- * Kontostand aus Bewegungen statt aus einem Feld.
- *
- * `accounts.current_balance` ist ein von Hand gepflegter Wert und driftet
- * unweigerlich. Deshalb wird hier gerechnet und die **Abweichung** angezeigt,
- * statt eine der beiden Zahlen zur Wahrheit zu erklären — eine Differenz ist
- * ein Hinweis, kein Fehler: sie bedeutet meist, dass ein Trade ohne Betrag
- * erfasst wurde oder eine Einzahlung fehlt.
- *
- * Backtest-Trades zählen ausdrücklich nicht mit. Sie haben kein Geld bewegt.
+/*
+ * Die frühere `berechneKontostaende` ist am 26.09.2026 entfallen. Sie
+ * summierte Ein-, Auszahlungen und Gewinne ohne Reihenfolge — damit liess
+ * sich kein Stand VOR einem Trade bestimmen und kein Risiko aus Prozent.
+ * Ersetzt durch die Kontokette (lib/trading/konto-verlauf.ts).
  */
-export function berechneKontostaende(
-  konten: Konto[],
-  buchungen: KontoBuchung[],
-  trades: Trade[],
-): KontoStand[] {
-  return konten.map((konto) => {
-    const eigene = buchungen.filter(
-      (b) => b.accountId === konto.id || (b.accountId === null && b.type === konto.type),
-    );
-    const einzahlungen = eigene
-      .filter((b) => b.buchungsTyp === "deposit")
-      .reduce((a, b) => a + Math.abs(b.amount), 0);
-    const auszahlungen = eigene
-      .filter((b) => b.buchungsTyp === "withdrawal" || b.buchungsTyp === "payout")
-      .reduce((a, b) => a + Math.abs(b.amount), 0);
-
-    const eigeneTrades = trades.filter(
-      (t) => t.sessionType === "live" && t.type === konto.type,
-    );
-    const handelsGewinn = eigeneTrades.reduce((a, t) => a + (t.profitAmount ?? 0), 0);
-
-    const berechnet =
-      konto.initialBalance + einzahlungen - auszahlungen + handelsGewinn;
-
-    return {
-      konto, einzahlungen, auszahlungen, handelsGewinn, berechnet,
-      abweichung: konto.currentBalance - berechnet,
-      trades: eigeneTrades.length,
-    };
-  });
-}
 
 /* ------------------------------------------------- Kontokette (26.09.2026) */
 
