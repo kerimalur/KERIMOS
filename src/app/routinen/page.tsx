@@ -2,6 +2,8 @@ import { SeitenKopf } from "@/components/seiten-kopf";
 import { RoutinenListe } from "@/components/routinen/liste";
 import { RoutinenHeute } from "@/components/routinen/heute";
 import { ladeRoutinen } from "@/lib/routinen/laden";
+import { ladeErsatz } from "@/lib/ersatz/laden";
+import { ErsatzBereich } from "@/components/routinen/ersatz";
 import { heuteISO, heuteWochentag } from "@/lib/time";
 import { heuteFaellig } from "@/lib/routinen/typen";
 
@@ -12,7 +14,7 @@ export const dynamic = "force-dynamic";
  * Erinnert wird auf der Startseite und per Push-Meldung der App.
  */
 export default async function RoutinenPage() {
-  const ziele = await ladeRoutinen();
+  const [ziele, ersatz] = await Promise.all([ladeRoutinen(), ladeErsatz()]);
   const tag = heuteWochentag();
   const heute = heuteISO();
 
@@ -32,6 +34,8 @@ export default async function RoutinenPage() {
       )}
 
       <RoutinenListe ziele={ziele} />
+
+      <ErsatzBereich liste={ersatz} heute={heute} />
 
       <p className="mt-6 text-xs text-ink-faint">
         🔔 Mit Uhrzeit kommt die Push-Meldung genau dann, ohne Uhrzeit gesammelt um 07:00 — nur solange nicht abgehakt. Bei „x-mal pro Woche“ täglich, bis die Anzahl erreicht ist.

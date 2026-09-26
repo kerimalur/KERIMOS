@@ -33,7 +33,8 @@
     "check:makro": "npx -y tsx tools/checks/makro.mts",
     "check:start": "npx -y tsx tools/checks/start.mts",
     "check:routinen": "npx -y tsx tools/checks/routinen.mts",
-    "check:makro-quellen": "npx -y tsx tools/checks/makro-quellen.mts"
+    "check:makro-quellen": "npx -y tsx tools/checks/makro-quellen.mts",
+    "check:ersatz": "npx -y tsx tools/checks/ersatz.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
