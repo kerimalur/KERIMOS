@@ -1,8 +1,8 @@
 import Link from "next/link";
 import {
-  fetchTrades, fetchStrategien, fetchKonfluenzen, computeJournalStats, signiertesR,
-  SETUPS, PAARE, tradingUserId,
-  type Trade, type TradeFilter,
+  ladeKontoKette, fetchStrategien, fetchKonfluenzen, computeJournalStats,
+  signiertesR, rechnungFuer, SETUPS, PAARE, tradingUserId,
+  type Trade, type Verlauf,
 } from "@/lib/trading/journal";
 import { tradingConfigured, fetchWatchlistPaar } from "@/lib/supabase/trading";
 import { tradeLoeschen } from "@/lib/journal-actions";
@@ -49,8 +49,9 @@ function FilterChip({
   );
 }
 
-function TradeZeile({ t, konfluenzen, offen, bildfehler }: {
+function TradeZeile({ t, verlauf, konfluenzen, offen, bildfehler }: {
   t: Trade;
+  verlauf: Verlauf;
   konfluenzen: readonly string[];
   /** Dialog direkt offen — nach einem Bild-Upload (`?bearbeiten=<id>`). */
   offen: boolean;
@@ -58,6 +59,7 @@ function TradeZeile({ t, konfluenzen, offen, bildfehler }: {
 }) {
   const r = signiertesR(t);
   const setups = SETUPS.filter((s) => t.setups[s.key]);
+  const rechnung = rechnungFuer(verlauf, t.id);
   const lage = t.fundamentalSnapshot?.ranking.urteil;
   const learning = t.antworten[LEARNING_KEY];
 
@@ -89,11 +91,17 @@ function TradeZeile({ t, konfluenzen, offen, bildfehler }: {
           trade={{
             id: t.id, pair: t.pair, direction: t.direction, date: t.date,
             status: t.status, result: t.result, rMultiple: t.rMultiple,
-            riskAmount: t.riskAmount, accountBalance: t.accountBalance,
-            profitAmount: t.profitAmount, entryPrice: t.entryPrice,
+            riskAmount: t.riskAmount, riskPercent: t.riskPercent,
+            accountBalance: t.accountBalance,
+            profitAmount: t.profitAmount, profitPercent: t.profitPercent,
+            entryPrice: t.entryPrice,
             exitPrice: t.exitPrice, lotSize: t.lotSize, notes: t.notes,
             confluences: t.confluences, antworten: t.antworten,
             fundamentalSnapshot: t.fundamentalSnapshot,
+            standVor: rechnung?.standVor ?? null,
+            gewinnProzent: rechnung?.gewinnProzent ?? t.profitPercent,
+            risikoProzent: rechnung?.risikoProzent ?? t.riskPercent,
+            rQuelle: rechnung?.rQuelle ?? "gespeichert",
           }} />
 
         <form action={tradeLoeschen}>
@@ -142,20 +150,28 @@ export default async function TradesSeite({
   if (!userId) return <JournalHinweis grund="kein-user" />;
 
   const sp = await searchParams;
-  // Fest auf live: das Journal ist das Live-Journal.
-  const filter: TradeFilter = { sessionType: "live" };
-  if (sp.paar) filter.pair = sp.paar;
-  if (sp.ergebnis === "win" || sp.ergebnis === "loss" || sp.ergebnis === "breakeven") {
-    filter.result = sp.ergebnis;
-  }
 
-  const [trades, strategien, eigeneKonfluenzen, beobachtung] = await Promise.all([
-    fetchTrades(filter),
-    fetchStrategien(),
-    fetchKonfluenzen(),
-    // `?neu=<id>` kommt vom Knopf „Trade eintragen" auf der Übersicht.
-    sp.neu ? fetchWatchlistPaar(sp.neu) : null,
-  ]);
+  /*
+   * Immer ALLE Live-Trades laden, dann im Speicher filtern.
+   *
+   * Der Grund ist die Kontokette: Sie rechnet Kontostand, Risiko und R
+   * chronologisch durch und braucht dafür jeden Trade. Würde die Datenbank
+   * schon nach Paar filtern, fehlten der Kette die Trades dazwischen — und
+   * jeder Stand danach wäre falsch.
+   */
+  const [{ verlauf, live: alleTrades }, strategien, eigeneKonfluenzen, beobachtung] =
+    await Promise.all([
+      ladeKontoKette(),
+      fetchStrategien(),
+      fetchKonfluenzen(),
+      // `?neu=<id>` kommt vom Knopf „Trade eintragen" auf der Übersicht.
+      sp.neu ? fetchWatchlistPaar(sp.neu) : null,
+    ]);
+
+  const ergebnisFilter = ["win", "loss", "breakeven"].includes(sp.ergebnis ?? "")
+    ? sp.ergebnis : undefined;
+  const trades = alleTrades.filter((t) =>
+    (!sp.paar || t.pair === sp.paar) && (!ergebnisFilter || t.result === ergebnisFilter));
 
   /*
    * Aus der Beobachtungs-Zeile wird die Vorbelegung des Formulars.
@@ -170,8 +186,6 @@ export default async function TradesSeite({
 
   // Paar-Filter nur aus dem, was auch wirklich gehandelt wurde — eine Liste
   // mit 32 Einträgen, von denen 26 leer sind, hilft niemandem.
-  const alleTrades = filter.pair || filter.result
-    ? await fetchTrades({ sessionType: "live" }) : trades;
   const gehandelt = [...new Set(alleTrades.map((t) => t.pair))].sort();
 
   /*
@@ -249,7 +263,7 @@ export default async function TradesSeite({
     .slice(0, 12);
 
   const zeileProps = (t: Trade) => ({
-    t, konfluenzen,
+    t, verlauf, konfluenzen,
     offen: sp.bearbeiten === t.id,
     bildfehler: sp.bildfehler ?? null,
   });

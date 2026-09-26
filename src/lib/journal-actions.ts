@@ -11,6 +11,7 @@ import {
   pruefeBild, bildPfad, pfadAusUrl, EIMER,
 } from "@/lib/trading/screenshots";
 import { antwortenAusFormular } from "@/lib/trading/journal-fragen";
+import { rechneR } from "@/lib/trading/konto-verlauf";
 import { lageFesthalten } from "@/lib/trading/lage-festhalten";
 
 /**
@@ -244,9 +245,10 @@ export async function tradeLoeschen(fd: FormData) {
  *
  * Betrag korrigieren: Die Brücke liest den Gewinn aus MT5, und der stimmt
  * nicht immer (Teilschliessungen, Kommission, Swap auf einer anderen
- * Position). Kerim gibt deshalb entweder den Prozentwert aufs Konto an
- * (Betrag = Kontostand × Prozent) oder direkt den Betrag in Franken. Das R
- * folgt aus Betrag ÷ Risiko.
+ * Position). Kerim gibt deshalb Gewinn und Risiko je wahlweise in Prozent
+ * oder in Franken an. Prozentwerte bleiben Prozentwerte: den Betrag rechnet
+ * die Kontokette beim Lesen aus dem Stand vor dem Trade, damit eine spätere
+ * Korrektur eines älteren Trades automatisch durchschlägt.
  *
  * Gibt eine Meldung zurück statt zu werfen, damit der Dialog sie anzeigen
  * kann (meist: Migration noch nicht gelaufen).
@@ -258,41 +260,43 @@ export async function tradeJournalSpeichern(
   const id = txt(fd, "id");
   if (!id) return { fehler: "Trade fehlt.", hinweis: null };
 
-  const kontostand = num(fd, "accountBalance");
-  const prozent = num(fd, "prozent");
-  const risiko = num(fd, "riskAmount");
-  const rEingabe = num(fd, "rMultiple");
+  /*
+   * Gespeichert wird, was Kerim getippt hat — in der Einheit, in der er es
+   * getippt hat. Der Betrag zu einem Prozentwert wird NICHT mitgespeichert:
+   * Er hängt am Kontostand vor dem Trade, und der verschiebt sich, sobald ein
+   * früherer Trade korrigiert wird. Gerechnet wird deshalb beim Lesen, in
+   * lib/trading/konto-verlauf.ts.
+   */
+  const standVor = num(fd, "standVor");
 
-  // Betrag: entweder direkt in Franken oder aus Prozent × Kontostand.
-  // Fehlt die gewählte Angabe, bleibt der bisherige Wert der Brücke.
-  const franken = num(fd, "franken");
-  const betrag = txt(fd, "eingabe") === "franken"
-    ? (franken ?? num(fd, "profitAmount"))
-    : prozent !== null && kontostand !== null && kontostand > 0
-      ? Math.round(kontostand * prozent) / 100
-      : num(fd, "profitAmount");
+  const gewinnProzent = txt(fd, "eingabe") === "franken" ? null : num(fd, "prozent");
+  const gewinnBetrag = txt(fd, "eingabe") === "franken" ? num(fd, "franken") : null;
+  const risikoProzent = txt(fd, "risikoArt") === "franken" ? null : num(fd, "riskPercent");
+  const risikoBetrag = txt(fd, "risikoArt") === "franken" ? num(fd, "riskAmount") : null;
+
+  const ausProzent = (p: number | null) =>
+    p !== null && standVor !== null && standVor > 0
+      ? Math.round(standVor * p) / 100 : null;
+
+  const gewinn = gewinnBetrag ?? ausProzent(gewinnProzent);
+  const risiko = risikoBetrag ?? ausProzent(risikoProzent);
 
   // Ergebnis: was gewählt ist; ohne Wahl aus dem Vorzeichen des Betrags.
   const gewaehlt = txt(fd, "result");
   const ergebnis = ["win", "loss", "breakeven"].includes(gewaehlt)
     ? gewaehlt as "win" | "loss" | "breakeven"
-    : betrag === null ? null : betrag > 0 ? "win" : betrag < 0 ? "loss" : "breakeven";
+    : gewinn === null ? null : gewinn > 0 ? "win" : gewinn < 0 ? "loss" : "breakeven";
 
-  // R: aus Betrag ÷ Risiko, sonst die Eingabe mit dem Vorzeichen des Ergebnisses.
-  let r: number;
-  if (ergebnis === "breakeven") r = 0;
-  else if (risiko !== null && risiko > 0 && betrag !== null) {
-    r = Math.round((betrag / risiko) * 100) / 100;
-  } else {
-    const roh = Math.abs(rEingabe ?? 0);
-    r = ergebnis === "loss" ? -(roh || 1) : roh;
-  }
+  // Dasselbe R wie beim Lesen — eine Rechenregel, an einer Stelle.
+  const { r } = rechneR(gewinn, risiko, ergebnis, num(fd, "rMultiple") ?? 0);
 
   const zeile: Record<string, unknown> = {
     result: ergebnis,
-    account_balance: kontostand,
-    profit_amount: betrag,
-    risk_amount: risiko,
+    account_balance: standVor,
+    profit_amount: gewinnBetrag,
+    profit_percent: gewinnProzent,
+    risk_amount: risikoBetrag,
+    risk_percent: risikoProzent,
     r_multiple: r,
     notes: txt(fd, "notes"),
     confluences: fd.getAll("confluences").map(String).filter(Boolean),
@@ -303,14 +307,22 @@ export async function tradeJournalSpeichern(
   let { error } = await supabase.from("trades").update(zeile)
     .eq("id", id).eq("user_id", userId);
 
-  // Spalte fehlt noch → ohne die Antworten speichern und es sagen.
+  // Fehlende Spalten → ohne sie speichern und sagen, was fehlt.
   let hinweis: string | null = null;
-  if (error && /journal_fragen/.test(error.message)) {
-    delete zeile.journal_fragen;
+  if (error && /journal_fragen|profit_percent/.test(error.message)) {
+    const fehlt: string[] = [];
+    if (/journal_fragen/.test(error.message)) {
+      delete zeile.journal_fragen; fehlt.push("journal_fragen");
+    }
+    if (/profit_percent/.test(error.message)) {
+      delete zeile.profit_percent; fehlt.push("profit_percent");
+      // Ohne die Spalte bleibt nur der Betrag — sonst ginge die Eingabe verloren.
+      if (gewinnBetrag === null && gewinn !== null) zeile.profit_amount = gewinn;
+    }
     ({ error } = await supabase.from("trades").update(zeile)
       .eq("id", id).eq("user_id", userId));
-    hinweis = "Gespeichert — aber ohne die Antworten auf die Fragen: die Spalte "
-      + "journal_fragen fehlt noch. Migration supabase/trading/05_journal_und_hit_meldung.sql "
+    hinweis = `Gespeichert, aber unvollständig: die Spalte${fehlt.length > 1 ? "n" : ""} `
+      + `${fehlt.join(" und ")} fehlt noch. Migrationen unter supabase/trading/ `
       + "in der Trading-Datenbank ausführen.";
   }
   if (error) return { fehler: `Speichern: ${error.message}`, hinweis: null };

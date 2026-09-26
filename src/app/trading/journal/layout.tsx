@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { JournalTabs } from "@/components/journal-tabs";
+import { KontoLeiste } from "@/components/trading/konto-leiste";
 
 /**
  * Eigene Tab-Leiste für das Journal — wie bei Gym und Essen.
@@ -24,6 +25,11 @@ export default function JournalLayout({ children }: { children: React.ReactNode 
           ← Trading-Übersicht
         </Link>
       </div>
+
+      {/* Der Kontostand steht über jeder Journal-Seite: egal wo man gerade
+          ist, die erste Frage ist immer dieselbe. Kommt aus der Kontokette,
+          nicht aus einem gepflegten Feld. */}
+      <KontoLeiste />
 
       <JournalTabs />
       {children}

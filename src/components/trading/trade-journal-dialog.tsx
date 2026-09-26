@@ -14,6 +14,11 @@ import { Badge, Button, Input, Label, Select, cx } from "@/components/ui";
 type Ergebnis = "win" | "loss" | "breakeven";
 
 export interface DialogTrade {
+  /** Kontostand vor diesem Trade, aus der Kontokette. Null ohne Konto. */
+  standVor?: number | null;
+  gewinnProzent?: number | null;
+  risikoProzent?: number | null;
+  rQuelle?: "gerechnet" | "gespeichert";
   id: string;
   pair: string;
   direction: "long" | "short";
@@ -22,8 +27,10 @@ export interface DialogTrade {
   result: Ergebnis | null;
   rMultiple: number;
   riskAmount: number | null;
+  riskPercent: number | null;
   accountBalance: number | null;
   profitAmount: number | null;
+  profitPercent: number | null;
   entryPrice: number | null;
   exitPrice: number | null;
   lotSize: number | null;
@@ -82,6 +89,28 @@ export function TradeBearbeiten({
   );
 }
 
+/** Zwei kleine Knöpfe: dieselbe Zahl in % oder in CHF. */
+function Umschalter({ wert, setzen, name }: {
+  wert: "prozent" | "franken";
+  setzen: (w: "prozent" | "franken") => void;
+  name: string;
+}) {
+  return (
+    <>
+      <input type="hidden" name={name} value={wert} />
+      <span className="inline-flex rounded-lg bg-sand p-0.5">
+        {([["prozent", "%"], ["franken", "CHF"]] as const).map(([w, label]) => (
+          <button key={w} type="button" onClick={() => setzen(w)}
+            className={cx("rounded-md px-2 py-0.5 text-[11px] font-medium transition",
+              wert === w ? "bg-card text-ink" : "text-ink-muted hover:text-ink-soft")}>
+            {label}
+          </button>
+        ))}
+      </span>
+    </>
+  );
+}
+
 function Dialog({
   trade, konfluenzen, bilder, schliessen,
 }: {
@@ -94,34 +123,43 @@ function Dialog({
   const [laeuft, starte] = useTransition();
   const [meldung, setMeldung] = useState<{ art: "fehler" | "hinweis"; text: string } | null>(null);
 
-  const startProzent = trade.profitAmount !== null && trade.accountBalance
-    ? String(runde((trade.profitAmount / trade.accountBalance) * 100)) : "";
+  const standVor = trade.standVor ?? trade.accountBalance ?? null;
 
-  const [ergebnis, setErgebnis] = useState<Ergebnis | "">(trade.result ?? "");
-  const [kontostand, setKontostand] = useState(
-    trade.accountBalance !== null ? String(trade.accountBalance) : "");
-  const [prozent, setProzent] = useState(startProzent);
-  // Entweder Prozent aufs Konto oder direkt der Betrag in Franken. Vorbelegt
-  // ist Prozent, wenn ein Kontostand bekannt ist — sonst geht es nur in CHF.
+  // Vorbelegung: was schon erfasst ist, in der Einheit, in der es erfasst wurde.
   const [art, setArt] = useState<"prozent" | "franken">(
-    trade.accountBalance ? "prozent" : "franken");
+    trade.profitAmount !== null && trade.profitPercent == null ? "franken" : "prozent");
+  const [prozent, setProzent] = useState(
+    trade.profitPercent != null ? String(trade.profitPercent)
+      : trade.gewinnProzent != null && trade.profitAmount === null
+        ? String(trade.gewinnProzent) : "");
   const [franken, setFranken] = useState(
     trade.profitAmount !== null ? String(trade.profitAmount) : "");
-  const [risiko, setRisiko] = useState(
+
+  const [risikoArt, setRisikoArt] = useState<"prozent" | "franken">(
+    trade.riskAmount !== null && trade.riskPercent == null ? "franken" : "prozent");
+  const [risikoProzent, setRisikoProzent] = useState(
+    trade.riskPercent != null ? String(trade.riskPercent) : "");
+  const [risikoFranken, setRisikoFranken] = useState(
     trade.riskAmount !== null ? String(trade.riskAmount) : "");
 
-  const k = zahl(kontostand);
-  const p = zahl(prozent);
-  const f = zahl(franken);
-  const betrag = art === "franken"
-    ? f
-    : p !== null && k !== null && k > 0 ? runde((k * p) / 100) : trade.profitAmount;
+  const [ergebnis, setErgebnis] = useState<Ergebnis | "">(trade.result ?? "");
+
+  const ausProzent = (p: string) => {
+    const x = zahl(p);
+    return x !== null && standVor !== null && standVor > 0 ? runde((standVor * x) / 100) : null;
+  };
+
+  // Gewinn und Risiko in Franken — egal, in welcher Einheit sie erfasst sind.
+  const betrag = art === "franken" ? zahl(franken) : ausProzent(prozent);
+  const risiko = risikoArt === "franken" ? zahl(risikoFranken) : ausProzent(risikoProzent);
+
   // Die jeweils andere Grösse zur Anzeige.
-  const prozentGerechnet = art === "franken" && f !== null && k !== null && k > 0
-    ? runde((f / k) * 100) : null;
-  const rz = zahl(risiko);
+  const betragProzent = art === "franken" && betrag !== null && standVor
+    ? runde((betrag / standVor) * 100) : zahl(prozent);
+  const risikoInFranken = risiko;
+
   const rGerechnet = ergebnis === "breakeven" ? 0
-    : rz !== null && rz > 0 && betrag !== null ? runde(betrag / rz) : null;
+    : risiko !== null && risiko > 0 && betrag !== null ? runde(betrag / risiko) : null;
 
   // Die Fragen hängen vom Ergebnis ab. Ohne gewähltes Ergebnis zählt das
   // Vorzeichen des Betrags — genau wie beim Speichern.
@@ -167,10 +205,6 @@ function Dialog({
 
       <form action={speichern} className="space-y-6 px-5 py-5">
         <input type="hidden" name="id" value={trade.id} />
-        {trade.profitAmount !== null && (
-          <input type="hidden" name="profitAmount" value={String(trade.profitAmount)} />
-        )}
-
         {(trade.entryPrice !== null || trade.lotSize !== null) && (
           <p className="text-xs text-ink-faint">
             Von der Brücke:
@@ -186,18 +220,21 @@ function Dialog({
           <h3 className="mb-3 text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted">
             Ergebnis
           </h3>
-          <input type="hidden" name="eingabe" value={art} />
-          <div className="mb-3 inline-flex rounded-xl bg-sand p-1">
-            {([["prozent", "in %"], ["franken", "in CHF"]] as const).map(([wert, label]) => (
-              <button key={wert} type="button" onClick={() => setArt(wert)}
-                className={cx("rounded-lg px-3.5 py-1 text-sm font-medium transition",
-                  art === wert ? "bg-card text-ink" : "text-ink-muted hover:text-ink-soft")}>
-                {label}
-              </button>
-            ))}
-          </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
+          {/* Der Kontostand vor dem Trade kommt aus der Kontokette und wird
+              nicht mehr eingetippt: Startkapital, Ein- und Auszahlungen und
+              alle früheren Trades ergeben ihn. Korrigierst du einen alten
+              Trade, verschiebt sich dieser Wert hier automatisch mit. */}
+          <p className="mb-3 text-xs text-ink-muted">
+            Kontostand vor diesem Trade:{" "}
+            <strong className="tabular text-ink">
+              {standVor === null ? "unbekannt" : `${standVor.toFixed(2)} CHF`}
+            </strong>
+            {standVor === null && " — lege unter Konten ein Startkapital an, dann rechnet alles."}
+          </p>
+          <input type="hidden" name="standVor" value={standVor === null ? "" : String(standVor)} />
+
+          <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <Label htmlFor="tj-result">Ausgang</Label>
               <Select id="tj-result" name="result" value={ergebnis}
@@ -208,80 +245,76 @@ function Dialog({
                 <option value="breakeven">Breakeven</option>
               </Select>
             </div>
-            {art === "prozent" ? (
-              <div>
-                <Label htmlFor="tj-prozent">Gewinn / Verlust in %</Label>
-                <Input id="tj-prozent" name="prozent" inputMode="decimal"
+
+            <div>
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <Label className="mb-0" htmlFor="tj-gewinn">Gewinn / Verlust</Label>
+                <Umschalter wert={art} setzen={setArt} name="eingabe" />
+              </div>
+              {art === "prozent" ? (
+                <Input id="tj-gewinn" name="prozent" inputMode="decimal"
                   value={prozent} onChange={(e) => setProzent(e.target.value)}
                   placeholder="z.B. 2.4 oder -1" />
-              </div>
-            ) : (
-              <div>
-                <Label htmlFor="tj-franken">Gewinn / Verlust in CHF</Label>
-                <Input id="tj-franken" name="franken" inputMode="decimal"
+              ) : (
+                <Input id="tj-gewinn" name="franken" inputMode="decimal"
                   value={franken} onChange={(e) => setFranken(e.target.value)}
                   placeholder="z.B. 240 oder -100" />
-              </div>
-            )}
-            <div>
-              <Label htmlFor="tj-balance">
-                Kontostand beim Einstieg{art === "franken" && " (optional)"}
-              </Label>
-              <Input id="tj-balance" name="accountBalance" inputMode="decimal"
-                value={kontostand} onChange={(e) => setKontostand(e.target.value)}
-                placeholder="z.B. 10000" />
+              )}
+              <p className="mt-1 text-[11px] text-ink-faint">
+                {art === "prozent"
+                  ? betrag === null ? "Betrag: — (Kontostand fehlt)"
+                    : `Betrag: ${betrag > 0 ? "+" : ""}${betrag.toFixed(2)} CHF`
+                  : betragProzent === null ? "Aufs Konto: — (Kontostand fehlt)"
+                    : `Aufs Konto: ${betragProzent > 0 ? "+" : ""}${betragProzent.toFixed(2)} %`}
+              </p>
             </div>
           </div>
 
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
-            <div className="rounded-xl bg-sand/60 px-3 py-2">
-              {art === "prozent" ? (
-                <>
-                  <p className="text-[11px] text-ink-faint">Betrag (gerechnet)</p>
-                  <p className={cx("tabular text-base font-medium",
-                    betrag !== null && betrag > 0 ? "text-good-bright"
-                      : betrag !== null && betrag < 0 ? "text-bad-bright" : "text-ink")}>
-                    {betrag === null ? "—" : `${betrag > 0 ? "+" : ""}${betrag.toFixed(2)} CHF`}
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="text-[11px] text-ink-faint">Aufs Konto (gerechnet)</p>
-                  <p className={cx("tabular text-base font-medium",
-                    prozentGerechnet !== null && prozentGerechnet > 0 ? "text-good-bright"
-                      : prozentGerechnet !== null && prozentGerechnet < 0 ? "text-bad-bright"
-                        : "text-ink")}>
-                    {prozentGerechnet === null ? "— (Kontostand fehlt)"
-                      : `${prozentGerechnet > 0 ? "+" : ""}${prozentGerechnet.toFixed(2)} %`}
-                  </p>
-                </>
-              )}
-            </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <div>
-              <Label htmlFor="tj-risk">Risiko in CHF (für das R)</Label>
-              <Input id="tj-risk" name="riskAmount" inputMode="decimal"
-                value={risiko} onChange={(e) => setRisiko(e.target.value)}
-                placeholder="z.B. 100" />
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <Label className="mb-0" htmlFor="tj-risiko">Risiko</Label>
+                <Umschalter wert={risikoArt} setzen={setRisikoArt} name="risikoArt" />
+              </div>
+              {risikoArt === "prozent" ? (
+                <Input id="tj-risiko" name="riskPercent" inputMode="decimal"
+                  value={risikoProzent} onChange={(e) => setRisikoProzent(e.target.value)}
+                  placeholder="z.B. 1" />
+              ) : (
+                <Input id="tj-risiko" name="riskAmount" inputMode="decimal"
+                  value={risikoFranken} onChange={(e) => setRisikoFranken(e.target.value)}
+                  placeholder="z.B. 100" />
+              )}
+              <p className="mt-1 text-[11px] text-ink-faint">
+                {risikoInFranken === null
+                  ? "Risikobetrag: — (Prozent brauchen den Kontostand)"
+                  : `Risikobetrag: ${risikoInFranken.toFixed(2)} CHF`}
+              </p>
             </div>
+
             <div>
               <Label htmlFor="tj-r">R</Label>
               {rGerechnet !== null ? (
-                <p className="tabular rounded-xl bg-sand/60 px-3 py-2 text-sm text-ink">
+                <p className={cx("tabular rounded-xl bg-sand/60 px-3 py-2 text-base font-medium",
+                  rGerechnet > 0 ? "text-good-bright"
+                    : rGerechnet < 0 ? "text-bad-bright" : "text-ink")}>
                   {rGerechnet > 0 ? "+" : ""}{rGerechnet.toFixed(2)} R
-                  <span className="ml-1 text-[11px] text-ink-faint">gerechnet</span>
+                  <span className="ml-1 text-[11px] font-normal text-ink-faint">
+                    Gewinn ÷ Risiko
+                  </span>
                 </p>
               ) : (
-                <Input id="tj-r" name="rMultiple" inputMode="decimal"
-                  defaultValue={trade.rMultiple ? String(Math.abs(trade.rMultiple)) : ""}
-                  placeholder="ohne Risiko von Hand" />
+                <>
+                  <Input id="tj-r" name="rMultiple" inputMode="decimal"
+                    defaultValue={trade.rMultiple ? String(Math.abs(trade.rMultiple)) : ""}
+                    placeholder="von Hand" />
+                  <p className="mt-1 text-[11px] text-ink-faint">
+                    Sobald Gewinn und Risiko dastehen, rechnet das System das R selbst.
+                  </p>
+                </>
               )}
             </div>
           </div>
-          <p className="mt-2 text-[11px] text-ink-faint">
-            Prozent oder Franken — eins reicht. Bei Prozent rechnet das System
-            den Betrag aus dem Kontostand. Der Wert der Brücke wird ersetzt;
-            mit Risiko folgt auch das R.
-          </p>
         </section>
 
         {/* -------------------------------------------------------- Notizen */}

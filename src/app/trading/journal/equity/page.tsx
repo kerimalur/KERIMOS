@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {
-  fetchTrades, computeJournalStats, equityKurve, signiertesR, tradingUserId,
+  fetchTrades, ladeKontoKette, computeJournalStats, equityKurve, signiertesR,
+  tradingUserId,
 } from "@/lib/trading/journal";
 import { tradingConfigured } from "@/lib/supabase/trading";
 import { JournalHinweis } from "@/components/journal-hinweis";
@@ -44,7 +45,18 @@ export default async function EquitySeite({
   const sp = await searchParams;
   const art = sp.art === "live" ? "live" : sp.art === "alle" ? undefined : "backtest";
 
-  const trades = await fetchTrades(art ? { sessionType: art } : {});
+  /*
+   * Live-Trades kommen aus der Kontokette, damit R aus Gewinn und Risiko
+   * gerechnet ist und nicht aus einem alten gespeicherten Wert. Backtest
+   * hat keine Kontoführung — dort zählt das eingetragene R.
+   */
+  const [kette, backtest] = await Promise.all([
+    art === "backtest" ? null : ladeKontoKette(),
+    art === "live" ? [] : fetchTrades({ sessionType: "backtest" }),
+  ]);
+  const trades = art === "live" ? (kette?.live ?? [])
+    : art === "backtest" ? backtest
+      : [...(kette?.live ?? []), ...backtest];
   const punkte = equityKurve(trades);
   const s = computeJournalStats(trades);
 

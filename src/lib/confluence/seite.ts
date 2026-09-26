@@ -1,5 +1,5 @@
 import "server-only";
-import { fetchTrades } from "@/lib/trading/journal";
+import { fetchTrades, ladeKontoKette } from "@/lib/trading/journal";
 import { ladeFuerStichtag, ladeFuerSpanne, ladeLaborUrteil, type Ladebericht, type LaborUrteil } from "./daten";
 import { alsInstrument } from "./rechnen";
 import { montagVon } from "./reihen";
@@ -140,7 +140,14 @@ const LEERE_BILANZ: BilanzBild = {
  * ohne ihn wäre dieser Vergleich ein Selbstbetrug.
  */
 export async function baueBilanz(): Promise<BilanzBild> {
-  const alle = await fetchTrades();
+  /*
+   * Nur Live-Trades (26.09.2026). Vorher lief die Bilanz über ALLE Zeilen der
+   * trades-Tabelle, also auch über die alten Backtest-Zeilen darin. Damit
+   * mischte die Auswertung durchgespieltes und echtes Geld — und widersprach
+   * der Regel, nach der das restliche Journal rechnet. Das R kommt zudem aus
+   * der Kontokette, nicht aus dem gespeicherten Feld.
+   */
+  const { live: alle } = await ladeKontoKette();
   // Nur entschiedene Trades: ein offener Trade hat kein Ergebnis, das man
   // einem Rückenwind zuordnen könnte.
   // "breakeven", nicht "be" - so heisst der Wert im Journal (Ergebnis-Typ in

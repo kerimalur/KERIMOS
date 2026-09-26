@@ -1,5 +1,5 @@
 import {
-  fetchStrategien, fetchTrades, computeJournalStats, SESSIONS,
+  fetchStrategien, ladeKontoKette, computeJournalStats, SESSIONS,
   tradingUserId, type Strategie, type Trade,
 } from "@/lib/trading/journal";
 import { tradingConfigured } from "@/lib/supabase/trading";
@@ -90,7 +90,11 @@ export default async function StrategienSeite() {
   const userId = await tradingUserId();
   if (!userId) return <JournalHinweis grund="kein-user" />;
 
-  const [strategien, trades] = await Promise.all([fetchStrategien(), fetchTrades()]);
+  // Live-Trades aus der Kontokette: dieselben Zahlen wie überall sonst im
+  // Journal, und keine alten Backtest-Zeilen in der Strategie-Statistik.
+  const [strategien, { live: trades }] = await Promise.all([
+    fetchStrategien(), ladeKontoKette(),
+  ]);
   const ohneStrategie = trades.filter((t) => !t.strategyId);
 
   return (

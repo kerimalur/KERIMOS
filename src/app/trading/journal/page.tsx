@@ -1,7 +1,6 @@
 import Link from "next/link";
 import {
-  fetchTrades, fetchKonten, fetchKontoBuchungen, berechneKontostaende,
-  computeJournalStats, signiertesR, tradingUserId,
+  ladeKontoKette, computeJournalStats, signiertesR, tradingUserId,
   type Trade, type KontoTyp,
 } from "@/lib/trading/journal";
 import { tradingConfigured } from "@/lib/supabase/trading";
@@ -73,13 +72,9 @@ export default async function JournalUebersicht({ searchParams }: {
   if (!userId) return <JournalHinweis grund="kein-user" />;
 
   const sp = await searchParams;
-  const [alle, konten, buchungen] = await Promise.all([
-    fetchTrades(), fetchKonten(), fetchKontoBuchungen(),
-  ]);
-
-  // Nur Live. Backtest-Trades haben kein Geld bewegt und gehoeren nicht in
-  // eine Kontoansicht — sie stehen im Backtest.
-  const live = alle.filter((t) => t.sessionType === "live");
+  // Eine Quelle für alle Zahlen: die Kontokette rechnet Stand, Betrag,
+  // Risiko und R chronologisch durch (lib/trading/konto-verlauf.ts).
+  const { verlauf, live } = await ladeKontoKette();
 
   const typen: KontoTyp[] = ["ek", "funded"];
   const gewaehlt: KontoTyp = typen.find((x) => x === sp.konto) ?? "ek";
@@ -89,14 +84,13 @@ export default async function JournalUebersicht({ searchParams }: {
   const zu = meine.filter((t) => t.status !== "open");
   const s = computeJournalStats(zu);
 
-  const staende = berechneKontostaende(konten, buchungen, live);
-  const stand = staende.find((x) => x.konto.type === gewaehlt) ?? null;
-  const waehrung = stand?.konto.currency ?? "EUR";
+  const stand = verlauf.proTyp.get(gewaehlt) ?? null;
+  const waehrung = stand?.currency ?? "CHF";
 
   // Ergebnis in Prozent auf das eingesetzte Kapital, nicht auf den aktuellen
   // Stand: sonst schrumpft der Nenner mit jedem Verlust und die Zahl schoent.
   const eingesetzt = stand
-    ? stand.konto.initialBalance + stand.einzahlungen - stand.auszahlungen
+    ? stand.start + stand.einzahlungen - stand.auszahlungen
     : 0;
   const prozent = eingesetzt > 0 && stand
     ? (stand.handelsGewinn / eingesetzt) * 100 : null;
@@ -108,7 +102,7 @@ export default async function JournalUebersicht({ searchParams }: {
       <Card area={offen.length > 0 ? "trading" : undefined}>
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <CardTitle className="mb-0">
-            {stand?.konto.name ?? KONTO_LABEL[gewaehlt]}
+            {stand?.konto?.name ?? KONTO_LABEL[gewaehlt]}
           </CardTitle>
           <span className="ml-auto flex flex-wrap items-center gap-1.5">
             {typen.map((t) => (
@@ -129,7 +123,7 @@ export default async function JournalUebersicht({ searchParams }: {
         ) : (
           <>
             <div className="grid gap-4 sm:grid-cols-4">
-              <Stat label="Kontostand" value={geld(stand.berechnet, waehrung)}
+              <Stat label="Kontostand" value={geld(stand.stand, waehrung)}
                 sub="Start + Ein- − Auszahlungen + Handel" />
               <Stat
                 label="Ergebnis"
@@ -148,7 +142,7 @@ export default async function JournalUebersicht({ searchParams }: {
                 sub={offen.length > 0 ? `${offen.length} offen` : "alle geschlossen"} />
             </div>
 
-            {stand.abweichung !== 0 && (
+            {Math.abs(stand.abweichung) >= 1 && stand.konto !== null && (
               <p className="mt-4 rounded-xl bg-warn-tint px-3 py-2.5 text-[11px] leading-relaxed text-ink-soft">
                 Der hinterlegte Kontostand weicht um {geld(stand.abweichung, waehrung)} ab.
                 Das ist ein Hinweis, kein Fehler — meist fehlt bei einem Trade der Betrag

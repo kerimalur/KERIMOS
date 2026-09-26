@@ -4,6 +4,11 @@ import type { Konfluenz } from "@/lib/trading/konfluenzen";
 import { createTradingClient } from "@/lib/supabase/trading";
 import { alsAntworten, type Antworten } from "@/lib/trading/journal-fragen";
 import { alsSnapshot, type LageSnapshot } from "@/lib/trading/lage-snapshot";
+import {
+  baueVerlauf, monatsStartVon, KONTO_TYPEN,
+  type Verlauf, type KontoVerlauf, type TradeRechnung,
+} from "@/lib/trading/konto-verlauf";
+import { heuteISO } from "@/lib/time";
 
 /**
  * Journal-Datenschicht — der Teil des GVA-Screeners, der nach KerimOS umgezogen
@@ -132,6 +137,13 @@ export interface Trade {
    * Null heisst „nicht messbar" — und daraus folgt R = 0.
    */
   riskAmount: number | null;
+  /**
+   * Gewinn in Prozent des Kontostands vor dem Trade. Alternative zum Betrag:
+   * Kerim kennt oft den Prozentwert, und die Brücke liefert den Betrag nicht
+   * immer richtig. Steht er hier, rechnet die Kontokette den Betrag
+   * (lib/trading/konto-verlauf.ts).
+   */
+  profitPercent: number | null;
   /** Kontostand, als der Trade geschrieben wurde. Basis für den Prozentwert. */
   accountBalance: number | null;
   /** Öffentliche URLs der angehängten Bilder, in Reihenfolge des Hochladens. */
@@ -269,6 +281,7 @@ function zuTrade(r: Row): Trade {
     rMultiple: Number(r.r_multiple ?? 0),
     riskPercent: zahl(r.risk_percent),
     riskAmount: zahl(r.risk_amount),
+    profitPercent: zahl(r.profit_percent),
     accountBalance: zahl(r.account_balance),
     screenshots: Array.isArray(r.screenshots) ? (r.screenshots as string[]) : [],
     profitAmount: zahl(r.profit_amount),
@@ -328,7 +341,7 @@ function zuOutlook(r: Row): Outlook {
 
 const TRADE_SPALTEN =
   "id, type, symbol, side, date, result, r_multiple, risk_percent, risk_amount, " +
-  "account_balance, screenshots, profit_amount, " +
+  "account_balance, screenshots, profit_amount, profit_percent, " +
   "entry_price, exit_price, stop_loss, take_profit, lot_size, session_type, status, session, " +
   "notes, comment, strategy_id, outlook_id, setup_daily_bos, setup_value_area, " +
   "setup_market_structure, setup_weekly_gva, setup_3day_gva, confluences, created_at, "
@@ -338,6 +351,10 @@ const TRADE_SPALTEN =
 const TRADE_SPALTEN_OHNE_JOURNAL = TRADE_SPALTEN
   .replace(", journal_fragen, fundamental_snapshot", "");
 
+/** Zusätzlich ohne `profit_percent` (26.09.2026) — der zweite Rückfall. */
+const TRADE_SPALTEN_OHNE_PROZENT = TRADE_SPALTEN_OHNE_JOURNAL
+  .replace("profit_percent, ", "");
+
 /**
  * Derselbe Satz ohne die zwei Nachzügler vom 27.08.2026 — der Rückfall, wenn
  * die Migration noch nicht gelaufen ist.
@@ -346,7 +363,7 @@ const TRADE_SPALTEN_OHNE_JOURNAL = TRADE_SPALTEN
  * hiesse, dass sie beim nächsten Feld auseinanderläuft und der Rückfall
  * plötzlich andere Daten liefert als der Normalfall.
  */
-const TRADE_SPALTEN_ALT = TRADE_SPALTEN_OHNE_JOURNAL
+const TRADE_SPALTEN_ALT = TRADE_SPALTEN_OHNE_PROZENT
   .replace("risk_amount, ", "")
   .replace("account_balance, ", "")
   .replace("screenshots, ", "");
@@ -392,6 +409,7 @@ export async function fetchTrades(filter: TradeFilter = {}): Promise<Trade[]> {
 
   let { data, error } = await bauen(TRADE_SPALTEN);
   if (error) ({ data, error } = await bauen(TRADE_SPALTEN_OHNE_JOURNAL));
+  if (error) ({ data, error } = await bauen(TRADE_SPALTEN_OHNE_PROZENT));
   if (error) ({ data } = await bauen(TRADE_SPALTEN_ALT));
 
   return ((data ?? []) as unknown as Row[]).map(zuTrade);
@@ -737,6 +755,85 @@ export function berechneKontostaende(
     };
   });
 }
+
+/* ------------------------------------------------- Kontokette (26.09.2026) */
+
+export interface JournalKonto {
+  verlauf: Verlauf;
+  konten: Konto[];
+  buchungen: KontoBuchung[];
+  /** Alle Live-Trades — die Kette braucht sie vollständig, nicht gefiltert. */
+  live: Trade[];
+}
+
+/**
+ * Die Kontokette einmal laden und rechnen.
+ *
+ * Wichtig: Es werden IMMER alle Live-Trades geladen, auch wenn die Seite nur
+ * einen Ausschnitt zeigt. Eine Kette mit Lücken rechnet falsche Stände, und
+ * ein falscher Stand vor dem Trade macht jedes prozentuale Risiko falsch.
+ */
+export async function ladeKontoKette(): Promise<JournalKonto> {
+  const [alle, konten, buchungen] = await Promise.all([
+    fetchTrades({ sessionType: "live" }), fetchKonten(), fetchKontoBuchungen(),
+  ]);
+
+  const verlauf = baueVerlauf(
+    konten.map((k) => ({
+      id: k.id, type: k.type, name: k.name, currency: k.currency,
+      initialBalance: k.initialBalance, currentBalance: k.currentBalance,
+    })),
+    buchungen.map((b) => ({
+      id: b.id, accountId: b.accountId, type: b.type,
+      buchungsTyp: b.buchungsTyp, amount: b.amount, date: b.date,
+    })),
+    alle.map(zuVerlaufTrade),
+    monatsStartVon(heuteISO()),
+  );
+
+  return { verlauf, konten, buchungen, live: mitVerlauf(alle, verlauf) };
+}
+
+function zuVerlaufTrade(t: Trade) {
+  return {
+    id: t.id, type: t.type, sessionType: t.sessionType, date: t.date,
+    createdAt: t.createdAt, status: t.status, result: t.result,
+    profitAmount: t.profitAmount, profitPercent: t.profitPercent,
+    riskAmount: t.riskAmount, riskPercent: t.riskPercent, rMultiple: t.rMultiple,
+  };
+}
+
+/**
+ * Trades mit den Zahlen aus der Kette überschreiben.
+ *
+ * Danach trägt jeder Trade den Kontostand, der vor ihm galt, den daraus
+ * gerechneten Betrag, das Risiko und das R. Jede Seite und jede Kennzahl
+ * rechnet damit automatisch richtig — ohne dass irgendwo etwas gespeichert
+ * werden muss, das später veraltet.
+ */
+export function mitVerlauf(trades: Trade[], verlauf: Verlauf): Trade[] {
+  return trades.map((t) => {
+    const r = verlauf.proTrade.get(t.id);
+    if (!r) return t;
+    return {
+      ...t,
+      accountBalance: r.standVor,
+      profitAmount: r.gewinn,
+      riskAmount: r.risiko,
+      // riskPercent und profitPercent bleiben, wie sie erfasst wurden: der
+      // Dialog erkennt daran, in welcher Einheit Kerim getippt hat.
+      rMultiple: r.r,
+    };
+  });
+}
+
+/** Die Rechnung zu einem einzelnen Trade, oder null. */
+export function rechnungFuer(verlauf: Verlauf, id: string): TradeRechnung | null {
+  return verlauf.proTrade.get(id) ?? null;
+}
+
+export type { KontoVerlauf, TradeRechnung, Verlauf };
+export { KONTO_TYPEN };
 
 /**
  * Eigene Konfluenzen. Fehlt die Tabelle, kommt eine leere Liste zurück —

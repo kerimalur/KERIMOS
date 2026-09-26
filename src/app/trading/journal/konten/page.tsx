@@ -1,6 +1,6 @@
 import {
-  fetchKonten, fetchKontoBuchungen, fetchTrades, berechneKontostaende,
-  tradingUserId, type KontoBuchung, type KontoStand,
+  ladeKontoKette, KONTO_TYPEN, tradingUserId,
+  type Konto, type KontoBuchung, type KontoVerlauf,
 } from "@/lib/trading/journal";
 import { tradingConfigured } from "@/lib/supabase/trading";
 import {
@@ -44,28 +44,28 @@ const chf = (n: number, waehrung: string) =>
     minimumFractionDigits: 0, maximumFractionDigits: 0,
   })} ${waehrung}`;
 
-function KontoKarte({ k }: { k: KontoStand }) {
-  const w = k.konto.currency;
+function KontoKarte({ k, konto }: { k: KontoVerlauf; konto: Konto }) {
+  const w = k.currency;
   // Ab einer Einheit Währung ist die Abweichung eine Aussage und kein
   // Rundungsrest — darunter wäre der Hinweis nur Lärm.
   const driftet = Math.abs(k.abweichung) >= 1;
 
   return (
-    <Card area={k.konto.type === "funded" ? "trading" : undefined}>
+    <Card area={konto.type === "funded" ? "trading" : undefined}>
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <span className="font-display text-base font-bold text-ink">{k.konto.name}</span>
-        <Badge tone={k.konto.type === "funded" ? "accent" : "neutral"}>
-          {k.konto.type === "funded" ? "Funded" : "Eigenkapital"}
+        <span className="font-display text-base font-bold text-ink">{konto.name}</span>
+        <Badge tone={konto.type === "funded" ? "accent" : "neutral"}>
+          {konto.type === "funded" ? "Funded" : "Eigenkapital"}
         </Badge>
-        {k.konto.broker && <Badge tone="neutral">{k.konto.broker}</Badge>}
-        {!k.konto.isActive && <Badge tone="neutral">ruht</Badge>}
+        {konto.broker && <Badge tone="neutral">{konto.broker}</Badge>}
+        {!konto.isActive && <Badge tone="neutral">ruht</Badge>}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-4">
-        <Stat label="Berechnet" value={chf(k.berechnet, w)}
-          tone={k.berechnet >= k.konto.initialBalance ? "good" : "bad"}
-          sub={`Start ${chf(k.konto.initialBalance, w)}`} />
-        <Stat label="Hinterlegt" value={chf(k.konto.currentBalance, w)}
+        <Stat label="Berechnet" value={chf(k.stand, w)}
+          tone={k.stand >= konto.initialBalance ? "good" : "bad"}
+          sub={`Start ${chf(konto.initialBalance, w)}`} />
+        <Stat label="Hinterlegt" value={chf(konto.currentBalance, w)}
           sub={driftet ? `Abweichung ${chf(k.abweichung, w)}` : "stimmt überein"}
           tone={driftet ? "warn" : "neutral"} />
         <Stat label="Ein / Aus"
@@ -87,8 +87,8 @@ function KontoKarte({ k }: { k: KontoStand }) {
             ist nicht erfasst. Erst nachsehen, dann übernehmen.
           </p>
           <form action={kontostandUebernehmen} className="mt-2.5">
-            <input type="hidden" name="id" value={k.konto.id} />
-            <input type="hidden" name="wert" value={String(k.berechnet)} />
+            <input type="hidden" name="id" value={konto.id} />
+            <input type="hidden" name="wert" value={String(k.stand)} />
             <button type="submit"
               className="rounded-lg bg-sand px-2.5 py-1 text-xs text-ink-soft transition hover:text-ink">
               Gerechneten Stand übernehmen
@@ -101,19 +101,19 @@ function KontoKarte({ k }: { k: KontoStand }) {
         <details>
           <summary className="cursor-pointer text-xs text-ink-muted">Konto bearbeiten</summary>
           <form action={kontoSpeichern} className="mt-3 space-y-3">
-            <input type="hidden" name="id" value={k.konto.id} />
+            <input type="hidden" name="id" value={konto.id} />
             <div className="grid gap-3 sm:grid-cols-3">
               <div>
-                <Label htmlFor={`n-${k.konto.id}`}>Name</Label>
-                <Input id={`n-${k.konto.id}`} name="name" defaultValue={k.konto.name} required />
+                <Label htmlFor={`n-${konto.id}`}>Name</Label>
+                <Input id={`n-${konto.id}`} name="name" defaultValue={konto.name} required />
               </div>
               <div>
-                <Label htmlFor={`b-${k.konto.id}`}>Broker</Label>
-                <Input id={`b-${k.konto.id}`} name="broker" defaultValue={k.konto.broker} />
+                <Label htmlFor={`b-${konto.id}`}>Broker</Label>
+                <Input id={`b-${konto.id}`} name="broker" defaultValue={konto.broker} />
               </div>
               <div>
-                <Label htmlFor={`t-${k.konto.id}`}>Art</Label>
-                <Select id={`t-${k.konto.id}`} name="type" defaultValue={k.konto.type}>
+                <Label htmlFor={`t-${konto.id}`}>Art</Label>
+                <Select id={`t-${konto.id}`} name="type" defaultValue={konto.type}>
                   <option value="ek">Eigenkapital</option>
                   <option value="funded">Funded</option>
                 </Select>
@@ -121,27 +121,27 @@ function KontoKarte({ k }: { k: KontoStand }) {
             </div>
             <div className="grid gap-3 sm:grid-cols-4">
               <div>
-                <Label htmlFor={`s-${k.konto.id}`}>Startkapital</Label>
-                <Input id={`s-${k.konto.id}`} name="initialBalance" type="number" step="any"
-                  defaultValue={k.konto.initialBalance} />
+                <Label htmlFor={`s-${konto.id}`}>Startkapital</Label>
+                <Input id={`s-${konto.id}`} name="initialBalance" type="number" step="any"
+                  defaultValue={konto.initialBalance} />
               </div>
               <div>
-                <Label htmlFor={`c-${k.konto.id}`}>Stand</Label>
-                <Input id={`c-${k.konto.id}`} name="currentBalance" type="number" step="any"
-                  defaultValue={k.konto.currentBalance} />
+                <Label htmlFor={`c-${konto.id}`}>Stand</Label>
+                <Input id={`c-${konto.id}`} name="currentBalance" type="number" step="any"
+                  defaultValue={konto.currentBalance} />
               </div>
               <div>
-                <Label htmlFor={`w-${k.konto.id}`}>Währung</Label>
-                <Input id={`w-${k.konto.id}`} name="currency" defaultValue={k.konto.currency} />
+                <Label htmlFor={`w-${konto.id}`}>Währung</Label>
+                <Input id={`w-${konto.id}`} name="currency" defaultValue={konto.currency} />
               </div>
               <div>
-                <Label htmlFor={`r-${k.konto.id}`}>Risiko % je Trade</Label>
-                <Input id={`r-${k.konto.id}`} name="risk" type="number" step="0.1"
-                  defaultValue={k.konto.defaultRiskPerTrade} />
+                <Label htmlFor={`r-${konto.id}`}>Risiko % je Trade</Label>
+                <Input id={`r-${konto.id}`} name="risk" type="number" step="0.1"
+                  defaultValue={konto.defaultRiskPerTrade} />
               </div>
             </div>
             <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-soft">
-              <input type="checkbox" name="isActive" defaultChecked={k.konto.isActive}
+              <input type="checkbox" name="isActive" defaultChecked={konto.isActive}
                 className="accent-[#E7A96B]" />
               aktiv
             </label>
@@ -150,7 +150,7 @@ function KontoKarte({ k }: { k: KontoStand }) {
             </div>
           </form>
           <form action={kontoLoeschen} className="mt-2">
-            <input type="hidden" name="id" value={k.konto.id} />
+            <input type="hidden" name="id" value={konto.id} />
             <button type="submit"
               className="text-xs text-ink-faint transition hover:text-bad-bright">
               Konto löschen
@@ -167,12 +167,17 @@ export default async function KontenSeite() {
   const userId = await tradingUserId();
   if (!userId) return <JournalHinweis grund="kein-user" />;
 
-  const [konten, buchungen, trades] = await Promise.all([
-    fetchKonten(), fetchKontoBuchungen(), fetchTrades(),
-  ]);
-  const staende = berechneKontostaende(konten, buchungen, trades);
+  const { verlauf, konten, buchungen, live: liveTrades } = await ladeKontoKette();
+  // Je angelegtes Konto eine Karte: die Kette liefert die Zahlen, die
+  // Kontozeile die Stammdaten (Broker, Risiko, aktiv).
+  const staende = KONTO_TYPEN
+    .map((t) => {
+      const v = verlauf.proTyp.get(t);
+      const konto = konten.find((k) => k.type === t);
+      return v && konto ? { v, konto } : null;
+    })
+    .filter((x): x is { v: KontoVerlauf; konto: Konto } => x !== null);
 
-  const liveTrades = trades.filter((t) => t.sessionType === "live");
   const ohneBetrag = liveTrades.filter((t) => t.profitAmount === null && t.result);
   const heute = new Date().toISOString().slice(0, 10);
 
@@ -189,7 +194,7 @@ export default async function KontenSeite() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {staende.map((k) => <KontoKarte key={k.konto.id} k={k} />)}
+          {staende.map((x) => <KontoKarte key={x.konto.id} k={x.v} konto={x.konto} />)}
         </div>
       )}
 
