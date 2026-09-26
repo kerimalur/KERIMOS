@@ -175,8 +175,8 @@ export default async function FundamentalsSeite() {
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardTitle>Ereignisse (Ebene 3)</CardTitle>
+        <Card id="ereignisse">
+          <CardTitle>Ereignisse (Ebene 3 · nicht gewertet)</CardTitle>
           {b.ereignisse.length === 0 ? (
             <Empty>Nichts eingetragen. Kriege, Wahlen, Zollstreit — was gerade läuft.</Empty>
           ) : (
@@ -284,20 +284,20 @@ export default async function FundamentalsSeite() {
             <CardTitle>Wie das Urteil entsteht</CardTitle>
             <ol className="ml-4 list-decimal space-y-1.5 text-sm text-ink-muted">
               <li>
-                <strong className="text-ink-soft">{EBENEN_LABEL[1]}:</strong> PMI über
-                oder unter 50, BIP, Arbeitslosenquote (die Richtung zählt),
-                Handelsbilanz. Von Hand gepflegt.
+                <strong className="text-ink-soft">{EBENEN_LABEL[1]}:</strong> PMI Industrie
+                und PMI Dienste (über 50 positiv) und BIP zum Vorjahr — automatisch.
+                Frühindikator, Arbeitslosenquote und Leistungsbilanz stehen nur als Kontext da.
               </li>
               <li>
-                <strong className="text-ink-soft">{EBENEN_LABEL[2]}:</strong> Leitzins
-                gegen den Schnitt der acht, Richtung über sechs Monate,
-                Markterwartung aus der 2-Jahres-Rendite, Realzins und der
-                Zyklus ({Object.values(ZYKLUS_LABEL).join(", ")}). Automatisch,
-                nur der Zyklus wird eingetragen.
+                <strong className="text-ink-soft">{EBENEN_LABEL[2]}:</strong> Zyklus
+                ({Object.values(ZYKLUS_LABEL).join(", ")} — aus den Zinsschritten
+                abgeleitet, von Hand überschreibbar), Zinsrichtung über sechs Monate
+                und die Markterwartung aus der 2-Jahres-Rendite. Zinsniveau, Realzins
+                und 10J-Rendite sind Kontext.
               </li>
               <li>
-                <strong className="text-ink-soft">{EBENEN_LABEL[3]}:</strong> Risiko-Regime
-                mal Beta, COT-Positionierung, laufende Ereignisse.
+                <strong className="text-ink-soft">{EBENEN_LABEL[3]}:</strong> Risiko-Regime,
+                COT, Ereignisse, Rohstoff-Abhängigkeit — angezeigt, noch nicht gewertet.
               </li>
             </ol>
             <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">

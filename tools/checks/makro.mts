@@ -96,28 +96,46 @@ const teil = (b: ReturnType<typeof bewerteWaehrung>, n: 1 | 2 | 3, key: string) 
 /* ------------------------------------------------------ Das Gesamturteil */
 
 {
-  // Nur Ebene 2 hat Daten: das Urteil ist ihres, nicht ein Drittel davon.
-  const b = bewerteWaehrung(basis({ leitzins: 3.5 }), umfeld);
+  // Nur Ebene 2 hat Daten: das Urteil ist ihres, nicht die Hälfte davon.
+  // Seit 26.09.2026 zählt dort die Richtung, nicht mehr das Zinsniveau.
+  const b = bewerteWaehrung(basis({ leitzins: 3.5, leitzins6M: 0.5 }), umfeld);
   check("eine Ebene mit Daten trägt das Urteil allein", b.gesamt, 1);
-  check("Abdeckung zeigt die Lücke", Math.round(b.abdeckung * 100), 7);
+  check("Abdeckung zeigt die Lücke (1 von 6 gewerteten Teilen)", Math.round(b.abdeckung * 100), 17);
+  check("Zinsniveau allein zählt nicht mehr",
+    bewerteWaehrung(basis({ leitzins: 0 }), umfeld).gesamt, null);
 }
 {
-  // Gewichtet: Wirtschaft +1 (0.35), Zentralbank −1 (0.45) → (0.35−0.45)/0.8
+  // Gewichtet 50/50: Wirtschaft +1, Zentralbank −1 → 0
   const b = bewerteWaehrung(basis({
     hand: { pmi_industrie: hand(60), pmi_dienste: hand(60), bip_yoy: hand(3),
             arbeitslos: hand(4, 4.5), handelsbilanz: hand(8) },
     leitzins: 0.5, leitzins6M: -0.5, erwartung: -0.5, realzins: -1, zyklus: "lockerung",
   }), umfeld);
-  check("starke Wirtschaft, lockernde Notenbank → leicht negativ", b.gesamt, -0.13);
+  check("starke Wirtschaft, lockernde Notenbank → neutral", b.gesamt, 0);
+  check("Sentiment zählt nicht", ebene(b, 3).score, null);
+}
+
+/* ------------------------------------------------------- Zinsschritte */
+{
+  const { zinsSchritteAus, zyklusAus } = await import("../../src/lib/makro/bewertung.ts");
+  const reihe = [
+    { datum: "2025-01-01", wert: 4 }, { datum: "2025-03-01", wert: 3.75 },
+    { datum: "2025-06-01", wert: 3.75 }, { datum: "2026-06-01", wert: 3.5 },
+  ];
+  const schritte = zinsSchritteAus(reihe);
+  check("Zinsschritte", schritte.map((x) => x.bps), [-25, -25]);
+  check("Zyklus: Senkung vor 4 Monaten → Lockerung", zyklusAus(schritte, new Date("2026-09-26")), "lockerung");
+  check("Zyklus: Senkung vor 9 Monaten → Pause unten", zyklusAus(schritte, new Date("2027-03-01")), "pause_unten");
+  check("Zyklus: keine Schritte → unbekannt", zyklusAus([]), null);
 }
 
 /* --------------------------------------------------------- Paar-Ideen */
 
 {
   const zeilen = rangliste([
-    bewerteWaehrung(basis({ ccy: "USD", leitzins: 4 }), umfeld),
-    bewerteWaehrung(basis({ ccy: "JPY", leitzins: 0.1 }), umfeld),
-    bewerteWaehrung(basis({ ccy: "EUR", leitzins: 2 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "USD", leitzins6M: 0.5 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "JPY", leitzins6M: -0.475 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "EUR", leitzins6M: 0.0 }), umfeld),
   ]);
   check("Rangfolge", zeilen.map((z) => z.ccy), ["USD", "EUR", "JPY"]);
 
@@ -130,8 +148,8 @@ const teil = (b: ReturnType<typeof bewerteWaehrung>, n: 1 | 2 | 3, key: string) 
 {
   // Zwei mittelmässige Währungen ergeben keine Idee.
   const zeilen = rangliste([
-    bewerteWaehrung(basis({ ccy: "USD", leitzins: 2.1 }), umfeld),
-    bewerteWaehrung(basis({ ccy: "EUR", leitzins: 2.0 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "USD", leitzins6M: 0.025 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "EUR", leitzins6M: 0.0 }), umfeld),
   ]);
   check("kein Abstand, keine Idee", paarIdeen(zeilen, ["EURUSD"]).length, 0);
 }
@@ -141,9 +159,9 @@ const teil = (b: ReturnType<typeof bewerteWaehrung>, n: 1 | 2 | 3, key: string) 
 {
   // Dieselbe Rangliste wie oben: USD stark, JPY schwach, EUR dazwischen.
   const zeilen = rangliste([
-    bewerteWaehrung(basis({ ccy: "USD", leitzins: 4 }), umfeld),
-    bewerteWaehrung(basis({ ccy: "JPY", leitzins: 0.1 }), umfeld),
-    bewerteWaehrung(basis({ ccy: "EUR", leitzins: 2 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "USD", leitzins6M: 0.5 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "JPY", leitzins6M: -0.475 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "EUR", leitzins6M: 0.0 }), umfeld),
   ]);
 
   check("USDJPY long wird bestätigt", paarUrteil(zeilen, "USDJPY", "long").urteil, "bestaetigt");
@@ -158,8 +176,8 @@ const teil = (b: ReturnType<typeof bewerteWaehrung>, n: 1 | 2 | 3, key: string) 
   // Der wichtigste Fall: unter der Schwelle ist es KEIN Gegenwind, sondern
   // schlicht keine Aussage. „dagegen" wäre hier ein erfundener Widerspruch.
   const eng = rangliste([
-    bewerteWaehrung(basis({ ccy: "USD", leitzins: 2.1 }), umfeld),
-    bewerteWaehrung(basis({ ccy: "EUR", leitzins: 2.0 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "USD", leitzins6M: 0.025 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "EUR", leitzins6M: 0.0 }), umfeld),
   ]);
   check("zu enger Abstand → neutral", paarUrteil(eng, "EURUSD", "long").urteil, "neutral");
   check("und die Ebenen legen nichts nahe", paarUrteil(eng, "EURUSD", "long").ebenenSeite, "neutral");
@@ -174,9 +192,9 @@ const teil = (b: ReturnType<typeof bewerteWaehrung>, n: 1 | 2 | 3, key: string) 
 
 {
   const zeilen = rangliste([
-    bewerteWaehrung(basis({ ccy: "USD", leitzins: 4 }), umfeld),
-    bewerteWaehrung(basis({ ccy: "JPY", leitzins: 0.1 }), umfeld),
-    bewerteWaehrung(basis({ ccy: "EUR", leitzins: 2 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "USD", leitzins6M: 0.5 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "JPY", leitzins6M: -0.475 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "EUR", leitzins6M: 0.0 }), umfeld),
   ]);
   const cot = (ccy: string, divergenz: -1 | 0 | 1, komm = 80, retail = 20) =>
     ({ ccy, kommRang: komm, retailRang: retail, divergenz });
@@ -200,8 +218,8 @@ const teil = (b: ReturnType<typeof bewerteWaehrung>, n: 1 | 2 | 3, key: string) 
 
   // Eine Währung im Mittelfeld kann Monty weder stützen noch widersprechen.
   const eng = rangliste([
-    bewerteWaehrung(basis({ ccy: "USD", leitzins: 2.05 }), umfeld),
-    bewerteWaehrung(basis({ ccy: "EUR", leitzins: 2.0 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "USD", leitzins6M: 0.012 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "EUR", leitzins6M: 0.0 }), umfeld),
   ]);
   const c = montyAbgleich(eng, [cot("USD", 1), cot("EUR", -1, 20, 80)]);
   check("Mittelfeld → still, egal was COT sagt",

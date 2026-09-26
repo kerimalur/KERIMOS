@@ -33,7 +33,7 @@ async function zugang() {
 }
 
 function neuLaden() {
-  revalidatePath("/trading/waehrungen");
+  revalidatePath("/trading/waehrungen", "layout");
   revalidatePath("/trading/fundamentals");
 }
 
@@ -87,14 +87,34 @@ export async function waehrungSpeichern(fd: FormData) {
     await supabase.from("makro_werte").upsert(z, { onConflict: "user_id,ccy,feld" });
   }
 
-  const zyklus = txt(fd, "zyklus");
+  // Zyklus und Notiz nur anfassen, wenn das Formular sie mitschickt — die
+  // Zahlen-Pflege tut das seit dem 26.09.2026 nicht mehr (beides steht jetzt
+  // in Ebene 2), und ein fehlendes Feld darf die Notiz nicht löschen.
+  if (fd.has("zyklus") || fd.has("notiz")) await lageSpeichern(supabase, userId, ccy, fd);
+
+  neuLaden();
+}
+
+async function lageSpeichern(
+  supabase: Awaited<ReturnType<typeof zugang>>["supabase"], userId: string, ccy: string, fd: FormData,
+) {
+  const { data: bisher } = await supabase.from("makro_lage").select("zyklus, notiz")
+    .eq("user_id", userId).eq("ccy", ccy).maybeSingle();
+  const zyklus = fd.has("zyklus") ? txt(fd, "zyklus") : String(bisher?.zyklus ?? "");
   await supabase.from("makro_lage").upsert({
     user_id: userId, ccy,
     zyklus: ZYKLEN.includes(zyklus) ? zyklus : null,
-    notiz: txt(fd, "notiz") || null,
+    notiz: fd.has("notiz") ? (txt(fd, "notiz") || null) : (bisher?.notiz ?? null),
     updated_at: new Date().toISOString(),
   }, { onConflict: "user_id,ccy" });
+}
 
+/** Ebene 2: Zyklus (leer = automatisch aus dem Zinsverlauf) und das Warum. */
+export async function notenbankSpeichern(fd: FormData) {
+  const { supabase, userId } = await zugang();
+  const ccy = txt(fd, "ccy").toUpperCase().slice(0, 3);
+  if (!ccy) return;
+  await lageSpeichern(supabase, userId, ccy, fd);
   neuLaden();
 }
 

@@ -6,7 +6,7 @@ import { cotBildFuer } from "@/lib/confluence/cot-divergenz";
 import { werteFuer, baueRegime, type RegimeLage } from "@/lib/confluence/faktoren";
 import { heuteISO } from "@/lib/time";
 import {
-  bewerteWaehrung, rangliste,
+  bewerteWaehrung, rangliste, zinsSchritteAus,
   type Eingabe, type HandWert, type RangZeile, type Umfeld, type Zyklus,
 } from "@/lib/makro/bewertung";
 import { montyAbgleich, type Abgleich, type CotStand } from "@/lib/makro/monty-abgleich";
@@ -186,6 +186,7 @@ export async function ladeMakro(): Promise<MakroBild> {
       erwartung: w?.erwartung ?? null,
       cotRang: w?.cotRang ?? null,
       risikoBeta: w?.risikoBeta ?? 0,
+      zinsSchritte: zinsSchritteAus(markt?.daten.leitzins[ccy] ?? []),
       ereignisse: treffer.map((e) => ({
         titel: e.titel,
         richtung: (e.profitiert.includes(ccy) ? 1 : -1) as 1 | -1,

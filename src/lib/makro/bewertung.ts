@@ -8,14 +8,21 @@
  * nicht. Deshalb wird hier nichts verdichtet, was nicht daneben steht:
  * jede Ebene zeigt ihre Teilwerte, jeder Teilwert seine Quelle.
  *
- * Die drei Ebenen (aus Kerims Notizen):
+ * Die drei Ebenen (aus Kerims Notizen, geschärft am 26.09.2026 abends):
  *
- *   1 Wirtschaft   PMI, BIP, Arbeitslosenquote, Handelsbilanz.
- *                  Läuft die Wirtschaft?
- *   2 Zentralbank  Leitzins, Richtung, Markterwartung, Realzins, Zyklus.
- *                  Was macht die Notenbank daraus?
- *   3 Sentiment    Risiko-Regime, COT, laufende Ereignisse.
- *                  Wohin fliesst das Geld gerade?
+ *   1 Wirtschaft   GEWERTET: PMI Industrie, PMI Dienste (über 50 positiv),
+ *                  BIP zum Vorjahr. Frühindikator, Arbeitslosenquote und
+ *                  Leistungsbilanz stehen nur als Kontext daneben.
+ *   2 Zentralbank  GEWERTET: Zyklus (erhöht / gesenkt / gehalten), Richtung
+ *                  über sechs Monate, Markterwartung. Zinsniveau, Realzins
+ *                  und 10J-Rendite als Kontext.
+ *   3 Sentiment    NICHT gewertet — nur angezeigt: Risiko-Regime, COT,
+ *                  Ereignisse, Rohstoff-Abhängigkeit.
+ *
+ * Warum das Zinsniveau nicht mehr zählt: es hat CHF (Leitzins 0 %) allein
+ * deshalb zur schwächsten Währung gemacht und AUDCHF als einzige Idee
+ * übrig gelassen. Kerims Frage an die Notenbank ist nicht „wie hoch", sondern
+ * „was hat sie getan und was hat sie vor".
  *
  * Alles hier ist reine Rechnung ohne Datenbank — prüfbar mit
  * `tools/checks/makro.mts`.
@@ -42,6 +49,8 @@ export interface Teil {
   quelle?: string | null;
   /** ok = frisch · veraltet = zu alt, zählt nicht mit · fehlt = kein Wert. */
   status?: "ok" | "veraltet" | "fehlt";
+  /** Nur Kontext: wird angezeigt, geht aber nicht in den Score der Ebene. */
+  kontext?: boolean;
 }
 
 export interface EbenenBild {
@@ -65,7 +74,7 @@ export interface WaehrungsBild {
 }
 
 /** Gewichte der Ebenen im Gesamturteil. Sichtbar auf der Seite. */
-export const GEWICHT: Record<Ebene, number> = { 1: 0.35, 2: 0.45, 3: 0.20 };
+export const GEWICHT: Record<Ebene, number> = { 1: 0.5, 2: 0.5, 3: 0 };
 
 export const EBENEN_LABEL: Record<Ebene, string> = {
   1: "Wirtschaft",
@@ -116,6 +125,41 @@ export interface Eingabe {
   risikoBeta: number;
   /** Ereignisse, die auf diese Währung zeigen: +1 profitiert, −1 leidet. */
   ereignisse: { titel: string; richtung: 1 | -1 }[];
+  /** Zinsschritte der Notenbank aus dem Leitzinsverlauf, aufsteigend. */
+  zinsSchritte?: ZinsSchritt[];
+}
+
+export interface ZinsSchritt {
+  datum: string;
+  /** Änderung in Basispunkten, + = Erhöhung. */
+  bps: number;
+  /** Leitzins nach dem Schritt. */
+  neu: number;
+}
+
+/** Zinsschritte aus einer Leitzinsreihe: jede Änderung ab 5 Basispunkten. */
+export function zinsSchritteAus(punkte: { datum: string; wert: number }[]): ZinsSchritt[] {
+  const out: ZinsSchritt[] = [];
+  for (let i = 1; i < punkte.length; i++) {
+    const d = punkte[i].wert - punkte[i - 1].wert;
+    if (Math.abs(d) >= 0.05) out.push({ datum: punkte[i].datum, bps: Math.round(d * 100), neu: punkte[i].wert });
+  }
+  return out;
+}
+
+/**
+ * Der Zyklus aus den Zinsschritten, wenn er nicht von Hand gesetzt ist.
+ *
+ * Letzter Schritt innerhalb von sechs Monaten: Straffung bzw. Lockerung
+ * läuft. Länger her: Pause — oben, wenn zuletzt erhöht wurde, unten, wenn
+ * zuletzt gesenkt wurde. Kein Schritt in der Historie: unbekannt.
+ */
+export function zyklusAus(schritte: ZinsSchritt[], heute = new Date()): Zyklus | null {
+  const letzter = schritte[schritte.length - 1];
+  if (!letzter) return null;
+  const tage = (heute.getTime() - Date.parse(`${letzter.datum}T12:00:00Z`)) / 86_400_000;
+  if (tage <= 182) return letzter.bps > 0 ? "straffung" : "lockerung";
+  return letzter.bps > 0 ? "pause_oben" : "pause_unten";
 }
 
 export interface Umfeld {
@@ -179,7 +223,7 @@ function ebeneWirtschaft(e: Eingabe): EbenenBild {
       // ab — und schwankt um 100. Niveau und Richtung zählen je zur Hälfte:
       // 99.4 und steigend ist etwas anderes als 99.4 und fallend.
       key: "fruehindikator", label: "OECD-Frühindikator", wert: cli.wert,
-      einheit: "Index", delta: dCli,
+      einheit: "Index", delta: dCli, kontext: true,
       score: cli.wert === null ? null
         : klemme(0.5 * klemme(cli.wert - 100) + 0.5 * klemme((dCli ?? 0) / 0.2)),
       text: cli.wert === null ? "Kommt automatisch von FRED, sobald der Lauf durch ist."
@@ -197,7 +241,7 @@ function ebeneWirtschaft(e: Eingabe): EbenenBild {
     },
     {
       key: "arbeitslos", label: "Arbeitslosenquote", wert: arbeit.wert, einheit: "%",
-      delta: dArbeit,
+      delta: dArbeit, kontext: true,
       // Nicht das Niveau zählt, sondern die Richtung: 7 % sind in Spanien
       // normal und in der Schweiz eine Krise. Steigt die Quote, senkt die
       // Zentralbank irgendwann — schlecht für die Währung.
@@ -208,8 +252,8 @@ function ebeneWirtschaft(e: Eingabe): EbenenBild {
             + `${dArbeit > 0 ? "steigend, schlecht für die Währung" : dArbeit < 0 ? "fallend, gut für die Währung" : "unverändert"}.`,
     },
     {
-      key: "handelsbilanz", label: "Handelsbilanz", wert: handel.wert, einheit: "% BIP",
-      delta: delta(handel),
+      key: "handelsbilanz", label: "Leistungsbilanz", wert: handel.wert, einheit: "% BIP",
+      delta: delta(handel), kontext: true,
       score: handel.wert === null ? null : klemme(handel.wert / 4),
       text: handel.wert === null ? "Kein Wert eingetragen."
         : `${handel.wert >= 0 ? "+" : ""}${handel.wert.toFixed(1)} % des BIP — `
@@ -292,7 +336,7 @@ function ebeneZentralbank(e: Eingabe, u: Umfeld): EbenenBild {
   const teile: Teil[] = [
     {
       key: "zinsniveau", label: "Leitzins gegen die anderen",
-      wert: e.leitzins, einheit: "%",
+      wert: e.leitzins, einheit: "%", kontext: true,
       score: e.leitzins === null || u.zinsSchnitt === null ? null
         : klemme((e.leitzins - u.zinsSchnitt) / 1.5),
       text: e.leitzins === null ? "Kein Leitzins in der Datenbank."
@@ -316,26 +360,38 @@ function ebeneZentralbank(e: Eingabe, u: Umfeld): EbenenBild {
     },
     {
       key: "realzins", label: "Realzins",
-      wert: e.realzins, einheit: "%",
+      wert: e.realzins, einheit: "%", kontext: true,
       score: e.realzins === null || u.realSchnitt === null ? null
         : klemme((e.realzins - u.realSchnitt) / 1.5),
       text: e.realzins === null ? "Leitzins oder Inflation fehlt."
         : `${e.realzins.toFixed(2)} % nach Inflation`
           + (e.inflation === null ? "." : ` (Inflation ${e.inflation.toFixed(1)} %).`),
     },
-    {
-      key: "zyklus", label: "Zyklus der Notenbank",
-      wert: null, einheit: "",
-      score: e.zyklus === null ? null : ZYKLUS_SCORE[e.zyklus],
-      text: e.zyklus === null ? "Phase nicht eingetragen."
-        : `${ZYKLUS_LABEL[e.zyklus]} — `
-          + (e.zyklus === "straffung" ? "steigende Zinsen stützen die Währung."
-            : e.zyklus === "lockerung" ? "fallende Zinsen belasten sie."
-              : "Seitwärts, die Richtung entscheidet die nächste Sitzung."),
-    },
+    (() => {
+      // Von Hand gesetzt gewinnt; sonst aus den Zinsschritten abgeleitet.
+      const auto = e.zyklus === null ? zyklusAus(e.zinsSchritte ?? []) : null;
+      const z = e.zyklus ?? auto;
+      const letzter = (e.zinsSchritte ?? []).at(-1);
+      const schritt = letzter
+        ? ` Letzter Schritt ${letzter.bps > 0 ? "+" : ""}${letzter.bps} bp am `
+          + `${new Date(`${letzter.datum}T12:00:00Z`).toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" })}.`
+        : "";
+      return {
+        key: "zyklus", label: "Zyklus der Notenbank",
+        wert: null, einheit: "",
+        score: z === null ? null : ZYKLUS_SCORE[z],
+        text: z === null ? "Kein Zinsschritt in der Historie und nichts eingetragen."
+          : `${ZYKLUS_LABEL[z]}${auto ? " (aus dem Zinsverlauf)" : ""} — `
+            + (z === "straffung" ? "steigende Zinsen stützen die Währung."
+              : z === "lockerung" ? "fallende Zinsen belasten sie."
+                : z === "pause_oben" ? "Zinsen oben gehalten — stützt, solange die Pause hält."
+                  : "Zinsen unten gehalten — belastet, solange nichts steigt.")
+            + schritt,
+      } as Teil;
+    })(),
     {
       key: "anleihen", label: "10-Jahres-Rendite",
-      wert: rendite.wert, einheit: "%", delta: delta(rendite),
+      wert: rendite.wert, einheit: "%", delta: delta(rendite), kontext: true,
       // Steigende Langfristrenditen ziehen Kapital an, solange sie nicht aus
       // Zweifeln an der Bonität kommen. Deshalb nur halbes Gewicht über die
       // Veränderung, und die Nachfrage steht als eigene Zeile daneben.
@@ -396,17 +452,20 @@ function ebeneSentiment(e: Eingabe, u: Umfeld): EbenenBild {
     },
   ];
 
-  return fasse(3, teile);
+  // Ebene 3 wird angezeigt, aber (noch) nicht gewertet — Kerim, 26.09.2026.
+  return fasse(3, teile.map((t) => ({ ...t, kontext: true })));
 }
 
 function fasse(ebene: Ebene, teile: Teil[]): EbenenBild {
-  const mitDaten = teile.filter((t) => t.score !== null);
+  // Kontext-Teile stehen da, zählen aber weder in den Score noch in „belegt".
+  const gewertet = teile.filter((t) => !t.kontext);
+  const mitDaten = gewertet.filter((t) => t.score !== null);
   return {
     ebene, label: EBENEN_LABEL[ebene], teile,
     score: mitDaten.length === 0 ? null
       : rund(mitDaten.reduce((s, t) => s + (t.score ?? 0), 0) / mitDaten.length),
     belegt: mitDaten.length,
-    moeglich: teile.length,
+    moeglich: gewertet.length,
   };
 }
 
@@ -416,7 +475,7 @@ export function bewerteWaehrung(e: Eingabe, u: Umfeld): WaehrungsBild {
 
   // Gewichtet, aber nur über die Ebenen mit Daten — sonst zöge eine leere
   // Ebene das Urteil Richtung null und sähe aus wie „neutral".
-  const mitDaten = ebenen.filter((x) => x.score !== null);
+  const mitDaten = ebenen.filter((x) => x.score !== null && GEWICHT[x.ebene] > 0);
   const gewichtSumme = mitDaten.reduce((s, x) => s + GEWICHT[x.ebene], 0);
   const gesamt = gewichtSumme === 0 ? null
     : rund(mitDaten.reduce((s, x) => s + (x.score ?? 0) * GEWICHT[x.ebene], 0) / gewichtSumme);
