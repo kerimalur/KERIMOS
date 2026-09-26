@@ -2,10 +2,11 @@ import Link from "next/link";
 import { tradingConfigured, G8 } from "@/lib/supabase/trading";
 import { ladeMakro } from "@/lib/makro/laden";
 import {
-  HAND_FELDER, NUR_KONTEXT, ROHSTOFF_BEZUG, ZYKLUS_LABEL,
+  HAND_FELDER, NUR_KONTEXT, ROHSTOFF_BEZUG, ZYKLUS_LABEL, istVeraltet,
 } from "@/lib/makro/bewertung";
+import { AUTO_FELDER } from "@/lib/makro/quellen";
 import { waehrungSpeichern } from "@/lib/makro-actions";
-import { EbenenKarte, ScoreBalken, urteilWort } from "@/components/makro/teile";
+import { EbenenKarte, ScoreBalken, urteilWort, ZustandMarke, standKurz } from "@/components/makro/teile";
 import { Card, CardTitle, Badge, Empty, Button, Input, Select, Label, cx } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -101,7 +102,7 @@ export default async function WaehrungenSeite({ searchParams }: {
           </Card>
 
           <div className="grid gap-4 lg:grid-cols-3">
-            {zeile.ebenen.map((e) => <EbenenKarte key={e.ebene} e={e} />)}
+            {zeile.ebenen.map((e) => <EbenenKarte key={e.ebene} e={e} ccy={gewaehlt} />)}
           </div>
 
           <Card>
@@ -118,15 +119,18 @@ export default async function WaehrungenSeite({ searchParams }: {
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {HAND_FELDER.map((f) => {
                   const w = hand[f.key];
+                  const auto = AUTO_FELDER.includes(f.key);
+                  const status = !w || w.wert === null ? "fehlt"
+                    : istVeraltet(f.key, w) ? "veraltet" : "ok";
                   return (
                     <div key={f.key}>
                       <Label htmlFor={`f-${f.key}`}>
                         {f.label}
                         <span className="ml-1 text-ink-faint">({f.einheit})</span>
-                        {f.auto && (
+                        {auto && (
                           <span className="ml-1.5 rounded bg-good-tint px-1 py-px text-[10px]
                                            font-medium uppercase tracking-wide text-good-bright"
-                            title="Holt sich der FRED-Lauf selbst. Eine Eingabe hier gewinnt trotzdem.">
+                            title="Holt sich der Lauf selbst (OECD, Eurostat, IMF, FRED). Eine Eingabe hier gewinnt, bis die Quelle eine neuere Zahl hat.">
                             auto
                           </span>
                         )}
@@ -140,9 +144,13 @@ export default async function WaehrungenSeite({ searchParams }: {
                       <p className="mt-1 text-[11px] leading-snug text-ink-faint">
                         {w?.wert !== null && w?.wert !== undefined
                           ? `Jetzt ${w.wert}${w.vorwert !== null ? ` (vorher ${w.vorwert})` : ""}`
-                            + `${w.stand ? ` · Stand ${w.stand}` : ""}`
+                            + `${standKurz(w.stand) ? ` · Stand ${standKurz(w.stand)}` : ""}`
+                            + `${w.quelle ? ` · ${w.quelle}` : ""}`
                           : f.hinweis}
                       </p>
+                      <div className="mt-1">
+                        <ZustandMarke ccy={gewaehlt} feld={f.key} status={status} />
+                      </div>
                     </div>
                   );
                 })}
@@ -191,7 +199,7 @@ export default async function WaehrungenSeite({ searchParams }: {
                 {HAND_FELDER.map((f) => (
                   <li key={f.key}>
                     <span className="text-ink-muted">{f.label}:</span> {f.quelle}
-                    {f.auto && <span className="ml-1 text-good-bright">· automatisch</span>}
+                    {AUTO_FELDER.includes(f.key) && <span className="ml-1 text-good-bright">· automatisch</span>}
                   </li>
                 ))}
               </ul>
@@ -216,7 +224,9 @@ export default async function WaehrungenSeite({ searchParams }: {
  */
 function SyncLeiste({ sync }: { sync: { gelaufen: string | null; bericht: Record<string, string> } }) {
   const eintraege = Object.entries(sync.bericht);
-  const fehler = eintraege.filter(([, v]) => !/^ok/i.test(v));
+  // Nur Einträge, die mit „fehlt" beginnen, sind Fehler — alle anderen
+  // nennen die Quelle, die geliefert hat.
+  const fehler = eintraege.filter(([, v]) => /^fehlt/i.test(v));
 
   if (!sync.gelaufen) {
     return (
@@ -225,12 +235,14 @@ function SyncLeiste({ sync }: { sync: { gelaufen: string | null; bericht: Record
           Der automatische Lauf war noch nie da.
         </p>
         <p className="mt-1 text-[11px] leading-relaxed text-ink-faint">
-          Frühindikator, BIP, Arbeitslosenquote und 10-Jahres-Rendite holt
+          Frühindikator, BIP, Arbeitslosenquote, 10-Jahres-Rendite, Leistungsbilanz
+          und Staatsschulden holt
           <code className="mx-1 rounded bg-sand px-1">/api/makro-sync</code>
-          von FRED. Dafür braucht Vercel die Variablen <code>FRED_API_KEY</code>
-          {" "}und <code>SUPABASE_SERVICE_ROLE_KEY</code>, und der externe Cron
-          muss die Adresse mit dem <code>CRON_SECRET</code> aufrufen. Bis dahin
-          bleiben diese vier Felder leer — von Hand eintragen geht trotzdem.
+          von OECD, Eurostat, IMF und FRED. Dafür braucht Vercel
+          <code> SUPABASE_SERVICE_ROLE_KEY</code> (und für die FRED-Reihen
+          <code> FRED_API_KEY</code>), und der externe Cron muss die Adresse mit
+          dem <code>CRON_SECRET</code> aufrufen. Bis dahin bleiben diese Felder
+          leer — von Hand eintragen geht trotzdem.
         </p>
       </Card>
     );
@@ -240,7 +252,7 @@ function SyncLeiste({ sync }: { sync: { gelaufen: string | null; bericht: Record
     <Card flat>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="text-sm text-ink-soft">
-          FRED-Lauf zuletzt {new Date(sync.gelaufen).toLocaleString("de-CH", {
+          Datenlauf zuletzt {new Date(sync.gelaufen).toLocaleString("de-CH", {
             day: "2-digit", month: "2-digit", year: "numeric",
             hour: "2-digit", minute: "2-digit",
           })}

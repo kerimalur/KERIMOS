@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { G8 } from "@/lib/supabase/trading";
-import { holeWaehrung, fredKonfiguriert } from "@/lib/makro/fred";
+import { holeAlles } from "@/lib/makro/quellen";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
- * Holt die Wirtschaftsdaten aller acht Währungen von FRED und legt sie in
+ * Holt die Wirtschaftsdaten aller acht Währungen (OECD, Eurostat, IMF, FRED) und legt sie in
  * `makro_reihen` ab (26.09.2026).
  *
  * AUFRUF von aussen, einmal täglich reicht — die Reihen sind monatlich:
@@ -40,14 +39,6 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  if (!fredKonfiguriert()) {
-    return NextResponse.json({
-      ok: false,
-      fehler: "FRED_API_KEY fehlt. Kostenlos unter fredaccount.stlouisfed.org/apikeys, "
-        + "danach in Vercel als Umgebungsvariable eintragen.",
-    }, { status: 503 });
-  }
-
   const supabase = db();
   if (!supabase) {
     return NextResponse.json({
@@ -58,38 +49,37 @@ export async function GET(request: NextRequest) {
   const bericht: Record<string, string> = {};
   let geschrieben = 0;
 
-  for (const ccy of G8) {
-    const ergebnisse = await holeWaehrung(ccy);
+  // Alles auf einmal holen — die OECD-Sets je nur einmal für alle Länder
+  // (siehe lib/makro/quellen.ts, Rate-Limit).
+  const ergebnisse = await holeAlles();
 
-    for (const e of ergebnisse) {
-      if (e.fehler || e.werte.length === 0) {
-        bericht[`${ccy}.${e.feld}`] = `fehlt (${e.fehler})`;
-        continue;
-      }
+  for (const e of ergebnisse) {
+    const schluessel = `${e.ccy}.${e.feld}`;
+    if (e.fehler || !e.serie || e.werte.length === 0) {
+      bericht[schluessel] = `fehlt (${e.fehler})`;
+      continue;
+    }
 
-      const zeilen = e.werte.map((w) => ({
-        ccy, feld: e.feld, datum: w.datum, wert: w.wert,
-        serie: e.id, geholt_am: new Date().toISOString(),
-      }));
+    const zeilen = e.werte.map((w) => ({
+      ccy: e.ccy, feld: e.feld, datum: w.datum, wert: w.wert,
+      serie: e.serie, geholt_am: new Date().toISOString(),
+    }));
 
-      // Hat der Lauf eine andere Reihe gewählt als letztes Mal (frischere
-      // Kandidaten-ID, oder jetzt in % statt als Niveau), fliegen die Zeilen
-      // der alten raus — sonst stünde der Vorwert aus einer anderen Reihe
-      // neben dem Stand, und der Trendpfeil vergliche Äpfel mit Birnen.
-      await supabase.from("makro_reihen").delete()
-        .eq("ccy", ccy).eq("feld", e.feld).neq("serie", e.id!);
+    // Hat der Lauf eine andere Quelle gewählt als letztes Mal, fliegen die
+    // Zeilen der alten raus — sonst stünde der Vorwert aus einer anderen
+    // Reihe neben dem Stand, und der Trendpfeil vergliche Äpfel mit Birnen.
+    await supabase.from("makro_reihen").delete()
+      .eq("ccy", e.ccy).eq("feld", e.feld).neq("serie", e.serie);
 
-      const { error } = await supabase.from("makro_reihen")
-        .upsert(zeilen, { onConflict: "ccy,feld,datum" });
+    const { error } = await supabase.from("makro_reihen")
+      .upsert(zeilen, { onConflict: "ccy,feld,datum" });
 
-      if (error) {
-        bericht[`${ccy}.${e.feld}`] = `Schreiben: ${error.message}`;
-      } else {
-        geschrieben += zeilen.length;
-        const letzte = e.werte[e.werte.length - 1];
-        bericht[`${ccy}.${e.feld}`] = `${e.id} · ${e.werte.length} Werte · zuletzt `
-          + `${letzte.wert} am ${letzte.datum}`;
-      }
+    if (error) {
+      bericht[schluessel] = `fehlt (Schreiben: ${error.message})`;
+    } else {
+      geschrieben += zeilen.length;
+      const letzte = e.werte[e.werte.length - 1];
+      bericht[schluessel] = `${e.serie} · ${e.werte.length} Werte · zuletzt ${letzte.wert} am ${letzte.datum}`;
     }
   }
 

@@ -36,6 +36,12 @@ export interface Teil {
   text: string;
   /** Veränderung zum Vorwert, wenn bekannt. */
   delta?: number | null;
+  /** Nur bei gepflegten/geholten Feldern: welches Feld, von wann, woher. */
+  feld?: string;
+  stand?: string | null;
+  quelle?: string | null;
+  /** ok = frisch · veraltet = zu alt, zählt nicht mit · fehlt = kein Wert. */
+  status?: "ok" | "veraltet" | "fehlt";
 }
 
 export interface EbenenBild {
@@ -87,6 +93,8 @@ export interface HandWert {
   vorwert: number | null;
   stand: string | null;
   quelle: string | null;
+  /** Länge der Periode in Monaten (1 monatlich, 3 Quartal, 12 Jahr). */
+  periode?: number;
 }
 
 export interface Eingabe {
@@ -131,7 +139,7 @@ const rund = (v: number, n = 2) => Math.round(v * 10 ** n) / 10 ** n;
 const klemme = (v: number, max = 1) => rund(Math.max(-max, Math.min(max, v)));
 
 const hv = (e: Eingabe, feld: string): HandWert =>
-  e.hand[feld] ?? { wert: null, vorwert: null, stand: null, quelle: null };
+  e.hand[feld] ?? { wert: null, vorwert: null, stand: null, quelle: null, periode: 1 };
 
 const delta = (h: HandWert) =>
   h.wert !== null && h.vorwert !== null ? rund(h.wert - h.vorwert) : null;
@@ -209,32 +217,64 @@ function ebeneWirtschaft(e: Eingabe): EbenenBild {
     },
   ];
 
-  return fasse(1, teile.map((t) => veraltetPruefen(t, hv(e, t.key).stand)));
+  return fasse(1, teile.map((t) => markiere(t, t.key, hv(e, t.key))));
 }
 
 /**
- * Ein Wert, der älter als ein Jahr ist, zählt nicht mehr mit.
+ * Wie alt eine Zahl höchstens sein darf — in Monaten NACH dem Ende ihrer
+ * Periode. Ein BIP für Q2 (Apr–Jun) ist Ende Juni „frisch" und wird Ende
+ * November veraltet, wenn Q3 längst da sein müsste.
  *
- * FRED stellt OECD-Reihen still ein: der Frühindikator endet bei den meisten
- * Ländern Anfang 2024, liefert aber weiter diesen letzten Wert. Ohne diese
- * Prüfung stünde er als „aktuell" in der Rechnung. Der Wert bleibt sichtbar,
- * nur der Score fällt weg — und der Text sagt warum.
+ * Die Grenzen folgen dem Veröffentlichungsrhythmus: monatliche Zahlen
+ * kommen etwa einen Monat nach Periodenende, Quartals-BIP nach zwei, die
+ * Jahreswerte des IMF erst im Frühling des Folgejahres.
  */
-export const VERALTET_MONATE = 12;
+export const MAX_ALTER: Record<string, number> = {
+  fruehindikator: 3,
+  pmi_industrie: 2,
+  pmi_dienste: 2,
+  arbeitslos: 3,
+  bip_yoy: 5,
+  rendite_10j: 2,
+  handelsbilanz: 12,
+  staatsschulden: 12,
+  anleihe_nachfrage: 3,
+};
 
-export function veraltetPruefen(t: Teil, stand: string | null, heute = new Date()): Teil {
-  if (!stand || t.wert === null) return t;
+/** Monate zwischen dem Ende der Periode und heute. */
+export function alterMonate(stand: string, periode = 1, heute = new Date()): number | null {
   const d = new Date(`${stand.slice(0, 10)}T12:00:00Z`);
-  if (Number.isNaN(d.getTime())) return t;
+  if (Number.isNaN(d.getTime())) return null;
   const monate = (heute.getUTCFullYear() - d.getUTCFullYear()) * 12
     + (heute.getUTCMonth() - d.getUTCMonth());
-  if (monate <= VERALTET_MONATE) return t;
-  const wann = d.toLocaleDateString("de-CH", { month: "2-digit", year: "numeric", timeZone: "UTC" });
+  return monate - Math.max(1, periode) + 1;
+}
+
+export function istVeraltet(feld: string, h: HandWert, heute = new Date()): boolean {
+  if (h.wert === null || !h.stand) return false;
+  const alter = alterMonate(h.stand, h.periode ?? 1, heute);
+  return alter !== null && alter > (MAX_ALTER[feld] ?? 3);
+}
+
+/**
+ * Hängt Stand, Quelle und Zustand an einen Teilwert.
+ *
+ * Veraltet heisst: der Wert bleibt sichtbar, aber er zählt nicht mit — eine
+ * Konjunkturzahl von vor einem Jahr soll nicht über die Richtung heute
+ * entscheiden. Die Seite markiert ihn und verlinkt, wo man den aktuellen
+ * holt (lib/makro/links.ts).
+ */
+export function markiere(t: Teil, feld: string, h: HandWert, heute = new Date()): Teil {
+  const basis = { ...t, feld, stand: h.stand, quelle: h.quelle };
+  if (h.wert === null) return { ...basis, status: "fehlt" };
+  if (!istVeraltet(feld, h, heute)) return { ...basis, status: "ok" };
+  const wann = new Date(`${h.stand!.slice(0, 10)}T12:00:00Z`)
+    .toLocaleDateString("de-CH", { month: "2-digit", year: "numeric", timeZone: "UTC" });
   return {
-    ...t,
+    ...basis,
+    status: "veraltet",
     score: null,
-    text: `Veraltet — letzter Wert vom ${wann}, die Quelle liefert nichts Neueres. `
-      + "Zählt nicht mit; trag ihn von Hand ein, wenn du einen aktuellen hast.",
+    text: `Veraltet — letzter Wert von ${wann}. Zählt nicht mit, bis ein aktueller da ist.`,
   };
 }
 
@@ -307,7 +347,8 @@ function ebeneZentralbank(e: Eingabe, u: Umfeld): EbenenBild {
     },
   ];
 
-  return fasse(2, teile);
+  return fasse(2, teile.map((t) =>
+    t.key === "anleihen" ? markiere(t, "rendite_10j", rendite) : t));
 }
 
 /* ---------------------------------------------------------- Ebene 3 */
@@ -561,7 +602,7 @@ export interface FeldInfo {
 export const HAND_FELDER: FeldInfo[] = [
   { key: "fruehindikator", label: "OECD-Frühindikator", einheit: "Index", auto: true,
     hinweis: "Ersatz für den PMI. Schwankt um 100, über 100 zieht die Konjunktur an.",
-    quelle: "FRED · OECD Composite Leading Indicator" },
+    quelle: "OECD (CLI), für CHF/NZD nicht mehr veröffentlicht" },
   { key: "pmi_industrie", label: "PMI Industrie", einheit: "Punkte",
     hinweis: "Über 50 wächst die Industrie, darunter schrumpft sie.",
     quelle: "Trading Economics · S&P Global / ISM / procure.ch" },
@@ -570,22 +611,22 @@ export const HAND_FELDER: FeldInfo[] = [
     quelle: "Trading Economics · S&P Global / ISM" },
   { key: "bip_yoy", label: "BIP zum Vorjahr", einheit: "%", auto: true,
     hinweis: "Wächst die Wirtschaft überhaupt?",
-    quelle: "FRED · OECD / BEA" },
+    quelle: "OECD / Eurostat / BEA, quartalsweise" },
   { key: "arbeitslos", label: "Arbeitslosenquote", einheit: "%", auto: true,
     hinweis: "Die Richtung zählt: steigt sie, senkt die Notenbank irgendwann.",
-    quelle: "FRED · OECD harmonisiert" },
+    quelle: "OECD / Eurostat / FRED, monatlich" },
   { key: "handelsbilanz", label: "Handelsbilanz", einheit: "% BIP",
-    hinweis: "Überschuss heisst laufende Nachfrage nach der Währung.",
-    quelle: "Trading Economics · Current Account to GDP" },
+    hinweis: "Leistungsbilanz (Handel + Einkommen). Überschuss heisst laufende Nachfrage nach der Währung.",
+    quelle: "IMF · Leistungsbilanz in % des BIP, jährlich" },
   { key: "rendite_10j", label: "10-Jahres-Rendite", einheit: "%", auto: true,
     hinweis: "Was der Staat langfristig zahlen muss.",
-    quelle: "FRED · OECD, US täglich" },
+    quelle: "FRED / Eurostat, US täglich" },
   { key: "anleihe_nachfrage", label: "Nachfrage bei Auktionen", einheit: "Bid-to-Cover",
     hinweis: "Über 2 heisst: die Auktion war deutlich überzeichnet.",
     quelle: "Schuldenagentur des Landes · Auktionsergebnis" },
   { key: "staatsschulden", label: "Staatsschulden", einheit: "% BIP",
     hinweis: "Kontext, geht nicht ins Urteil ein.",
-    quelle: "Trading Economics · Government Debt to GDP" },
+    quelle: "IMF · Bruttoschulden in % des BIP, jährlich" },
 ];
 
 /** Diese Felder stehen nur als Kontext da und zählen nicht ins Urteil. */

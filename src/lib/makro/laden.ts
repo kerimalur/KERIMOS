@@ -97,22 +97,40 @@ export async function ladeMakro(): Promise<MakroBild> {
   for (const [schluessel, werte] of jeSerie) {
     const [ccy, feld] = schluessel.split("|");
     hand[ccy] = hand[ccy] ?? {};
+    // Periodenlänge aus dem Abstand der letzten zwei Werte: 1 = monatlich,
+    // 3 = Quartal, 12 = Jahr. Daran hängt, ab wann ein Wert veraltet ist.
+    const periode = werte[1]
+      ? Math.max(1, Math.round((Date.parse(werte[0].datum) - Date.parse(werte[1].datum)) / (30.44 * 86_400_000)))
+      : 1;
     hand[ccy][feld] = {
       wert: werte[0]?.wert ?? null,
       vorwert: werte[1]?.wert ?? null,
       stand: werte[0]?.datum ?? null,
-      quelle: werte[0] ? `FRED · ${werte[0].serie}` : null,
+      // Ältere Läufe schrieben nur die FRED-ID, neuere den ganzen Namen.
+      quelle: werte[0] ? (werte[0].serie.includes("·") ? werte[0].serie : `FRED · ${werte[0].serie}`) : null,
+      periode,
     };
   }
 
   for (const r of (werteRes.data ?? []) as Record<string, unknown>[]) {
     const ccy = String(r.ccy);
     hand[ccy] = hand[ccy] ?? {};
-    hand[ccy][String(r.feld)] = {
+    const eigen: HandWert = {
       wert: zahl(r.wert), vorwert: zahl(r.vorwert),
       stand: r.stand ? String(r.stand) : null,
-      quelle: r.quelle ? String(r.quelle) : null,
+      quelle: r.quelle ? `von Hand · ${r.quelle}` : "von Hand",
+      periode: 1,
     };
+    // Von Hand gewinnt — ausser die geholte Zahl ist neuer. Sonst bliebe ein
+    // einmal eingetragener Wert für immer stehen, auch wenn die Quelle
+    // längst weiter ist.
+    const geholt = hand[ccy][String(r.feld)];
+    if (geholt?.stand && eigen.stand && eigen.wert !== null) {
+      const ende = new Date(`${geholt.stand}T12:00:00Z`);
+      ende.setUTCMonth(ende.getUTCMonth() + (geholt.periode ?? 1));
+      if (ende.toISOString().slice(0, 10) > eigen.stand) continue;
+    }
+    hand[ccy][String(r.feld)] = eigen;
   }
 
   const zyklen: Record<string, Zyklus | null> = {};

@@ -1,4 +1,5 @@
 import { cx } from "@/components/ui";
+import { manuellerLink } from "@/lib/makro/links";
 import type { EbenenBild, RangZeile, Teil } from "@/lib/makro/bewertung";
 import type { AbgleichZeile, Stand } from "@/lib/makro/monty-abgleich";
 
@@ -38,11 +39,47 @@ export function urteilWort(score: number | null): string {
   return "schwach";
 }
 
-export function TeilZeile({ t }: { t: Teil }) {
+/** Stand als "08.2026" — Monat reicht, Tage gaukeln Genauigkeit vor. */
+export function standKurz(stand: string | null | undefined): string | null {
+  if (!stand) return null;
+  const d = new Date(`${stand.slice(0, 10)}T12:00:00Z`);
+  return Number.isNaN(d.getTime()) ? null
+    : d.toLocaleDateString("de-CH", { month: "2-digit", year: "numeric", timeZone: "UTC" });
+}
+
+/**
+ * Zustand einer Zahl: veraltet (gelb) oder fehlt (rot), jeweils mit dem Link,
+ * wo man sie von Hand holt. Bei „ok" nichts — frische Zahlen brauchen keine
+ * Markierung.
+ */
+export function ZustandMarke({ ccy, feld, status }: {
+  ccy: string; feld: string; status: "ok" | "veraltet" | "fehlt" | undefined;
+}) {
+  if (!status || status === "ok") return null;
+  const link = manuellerLink(ccy, feld);
   return (
-    <li className="grid grid-cols-[1fr_auto] items-baseline gap-x-3 gap-y-1 border-t border-line/70 py-2 first:border-t-0">
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      <span className={cx("rounded px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide",
+        status === "veraltet" ? "bg-warn-tint text-accent" : "bg-bad-tint text-bad-bright")}>
+        {status}
+      </span>
+      {link && (
+        <a href={link.url} target="_blank" rel="noopener noreferrer"
+          className="text-[11px] text-accent-soft underline-offset-2 hover:underline">
+          manuell holen: {link.text} ↗
+        </a>
+      )}
+    </span>
+  );
+}
+
+export function TeilZeile({ t, ccy }: { t: Teil; ccy?: string }) {
+  const stand = standKurz(t.stand);
+  return (
+    <li className={cx("grid grid-cols-[1fr_auto] items-baseline gap-x-3 gap-y-1 border-t border-line/70 py-2 first:border-t-0",
+      t.status === "veraltet" && "opacity-90")}>
       <span className="text-sm text-ink-soft">{t.label}</span>
-      <span className="tabular text-sm text-ink">
+      <span className={cx("tabular text-sm", t.status === "veraltet" ? "text-accent" : "text-ink")}>
         {t.wert === null ? "—" : `${t.wert.toFixed(2)} ${t.einheit}`.trim()}
         {t.delta !== null && t.delta !== undefined && (
           <span className={cx("ml-2 text-[11px]",
@@ -55,22 +92,35 @@ export function TeilZeile({ t }: { t: Teil }) {
         <ScoreBalken score={t.score} breit={90} />
         <span className="text-[11px] text-ink-muted">{t.text}</span>
       </span>
+      {t.feld && (stand || t.quelle || (t.status && t.status !== "ok")) && (
+        <span className="col-span-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-ink-faint">
+          {stand && <span>Stand {stand}</span>}
+          {t.quelle && <span>· {t.quelle}</span>}
+          {ccy && <ZustandMarke ccy={ccy} feld={t.feld} status={t.status} />}
+        </span>
+      )}
     </li>
   );
 }
 
-export function EbenenKarte({ e }: { e: EbenenBild }) {
+export function EbenenKarte({ e, ccy }: { e: EbenenBild; ccy?: string }) {
+  const veraltet = e.teile.filter((t) => t.status === "veraltet").length;
+  const fehlt = e.teile.filter((t) => t.status === "fehlt").length;
   return (
     <div className="rounded-2xl border border-line/70 bg-card/60 p-4">
       <div className="mb-2 flex flex-wrap items-baseline gap-2">
         <span className="text-[11px] uppercase tracking-[0.12em] text-ink-muted">
           Ebene {e.ebene} · {e.label}
         </span>
-        <span className="ml-auto text-[11px] text-ink-faint">{e.belegt}/{e.moeglich} belegt</span>
+        <span className="ml-auto text-[11px] text-ink-faint">
+          {e.belegt}/{e.moeglich} belegt
+          {veraltet > 0 && <span className="ml-1.5 text-accent">· {veraltet} veraltet</span>}
+          {fehlt > 0 && <span className="ml-1.5 text-bad-bright">· {fehlt} fehlt</span>}
+        </span>
       </div>
       <div className="mb-2"><ScoreBalken score={e.score} /></div>
       <ul className="list-none p-0">
-        {e.teile.map((t) => <TeilZeile key={t.key} t={t} />)}
+        {e.teile.map((t) => <TeilZeile key={t.key} t={t} ccy={ccy} />)}
       </ul>
     </div>
   );
