@@ -119,8 +119,16 @@ export interface Umfeld {
   regime: number | null;
 }
 
-const klemme = (v: number, max = 1) => Math.max(-max, Math.min(max, v));
 const rund = (v: number, n = 2) => Math.round(v * 10 ** n) / 10 ** n;
+
+/**
+ * Auf −1…+1 begrenzen und auf zwei Stellen runden.
+ *
+ * Gerundet wird hier und nicht erst in der Anzeige: sonst steht in der
+ * Tabelle −0.67 und in der Rechnung −0.6666…, und zwei Zahlen, die dasselbe
+ * sein sollen, weichen voneinander ab.
+ */
+const klemme = (v: number, max = 1) => rund(Math.max(-max, Math.min(max, v)));
 
 const hv = (e: Eingabe, feld: string): HandWert =>
   e.hand[feld] ?? { wert: null, vorwert: null, stand: null, quelle: null };
@@ -275,8 +283,13 @@ function ebeneSentiment(e: Eingabe, u: Umfeld): EbenenBild {
     {
       key: "regime", label: "Risiko-Regime × Beta",
       wert: u.regime, einheit: "",
-      score: u.regime === null ? null : klemme(u.regime * e.risikoBeta),
+      // Beta 0 (EUR) heisst: das Regime sagt über diese Währung nichts. Dann
+      // ist „keine Aussage" richtig und 0 wäre falsch — eine 0 würde als
+      // neutrales Urteil mitgemittelt und das Gesamtbild verwässern.
+      score: u.regime === null || e.risikoBeta === 0 ? null
+        : klemme(u.regime * e.risikoBeta),
       text: u.regime === null ? "Kein Regime (VIX, S&P, Kupfer/Gold fehlen)."
+        : e.risikoBeta === 0 ? "Diese Währung hängt kaum am Risikoappetit — kein Beitrag."
         : `Regime ${u.regime >= 0.2 ? "Risk-on" : u.regime <= -0.2 ? "Risk-off" : "neutral"} `
           + `(${u.regime.toFixed(2)}), Beta dieser Währung ${e.risikoBeta.toFixed(1)}.`,
     },
