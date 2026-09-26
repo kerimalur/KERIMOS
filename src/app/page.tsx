@@ -98,8 +98,13 @@ export default async function Start() {
             Gruss, Wetter, Spruch, Routinen — steht ausschliesslich im
             Scroll-Empfang). Schmaler als xl stehen sie über dem Brett.
           */}
-          <aside className="xl:w-[320px] xl:shrink-0">
-            <WochenzieleKurz ziele={wochenziele} />
+          {/* Mittig neben dem Brett, als eigene Karte klar abgesetzt
+              (Kerim, 26.09.2026: „etwas zentraler, nicht oben fixiert"). */}
+          <aside className="xl:w-[340px] xl:shrink-0 xl:self-center xl:pl-4">
+            <div className="rounded-2xl border border-line-strong/80 bg-card/85 p-5
+                            shadow-card backdrop-blur-sm">
+              <WochenzieleKurz ziele={wochenziele} gross />
+            </div>
           </aside>
 
           <div className="min-w-0 flex-1">

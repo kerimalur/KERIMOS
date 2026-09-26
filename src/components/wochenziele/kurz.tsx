@@ -6,7 +6,7 @@ import type { Wochenziel } from "@/lib/wochenziele/typen";
  * Die Wochenziele auf der Startseite: nur die Titel, dringende zuerst,
  * Fertiges durchgestrichen. Bearbeitet wird im Tab.
  */
-export function WochenzieleKurz({ ziele }: { ziele: Wochenziel[] }) {
+export function WochenzieleKurz({ ziele, gross }: { ziele: Wochenziel[]; gross?: boolean }) {
   const fertig = ziele.filter((z) => z.status === "fertig").length;
   const reihe = [
     ...ziele.filter((z) => z.status !== "fertig"),
@@ -16,17 +16,22 @@ export function WochenzieleKurz({ ziele }: { ziele: Wochenziel[] }) {
   return (
     <div>
       <Link href="/wochenziele"
-        className="mb-1.5 flex items-baseline justify-between text-[11px] font-medium uppercase
-                   tracking-[0.12em] text-ink-muted hover:text-ink-soft">
-        <span>Wochenziele →</span>
-        {ziele.length > 0 && <span className="tabular normal-case tracking-normal">{fertig}/{ziele.length}</span>}
+        className={cx("flex items-baseline justify-between hover:text-ink-soft",
+          gross ? "mb-3 border-b border-line/70 pb-2.5" : "mb-1.5")}>
+        <span className={gross ? "font-display text-base font-bold text-ink"
+          : "text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted"}>
+          Wochenziele {gross ? "" : "→"}
+        </span>
+        {ziele.length > 0 && (
+          <span className="tabular text-xs text-ink-muted">{fertig}/{ziele.length} fertig</span>
+        )}
       </Link>
       {ziele.length === 0 ? (
         <Link href="/wochenziele" className="text-sm text-accent-soft hover:underline">
           Noch keine Ziele für diese Woche — jetzt festlegen
         </Link>
       ) : (
-        <ul className="space-y-1">
+        <ul className={gross ? "space-y-2" : "space-y-1"}>
           {reihe.map((z) => (
             <li key={z.id} className="flex items-start gap-2 text-sm">
               <span className={cx("mt-[7px] h-2 w-2 shrink-0 rounded-full",
