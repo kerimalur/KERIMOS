@@ -4,7 +4,8 @@ import { ladeMakro } from "@/lib/makro/laden";
 import {
   HAND_FELDER, NUR_KONTEXT, ROHSTOFF_BEZUG, ZYKLUS_LABEL, istVeraltet,
 } from "@/lib/makro/bewertung";
-import { AUTO_FELDER } from "@/lib/makro/quellen";
+import { AUTO_FELDER } from "@/lib/makro/katalog";
+import { BrowserNachladen } from "@/components/makro/browser-nachladen";
 import { waehrungSpeichern } from "@/lib/makro-actions";
 import { EbenenKarte, ScoreBalken, urteilWort, ZustandMarke, standKurz } from "@/components/makro/teile";
 import { Card, CardTitle, Badge, Empty, Button, Input, Select, Label, cx } from "@/components/ui";
@@ -244,6 +245,7 @@ function SyncLeiste({ sync }: { sync: { gelaufen: string | null; bericht: Record
           dem <code>CRON_SECRET</code> aufrufen. Bis dahin bleiben diese Felder
           leer — von Hand eintragen geht trotzdem.
         </p>
+        <BrowserNachladen />
       </Card>
     );
   }
@@ -270,6 +272,7 @@ function SyncLeiste({ sync }: { sync: { gelaufen: string | null; bericht: Record
           ))}
         </ul>
       )}
+      <BrowserNachladen />
     </Card>
   );
 }

@@ -122,3 +122,54 @@ export async function ereignisLoeschen(fd: FormData) {
   await supabase.from("makro_ereignisse").delete().eq("id", id).eq("user_id", userId);
   neuLaden();
 }
+
+/* --------------------------------------------- Nachladen aus dem Browser */
+
+/**
+ * Reihen, die der Browser selbst bei der OECD geholt hat, speichern.
+ *
+ * Warum der Umweg: die OECD weist Anfragen aus dem Vercel-Rechenzentrum ab
+ * (HTTP 500), beantwortet dieselbe Anfrage aus Kerims Browser aber
+ * anstandslos — und erlaubt sie dort ausdrücklich (CORS). Der Browser holt
+ * also, der Server prüft und schreibt.
+ *
+ * Geprüft wird hart: nur angemeldet, nur bekannte Währung/Feld-Paare aus
+ * dem Katalog, nur Zahlen und gültige Daten, höchstens 26 Werte. Geschrieben
+ * wird nach derselben Regel wie beim Cron: die frischere Quelle gewinnt.
+ */
+export async function makroAusBrowser(reihen: {
+  ccy: string; feld: string; serie: string; werte: { datum: string; wert: number }[];
+}[]): Promise<{ gespeichert: number; bericht: Record<string, string> } | { fehler: string }> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) return { fehler: "Nicht angemeldet." };
+
+  const { makroDb, speichereReihe, berichtErgaenzen } = await import("@/lib/makro/speichern");
+  const { oecdZuordnung, OECD_SETS } = await import("@/lib/makro/katalog");
+  const db = makroDb();
+  if (!db) return { fehler: "SUPABASE_SERVICE_ROLE_KEY fehlt." };
+
+  const erlaubt = new Map(oecdZuordnung().map((z) =>
+    [`${z.ccy}|${z.feld}|${OECD_SETS[z.set].name} · ${z.land}`, true]));
+
+  const bericht: Record<string, string> = {};
+  let gespeichert = 0;
+  for (const r of reihen.slice(0, 60)) {
+    if (!erlaubt.has(`${r.ccy}|${r.feld}|${r.serie}`)) continue;
+    const werte = (r.werte ?? [])
+      .filter((w) => /^\d{4}-\d{2}-\d{2}$/.test(w.datum) && Number.isFinite(Number(w.wert)))
+      .map((w) => ({ datum: w.datum, wert: Number(w.wert) }))
+      .sort((a, b) => a.datum.localeCompare(b.datum))
+      .slice(-26);
+    if (werte.length === 0) continue;
+    const text = await speichereReihe(db, { ccy: r.ccy, feld: r.feld, serie: r.serie, werte });
+    if (!text.startsWith("behalten") && !text.startsWith("fehlt")) {
+      gespeichert++;
+      bericht[`${r.ccy}.${r.feld}`] = `${text} (im Browser geholt)`;
+    }
+  }
+
+  if (Object.keys(bericht).length > 0) await berichtErgaenzen(db, bericht);
+  neuLaden();
+  return { gespeichert, bericht };
+}

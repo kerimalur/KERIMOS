@@ -29,10 +29,8 @@ export function fredKonfiguriert(): boolean {
   return Boolean(process.env.FRED_API_KEY);
 }
 
-export interface Beobachtung {
-  datum: string;
-  wert: number;
-}
+import type { Beobachtung } from "./perioden";
+export type { Beobachtung };
 
 /**
  * Eine Serie holen. Gibt die letzten `limit` Werte zurück, aufsteigend.
