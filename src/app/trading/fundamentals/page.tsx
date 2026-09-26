@@ -4,7 +4,7 @@ import { ladeMakro } from "@/lib/makro/laden";
 import { paarIdeen, GEWICHT, EBENEN_LABEL, ZYKLUS_LABEL } from "@/lib/makro/bewertung";
 import { PAARE } from "@/lib/trading/journal";
 import { ereignisAnlegen, ereignisLoeschen } from "@/lib/makro-actions";
-import { RangTabelle, ScoreBalken, urteilWort } from "@/components/makro/teile";
+import { RangTabelle, ScoreBalken, MontyZeichen, urteilWort } from "@/components/makro/teile";
 import { Card, CardTitle, Stat, Badge, Empty, Button, Input, Label } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -18,8 +18,13 @@ export const dynamic = "force-dynamic";
  * nirgends zu sehen. Hier steht jede Zahl, aus der das Urteil entsteht.
  *
  * Aufbau nach Kerims drei Ebenen: Wirtschaft, Zentralbank, Sentiment.
- * Das ML-Quintil läuft als letzte Spalte mit — als zweite Meinung, nicht als
- * Urteil.
+ *
+ * Seit dem 26.09.2026 ist das die EINZIGE Stelle, an der Paare vorgeschlagen
+ * werden. Vorher gab es dieselbe Empfehlung noch einmal unter Confluence, aus
+ * einem anderen Modell und mit teils anderem Ergebnis — wer zwei Listen vor
+ * sich hat, entscheidet bei jedem Blick neu, welcher er glaubt. Monty steht
+ * jetzt als aufklappbare Gegenprobe darunter: es sagt nicht, was zu handeln
+ * ist, sondern nur, ob die Commercials gerade zustimmen.
  */
 export default async function FundamentalsSeite() {
   if (!tradingConfigured()) {
@@ -35,9 +40,8 @@ export default async function FundamentalsSeite() {
   }
 
   const b = await ladeMakro();
-  const quintil: Record<string, number | undefined> = Object.fromEntries(
-    b.mlRanking.map((r) => [r.ccy, r.strength_quintile]));
   const ideen = paarIdeen(b.zeilen, PAARE);
+  const montyJeCcy = Object.fromEntries(b.monty.zeilen.map((z) => [z.ccy, z]));
 
   const stark = b.zeilen[0];
   const schwach = [...b.zeilen].reverse().find((z) => z.gesamt !== null) ?? null;
@@ -87,7 +91,7 @@ export default async function FundamentalsSeite() {
             Sentiment {Math.round(GEWICHT[3] * 100)} %
           </span>
         </div>
-        <RangTabelle zeilen={b.zeilen} mlQuintil={quintil} />
+        <RangTabelle zeilen={b.zeilen} monty={montyJeCcy} />
         {ohneDaten.length > 0 && (
           <p className="mt-3 rounded-xl bg-warn-tint px-3 py-2.5 text-[11px] leading-relaxed text-ink-soft">
             Dünne Datenlage bei {ohneDaten.join(", ")} — dort fehlen die von Hand
@@ -130,6 +134,44 @@ export default async function FundamentalsSeite() {
           mittelmässigen Währungen ist das Urteil keins. Das ersetzt keine
           GVA-Linie, es sagt nur, in welche Richtung du sie suchen solltest.
         </p>
+      </Card>
+
+      <Card>
+        <details>
+          <summary className="cursor-pointer list-none">
+            <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <CardTitle className="mb-0">Gegenprobe: was sagen die Commercials?</CardTitle>
+              <span className="text-xs text-ink-muted">{b.monty.satz}</span>
+              <span className="ml-auto text-[11px] text-accent-soft">aufklappen</span>
+            </span>
+          </summary>
+
+          <div className="mt-4 space-y-3">
+            <ul className="space-y-1.5">
+              {b.monty.zeilen.map((z) => (
+                <li key={z.ccy}
+                  className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-xl bg-sand/50 px-3 py-2">
+                  <MontyZeichen stand={z.stand} />
+                  <span className="w-[42px] font-display font-bold text-ink">{z.ccy}</span>
+                  <span className="tabular text-xs text-ink-faint">Rang {z.rang}</span>
+                  <span className="text-xs text-ink-muted">{z.text}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-[11px] leading-relaxed text-ink-faint">
+              ✓ heisst: Commercials und Retail stehen gestreckt gegeneinander, und
+              zwar auf der Seite, die auch die drei Ebenen sehen. ✗ heisst, sie
+              stehen dagegen — das ist <strong className="text-ink-soft">kein Verbot</strong>,
+              sondern der Hinweis, dass die Hedger am Terminmarkt anders liegen als
+              die Fundamentaldaten. · heisst, keine Seite steht am Rand; dann sagt
+              Monty nichts, und das ist der Normalfall.{" "}
+              <Link href="/trading/confluence" className="text-accent-soft hover:underline">
+                Monty im Detail
+              </Link>{" "}
+              — Perzentilverläufe, Saisonalität und die Schwellen-Kalibrierung.
+            </p>
+          </div>
+        </details>
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">

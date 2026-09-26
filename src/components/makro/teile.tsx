@@ -1,5 +1,6 @@
 import { cx } from "@/components/ui";
 import type { EbenenBild, RangZeile, Teil } from "@/lib/makro/bewertung";
+import type { AbgleichZeile, Stand } from "@/lib/makro/monty-abgleich";
 
 /** −1 … +1 als Balken um die Mitte. Rechts gut, links schlecht. */
 export function ScoreBalken({ score, breit = 120 }: { score: number | null; breit?: number }) {
@@ -75,10 +76,26 @@ export function EbenenKarte({ e }: { e: EbenenBild }) {
   );
 }
 
+/* --------------------------------------------------------------- Monty */
+
+/** Wie die Gegenprobe in einer Zelle aussieht. */
+const STAND_ZEICHEN: Record<Stand, { zeichen: string; klasse: string; titel: string }> = {
+  einig: { zeichen: "✓", klasse: "text-good-bright", titel: "Commercials auf derselben Seite" },
+  uneinig: { zeichen: "✗", klasse: "text-bad-bright", titel: "Commercials dagegen" },
+  still: { zeichen: "·", klasse: "text-ink-faint", titel: "keine Streckung — Monty sagt nichts" },
+  offen: { zeichen: "—", klasse: "text-ink-faint", titel: "keine COT-Historie" },
+};
+
+export function MontyZeichen({ stand }: { stand: Stand }) {
+  const z = STAND_ZEICHEN[stand];
+  return <span className={cx("tabular text-sm", z.klasse)} title={z.titel}>{z.zeichen}</span>;
+}
+
 /** Die Rangliste als Tabelle — je Ebene eine Spalte, damit man sieht, woher das Urteil kommt. */
-export function RangTabelle({ zeilen, mlQuintil }: {
+export function RangTabelle({ zeilen, monty }: {
   zeilen: RangZeile[];
-  mlQuintil: Record<string, number | undefined>;
+  /** Monty je Währung. Fehlt die Angabe, entfällt die Spalte ganz. */
+  monty?: Record<string, AbgleichZeile>;
 }) {
   return (
     <div className="overflow-x-auto">
@@ -92,7 +109,7 @@ export function RangTabelle({ zeilen, mlQuintil }: {
             <th className="pb-2 pr-3 text-right font-medium">Zentralbank</th>
             <th className="pb-2 pr-3 text-right font-medium">Sentiment</th>
             <th className="pb-2 pr-3 text-right font-medium">Daten</th>
-            <th className="pb-2 text-right font-medium">ML</th>
+            {monty && <th className="pb-2 text-right font-medium">Monty</th>}
           </tr>
         </thead>
         <tbody>
@@ -117,9 +134,11 @@ export function RangTabelle({ zeilen, mlQuintil }: {
               <td className="tabular py-2 pr-3 text-right text-xs text-ink-faint">
                 {Math.round(z.abdeckung * 100)} %
               </td>
-              <td className="tabular py-2 text-right text-xs text-ink-muted">
-                {mlQuintil[z.ccy] ? `Q${mlQuintil[z.ccy]}` : "—"}
-              </td>
+              {monty && (
+                <td className="py-2 text-right">
+                  <MontyZeichen stand={monty[z.ccy]?.stand ?? "offen"} />
+                </td>
+              )}
             </tr>
           ))}
         </tbody>

@@ -80,6 +80,8 @@ export default async function WaehrungenSeite({ searchParams }: {
         ))}
       </div>
 
+      <SyncLeiste sync={b.sync} />
+
       {!zeile ? (
         <Card><Empty>Für {gewaehlt} liegt nichts vor.</Empty></Card>
       ) : (
@@ -121,6 +123,13 @@ export default async function WaehrungenSeite({ searchParams }: {
                       <Label htmlFor={`f-${f.key}`}>
                         {f.label}
                         <span className="ml-1 text-ink-faint">({f.einheit})</span>
+                        {f.auto && (
+                          <span className="ml-1.5 rounded bg-good-tint px-1 py-px text-[10px]
+                                           font-medium uppercase tracking-wide text-good-bright"
+                            title="Holt sich der FRED-Lauf selbst. Eine Eingabe hier gewinnt trotzdem.">
+                            auto
+                          </span>
+                        )}
                         {NUR_KONTEXT.includes(f.key) && (
                           <span className="ml-1 text-ink-faint">· nur Kontext</span>
                         )}
@@ -165,10 +174,13 @@ export default async function WaehrungenSeite({ searchParams }: {
                   placeholder="z.B. Fed: Senkung im Dezember zu 62 % gepreist" />
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <Button type="submit">Speichern</Button>
                 <span className="text-[11px] text-ink-faint">
                   Der bisherige Wert rutscht automatisch auf „vorher" — daraus kommt der Trendpfeil.
+                  Felder mit <span className="text-good-bright">auto</span> musst du nicht pflegen;
+                  eine Eingabe hier überschreibt den geholten Wert trotzdem, für den Fall, dass
+                  die Reihe hinterherhinkt.
                 </span>
               </div>
             </form>
@@ -179,6 +191,7 @@ export default async function WaehrungenSeite({ searchParams }: {
                 {HAND_FELDER.map((f) => (
                   <li key={f.key}>
                     <span className="text-ink-muted">{f.label}:</span> {f.quelle}
+                    {f.auto && <span className="ml-1 text-good-bright">· automatisch</span>}
                   </li>
                 ))}
               </ul>
@@ -187,5 +200,64 @@ export default async function WaehrungenSeite({ searchParams }: {
         </>
       )}
     </div>
+  );
+}
+
+/* ------------------------------------------------------------- FRED-Lauf */
+
+/**
+ * Was der automatische Lauf zuletzt gemacht hat.
+ *
+ * Steht bewusst über dem Formular und nicht darunter: die erste Frage beim
+ * Öffnen dieser Seite ist „muss ich hier überhaupt etwas eintragen?", und die
+ * Antwort hängt daran, ob der Cron durchgelaufen ist. Ohne diese Zeile sieht
+ * ein leeres Feld gleich aus, egal ob die Reihe fehlt oder der Lauf nie
+ * stattgefunden hat.
+ */
+function SyncLeiste({ sync }: { sync: { gelaufen: string | null; bericht: Record<string, string> } }) {
+  const eintraege = Object.entries(sync.bericht);
+  const fehler = eintraege.filter(([, v]) => !/^ok/i.test(v));
+
+  if (!sync.gelaufen) {
+    return (
+      <Card flat>
+        <p className="text-sm text-ink-soft">
+          Der automatische Lauf war noch nie da.
+        </p>
+        <p className="mt-1 text-[11px] leading-relaxed text-ink-faint">
+          Frühindikator, BIP, Arbeitslosenquote und 10-Jahres-Rendite holt
+          <code className="mx-1 rounded bg-sand px-1">/api/makro-sync</code>
+          von FRED. Dafür braucht Vercel die Variablen <code>FRED_API_KEY</code>
+          {" "}und <code>SUPABASE_SERVICE_ROLE_KEY</code>, und der externe Cron
+          muss die Adresse mit dem <code>CRON_SECRET</code> aufrufen. Bis dahin
+          bleiben diese vier Felder leer — von Hand eintragen geht trotzdem.
+        </p>
+      </Card>
+    );
+  }
+
+  return (
+    <Card flat>
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="text-sm text-ink-soft">
+          FRED-Lauf zuletzt {new Date(sync.gelaufen).toLocaleString("de-CH", {
+            day: "2-digit", month: "2-digit", year: "numeric",
+            hour: "2-digit", minute: "2-digit",
+          })}
+        </span>
+        <Badge tone={fehler.length === 0 ? "good" : "bad"}>
+          {fehler.length === 0
+            ? `${eintraege.length} Reihen geholt`
+            : `${fehler.length} von ${eintraege.length} Reihen fehlen`}
+        </Badge>
+      </div>
+      {fehler.length > 0 && (
+        <ul className="mt-2 grid gap-x-6 gap-y-1 text-[11px] text-ink-faint sm:grid-cols-2">
+          {fehler.map(([k, v]) => (
+            <li key={k}><span className="text-ink-muted">{k}:</span> {v}</li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }

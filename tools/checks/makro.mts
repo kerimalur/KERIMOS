@@ -6,8 +6,9 @@
 // weiss, neutral aus — und neutral ist eine Aussage, „unbekannt" ist keine.
 import type { Eingabe, Umfeld } from "../../src/lib/makro/bewertung";
 
-const { bewerteWaehrung, rangliste, paarIdeen } =
+const { bewerteWaehrung, rangliste, paarIdeen, paarUrteil } =
   await import("../../src/lib/makro/bewertung.ts");
+const { montyAbgleich } = await import("../../src/lib/makro/monty-abgleich.ts");
 
 let fails = 0;
 function check(name: string, actual: unknown, expected: unknown) {
@@ -32,16 +33,24 @@ const hand = (wert: number, vorwert: number | null = null) =>
 const ebene = (b: ReturnType<typeof bewerteWaehrung>, n: 1 | 2 | 3) =>
   b.ebenen.find((e) => e.ebene === n)!;
 
+/**
+ * Ein Teil wird über seinen Schlüssel geholt, nie über die Position.
+ * Am 26.09.2026 kam der OECD-Frühindikator an den Anfang von Ebene 1 — und
+ * zwei Tests, die `teile[0]` lasen, prüften ab da die falsche Zahl.
+ */
+const teil = (b: ReturnType<typeof bewerteWaehrung>, n: 1 | 2 | 3, key: string) =>
+  ebene(b, n).teile.find((t) => t.key === key)!;
+
 /* ------------------------------------------------------------- Ebene 1 */
 
 {
   const b = bewerteWaehrung(basis({ hand: { pmi_industrie: hand(55) } }), umfeld);
-  check("PMI 55 → +1", ebene(b, 1).teile[0].score, 1);
+  check("PMI 55 → +1", teil(b, 1, "pmi_industrie").score, 1);
   check("nur ein Teil belegt", ebene(b, 1).belegt, 1);
 }
 {
   const b = bewerteWaehrung(basis({ hand: { pmi_industrie: hand(47.5) } }), umfeld);
-  check("PMI 47.5 → −0.5", ebene(b, 1).teile[0].score, -0.5);
+  check("PMI 47.5 → −0.5", teil(b, 1, "pmi_industrie").score, -0.5);
 }
 {
   // Arbeitslosenquote: die Richtung zählt, nicht das Niveau.
@@ -125,6 +134,78 @@ const ebene = (b: ReturnType<typeof bewerteWaehrung>, n: 1 | 2 | 3) =>
     bewerteWaehrung(basis({ ccy: "EUR", leitzins: 2.0 }), umfeld),
   ]);
   check("kein Abstand, keine Idee", paarIdeen(zeilen, ["EURUSD"]).length, 0);
+}
+
+/* ------------------------------------------- Urteil zu einem einzelnen Paar */
+
+{
+  // Dieselbe Rangliste wie oben: USD stark, JPY schwach, EUR dazwischen.
+  const zeilen = rangliste([
+    bewerteWaehrung(basis({ ccy: "USD", leitzins: 4 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "JPY", leitzins: 0.1 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "EUR", leitzins: 2 }), umfeld),
+  ]);
+
+  check("USDJPY long wird bestätigt", paarUrteil(zeilen, "USDJPY", "long").urteil, "bestaetigt");
+  check("USDJPY short spricht dagegen", paarUrteil(zeilen, "USDJPY", "short").urteil, "dagegen");
+  check("Abstand ist Basis minus Quote",
+    paarUrteil(zeilen, "USDJPY", "long").abstand,
+    Number(((zeilen[0].gesamt ?? 0) - (zeilen[2].gesamt ?? 0)).toFixed(2)));
+  check("gedreht kehrt sich das Vorzeichen um",
+    paarUrteil(zeilen, "JPYUSD", "long").abstand,
+    -(paarUrteil(zeilen, "USDJPY", "long").abstand ?? 0));
+
+  // Der wichtigste Fall: unter der Schwelle ist es KEIN Gegenwind, sondern
+  // schlicht keine Aussage. „dagegen" wäre hier ein erfundener Widerspruch.
+  const eng = rangliste([
+    bewerteWaehrung(basis({ ccy: "USD", leitzins: 2.1 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "EUR", leitzins: 2.0 }), umfeld),
+  ]);
+  check("zu enger Abstand → neutral", paarUrteil(eng, "EURUSD", "long").urteil, "neutral");
+  check("und die Ebenen legen nichts nahe", paarUrteil(eng, "EURUSD", "long").ebenenSeite, "neutral");
+
+  // Eine Währung ohne jedes Datum darf nicht als „neutral" durchgehen.
+  check("unbekannte Währung → unbekannt",
+    paarUrteil(zeilen, "USDCHF", "long").urteil, "unbekannt");
+  check("und ohne Abstand", paarUrteil(zeilen, "USDCHF", "long").abstand, null);
+}
+
+/* ------------------------------------------------- Monty als Gegenprobe */
+
+{
+  const zeilen = rangliste([
+    bewerteWaehrung(basis({ ccy: "USD", leitzins: 4 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "JPY", leitzins: 0.1 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "EUR", leitzins: 2 }), umfeld),
+  ]);
+  const cot = (ccy: string, divergenz: -1 | 0 | 1, komm = 80, retail = 20) =>
+    ({ ccy, kommRang: komm, retailRang: retail, divergenz });
+
+  const a = montyAbgleich(zeilen, [
+    cot("USD", 1),            // Ebenen stark, Commercials dafür  → einig
+    cot("JPY", 1),            // Ebenen schwach, Commercials dafür → uneinig
+    cot("EUR", 0, 50, 50),    // keine Streckung                   → still
+  ]);
+  const stand = (ccy: string) => a.zeilen.find((z) => z.ccy === ccy)!.stand;
+  check("stark + Commercials dafür → einig", stand("USD"), "einig");
+  check("schwach + Commercials dafür → uneinig", stand("JPY"), "uneinig");
+  check("keine Streckung → still", stand("EUR"), "still");
+  check("gezählt wird nur, wozu Monty etwas sagt", [a.einig, a.uneinig, a.beurteilt], [1, 1, 2]);
+
+  // Fehlende Historie ist nicht dasselbe wie „neutral" — sonst sähe eine
+  // Datenlücke aus wie ein Ergebnis.
+  const b2 = montyAbgleich(zeilen, [{ ccy: "USD", kommRang: null, retailRang: null, divergenz: 0 }]);
+  check("ohne COT-Reihe → offen", b2.zeilen.find((z) => z.ccy === "USD")!.stand, "offen");
+  check("offene Zeilen zählen nicht mit", b2.beurteilt, 0);
+
+  // Eine Währung im Mittelfeld kann Monty weder stützen noch widersprechen.
+  const eng = rangliste([
+    bewerteWaehrung(basis({ ccy: "USD", leitzins: 2.05 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "EUR", leitzins: 2.0 }), umfeld),
+  ]);
+  const c = montyAbgleich(eng, [cot("USD", 1), cot("EUR", -1, 20, 80)]);
+  check("Mittelfeld → still, egal was COT sagt",
+    c.zeilen.map((z) => z.stand), ["still", "still"]);
 }
 
 console.log(fails === 0 ? "\nAlle Kontrollwerte stimmen." : `\n${fails} Abweichung(en).`);

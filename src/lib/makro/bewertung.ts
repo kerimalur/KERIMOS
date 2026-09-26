@@ -150,7 +150,7 @@ function ebeneWirtschaft(e: Eingabe): EbenenBild {
     return {
       key: feld, label, wert: h.wert, einheit: "Punkte", delta: d,
       score: h.wert === null ? null : klemme((h.wert - 50) / 5),
-      text: h.wert === null ? "Kein Wert eingetragen."
+      text: h.wert === null ? "Von Hand, wenn du ihn nachträgst — es gibt keine freie Quelle."
         : `${h.wert.toFixed(1)} — ${h.wert >= 50 ? "Expansion" : "Kontraktion"}`
           + (d === null ? "." : `, ${d >= 0 ? "+" : ""}${d.toFixed(1)} zum Vormonat.`),
     };
@@ -161,7 +161,23 @@ function ebeneWirtschaft(e: Eingabe): EbenenBild {
   const handel = hv(e, "handelsbilanz");
   const dArbeit = delta(arbeit);
 
+  const cli = hv(e, "fruehindikator");
+  const dCli = delta(cli);
+
   const teile: Teil[] = [
+    {
+      // Ersatz für den PMI: den gibt es nirgends kostenlos als Schnittstelle.
+      // Der OECD-Frühindikator misst dasselbe — dreht die Konjunktur an oder
+      // ab — und schwankt um 100. Niveau und Richtung zählen je zur Hälfte:
+      // 99.4 und steigend ist etwas anderes als 99.4 und fallend.
+      key: "fruehindikator", label: "OECD-Frühindikator", wert: cli.wert,
+      einheit: "Index", delta: dCli,
+      score: cli.wert === null ? null
+        : klemme(0.5 * klemme(cli.wert - 100) + 0.5 * klemme((dCli ?? 0) / 0.2)),
+      text: cli.wert === null ? "Kommt automatisch von FRED, sobald der Lauf durch ist."
+        : `${cli.wert.toFixed(1)} — ${cli.wert >= 100 ? "über" : "unter"} dem Trend`
+          + (dCli === null ? "." : `, ${dCli >= 0 ? "steigend" : "fallend"} (${dCli >= 0 ? "+" : ""}${dCli.toFixed(2)}).`),
+    },
     pmiTeil("pmi_industrie", "PMI Industrie"),
     pmiTeil("pmi_dienste", "PMI Dienste"),
     {
@@ -373,8 +389,19 @@ export interface PaarIdee {
  * innen. Nur Paare mit spürbarem Abstand — bei zwei Währungen, die beide
  * mittelmässig dastehen, ist das Urteil keins.
  */
+/**
+ * Ab diesem Abstand im Gesamtscore gilt „stark gegen schwach".
+ *
+ * 0.40 auf einer Skala von −1 bis +1: darunter stehen beide Währungen
+ * irgendwo in der Mitte, und ein Paar aus zwei mittelmässigen Urteilen ist
+ * kein Urteil. Dieselbe Zahl gilt für die Paar-Ideen und für die Gegenprobe
+ * am einzelnen Trade — sonst könnte die Seite ein Paar vorschlagen, das der
+ * Trade-Dialog danach „neutral" nennt.
+ */
+export const MIND_ABSTAND = 0.4;
+
 export function paarIdeen(
-  zeilen: RangZeile[], handelbar: readonly string[], mindestAbstand = 0.4,
+  zeilen: RangZeile[], handelbar: readonly string[], mindestAbstand = MIND_ABSTAND,
 ): PaarIdee[] {
   const mitUrteil = zeilen.filter((z) => z.gesamt !== null);
   const ideen: PaarIdee[] = [];
@@ -397,6 +424,97 @@ export function paarIdeen(
   return ideen.sort((a, b) => b.abstand - a.abstand).slice(0, 8);
 }
 
+/* ------------------------------------------------- Urteil zu EINEM Paar */
+
+export type PaarSeite = "long" | "short";
+
+export interface PaarUrteil {
+  paar: string;
+  basis: string;
+  quote: string;
+  basisScore: number | null;
+  quoteScore: number | null;
+  basisRang: number | null;
+  quoteRang: number | null;
+  /** Basis minus Quote. Positiv heisst: die drei Ebenen sprechen für Long. */
+  abstand: number | null;
+  /** Was die Ebenen für sich genommen nahelegen. */
+  ebenenSeite: PaarSeite | "neutral" | "unbekannt";
+  /** Wie sich das zur geplanten Seite verhält. */
+  urteil: "bestaetigt" | "dagegen" | "neutral" | "unbekannt";
+  /** Die Kurzfassung für eine Zeile: „EUR +0.42 · USD −0.18". */
+  grund: string;
+  satz: string;
+}
+
+const vz = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(2)}`;
+
+/**
+ * Sprechen die drei Ebenen für diesen Trade?
+ *
+ * Ersetzt seit dem 26.09.2026 `checkFundamental` aus dem Q-Score. Die alte
+ * Antwort war „EUR Q5 · USD Q1" — eine Quintilnummer aus einem ML-Modell, das
+ * in der Praxis fast nur die Zinslage abgebildet hat, und deren Zustandekommen
+ * man nirgends nachlesen konnte. Hier steht stattdessen dieselbe Zahl, die auf
+ * der Fundamentals-Seite in der Rangliste steht, und der Weg dorthin ist die
+ * Ebenen-Aufschlüsselung derselben Seite.
+ *
+ * `seite = null` heisst: nur die Lage beschreiben, keine Richtung prüfen.
+ */
+export function paarUrteil(
+  zeilen: RangZeile[], paar: string, seite: PaarSeite | null,
+  mindestAbstand = MIND_ABSTAND,
+): PaarUrteil {
+  const sauber = paar.replace(/[^A-Za-z]/g, "").toUpperCase();
+  const basis = sauber.slice(0, 3);
+  const quote = sauber.slice(3, 6);
+  const b = zeilen.find((z) => z.ccy === basis) ?? null;
+  const q = zeilen.find((z) => z.ccy === quote) ?? null;
+  const bs = b?.gesamt ?? null;
+  const qs = q?.gesamt ?? null;
+
+  const rumpf = {
+    paar: sauber, basis, quote,
+    basisScore: bs, quoteScore: qs,
+    basisRang: b?.rang ?? null, quoteRang: q?.rang ?? null,
+  };
+
+  if (bs === null || qs === null) {
+    const fehlt = [bs === null ? basis : null, qs === null ? quote : null]
+      .filter(Boolean).join(" und ");
+    return {
+      ...rumpf, abstand: null, ebenenSeite: "unbekannt", urteil: "unbekannt",
+      grund: `${basis} — · ${quote} —`,
+      satz: `Zu ${fehlt} liegt kein Urteil vor — ohne Daten auf mindestens einer `
+        + "Seite lässt sich das Paar nicht bewerten.",
+    };
+  }
+
+  const abstand = rund(bs - qs);
+  const ebenenSeite: PaarUrteil["ebenenSeite"] =
+    abstand >= mindestAbstand ? "long"
+      : abstand <= -mindestAbstand ? "short"
+        : "neutral";
+
+  const urteil: PaarUrteil["urteil"] =
+    ebenenSeite === "neutral" || !seite ? "neutral"
+      : ebenenSeite === seite ? "bestaetigt" : "dagegen";
+
+  const grund = `${basis} ${vz(bs)} · ${quote} ${vz(qs)}`;
+  const stark = abstand > 0 ? basis : quote;
+  const schwach = abstand > 0 ? quote : basis;
+
+  const satz = ebenenSeite === "neutral"
+    ? `Abstand ${vz(abstand)} — beide Währungen stehen zu nah beieinander. `
+      + `Erst ab ${mindestAbstand.toFixed(2)} ist das eine Aussage.`
+    : `${stark} steht fundamental über ${schwach} (Abstand ${vz(Math.abs(abstand))}). `
+      + (urteil === "bestaetigt" ? "Das spricht für diese Richtung."
+        : urteil === "dagegen" ? "Das spricht gegen diese Richtung."
+          : `Die Ebenen legen ${ebenenSeite === "long" ? "Long" : "Short"} nahe.`);
+
+  return { ...rumpf, abstand, ebenenSeite, urteil, grund, satz };
+}
+
 /* ------------------------------------------------- Feld-Beschreibungen */
 
 export interface FeldInfo {
@@ -404,30 +522,38 @@ export interface FeldInfo {
   label: string;
   einheit: string;
   hinweis: string;
-  /** Wo Kerim die Zahl herbekommt. */
+  /** Wo die Zahl herkommt. */
   quelle: string;
+  /**
+   * Kommt automatisch von FRED (/api/makro-sync). Eine Eingabe von Hand
+   * überschreibt sie trotzdem — für den Fall, dass die Reihe hinterherhinkt.
+   */
+  auto?: boolean;
 }
 
 /** Die von Hand gepflegten Felder — Reihenfolge wie im Formular. */
 export const HAND_FELDER: FeldInfo[] = [
+  { key: "fruehindikator", label: "OECD-Frühindikator", einheit: "Index", auto: true,
+    hinweis: "Ersatz für den PMI. Schwankt um 100, über 100 zieht die Konjunktur an.",
+    quelle: "FRED · OECD Composite Leading Indicator" },
   { key: "pmi_industrie", label: "PMI Industrie", einheit: "Punkte",
     hinweis: "Über 50 wächst die Industrie, darunter schrumpft sie.",
     quelle: "Trading Economics · S&P Global / ISM / procure.ch" },
   { key: "pmi_dienste", label: "PMI Dienste", einheit: "Punkte",
     hinweis: "In den USA und UK die wichtigere der beiden Zahlen.",
     quelle: "Trading Economics · S&P Global / ISM" },
-  { key: "bip_yoy", label: "BIP zum Vorjahr", einheit: "%",
+  { key: "bip_yoy", label: "BIP zum Vorjahr", einheit: "%", auto: true,
     hinweis: "Wächst die Wirtschaft überhaupt?",
-    quelle: "Trading Economics · GDP Annual Growth Rate" },
-  { key: "arbeitslos", label: "Arbeitslosenquote", einheit: "%",
+    quelle: "FRED · OECD / BEA" },
+  { key: "arbeitslos", label: "Arbeitslosenquote", einheit: "%", auto: true,
     hinweis: "Die Richtung zählt: steigt sie, senkt die Notenbank irgendwann.",
-    quelle: "Trading Economics · Unemployment Rate" },
+    quelle: "FRED · OECD harmonisiert" },
   { key: "handelsbilanz", label: "Handelsbilanz", einheit: "% BIP",
     hinweis: "Überschuss heisst laufende Nachfrage nach der Währung.",
     quelle: "Trading Economics · Current Account to GDP" },
-  { key: "rendite_10j", label: "10-Jahres-Rendite", einheit: "%",
+  { key: "rendite_10j", label: "10-Jahres-Rendite", einheit: "%", auto: true,
     hinweis: "Was der Staat langfristig zahlen muss.",
-    quelle: "Trading Economics · Government Bond 10Y" },
+    quelle: "FRED · OECD, US täglich" },
   { key: "anleihe_nachfrage", label: "Nachfrage bei Auktionen", einheit: "Bid-to-Cover",
     hinweis: "Über 2 heisst: die Auktion war deutlich überzeichnet.",
     quelle: "Schuldenagentur des Landes · Auktionsergebnis" },

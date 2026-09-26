@@ -26,5 +26,5 @@ export const config = {
   //
   // Muss ein einziges Zeichenketten-Literal sein - Next.js liest den Wert
   // statisch aus, zusammengesetzte Ausdrücke lassen den Build scheitern.
-  matcher: ["/((?!api/gva-alarm|_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  matcher: ["/((?!api/gva-alarm|api/makro-sync|_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
 };

@@ -51,22 +51,18 @@ export function BereichTabs({ reiter }: { reiter: Reiter[] }) {
 
 /* ------------------------------------------------------ Die zwei Reiter-Sätze */
 
-/**
- * Confluences: die fundamentale Lage.
+/* Am 26.09.2026 entfernt: CONFLUENCE_REITER (Ranking + Monty).
  *
- * Zwei Reiter, seit dem Umbau vom 22.08.2026. **Ranking** ist die Übersicht
- * (Q-Score je Währung, wöchentlich aus dem ML-Modell), **Monty** die Tiefe
- * (Commercials gegen Retail, Saisonalität).
+ * Das Ranking war der Q-Score — ein wöchentliches ML-Quintil, das in der
+ * Praxis fast nur die Zinslage abgebildet hat, dessen Saisonalität bei allen
+ * acht Währungen auf 0.000 stand und dessen Zinsen nirgends zu sehen waren.
+ * Was es konnte, kann Ebene 2 der Fundamentals besser und nachlesbar.
  *
- * Weg sind Terminal und Jetzt: das Fünf-Faktoren-Modell aus Zins, Realzins und
- * Risiko-Regime stand als zweites, konkurrierendes Urteil neben Monty, und
- * Kerim handelt nach Monty. Rückblick steht jetzt im Backtest, Bilanz im
- * Journal — beide sind Auswertungen eigener Trades und nicht Marktlage.
+ * Monty bleibt als eigene Seite unter /trading/confluence bestehen — nur
+ * nicht mehr in der Navigation. Der Einstieg ist jetzt die Gegenprobe auf der
+ * Fundamentals-Seite, und wer die Perzentilverläufe sehen will, klickt von
+ * dort weiter. Eine Rangliste weniger, die man gegen die andere abwägen muss.
  */
-export const CONFLUENCE_REITER: Reiter[] = [
-  { href: "/trading/ranking", label: "Ranking" },
-  { href: "/trading/confluence", label: "Monty" },
-];
 
 /**
  * Backtest: eintragen und auswerten.

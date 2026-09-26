@@ -1,13 +1,15 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
-import { G8, fetchRanking, type RankingCurrency } from "@/lib/supabase/trading";
+import { G8 } from "@/lib/supabase/trading";
 import { ladeFuerStichtag } from "@/lib/confluence/daten";
+import { cotBildFuer } from "@/lib/confluence/cot-divergenz";
 import { werteFuer, baueRegime, type RegimeLage } from "@/lib/confluence/faktoren";
 import { heuteISO } from "@/lib/time";
 import {
   bewerteWaehrung, rangliste,
   type Eingabe, type HandWert, type RangZeile, type Umfeld, type Zyklus,
 } from "@/lib/makro/bewertung";
+import { montyAbgleich, type Abgleich, type CotStand } from "@/lib/makro/monty-abgleich";
 
 /**
  * Lädt die fundamentale Lage zusammen — aus zwei Datenbanken.
@@ -22,6 +24,8 @@ import {
 
 export interface MakroBild {
   stichtag: string;
+  /** Wann der FRED-Lauf zuletzt durch war, und was er gemeldet hat. */
+  sync: { gelaufen: string | null; bericht: Record<string, string> };
   zeilen: RangZeile[];
   umfeld: Umfeld;
   regime: RegimeLage;
@@ -31,8 +35,15 @@ export interface MakroBild {
   /** Rohwerte der Handeingaben, für das Formular. */
   hand: Record<string, Partial<Record<string, HandWert>>>;
   ereignisse: Ereignis[];
-  /** Das ML-Ranking daneben — zum Vergleich, nicht als Urteil. */
-  mlRanking: RankingCurrency[];
+  /**
+   * Monty als Gegenprobe: stimmen die Commercials mit der Rangliste überein?
+   *
+   * Kein zweites Ranking mehr. Am 26.09.2026 ist der Q-Score ersatzlos
+   * entfallen und Monty von einer eigenen Seite zu dieser einen Spalte
+   * geworden — zwei Ranglisten, die dasselbe Paar unterschiedlich bewerten,
+   * kosten bei jedem Blick eine Entscheidung und liefern keine.
+   */
+  monty: Abgleich;
 }
 
 export interface Ereignis {
@@ -52,17 +63,48 @@ export async function ladeMakro(): Promise<MakroBild> {
   const stichtag = heuteISO();
   const supabase = await createClient();
 
-  const [markt, werteRes, lageRes, ereignisRes, mlRanking] = await Promise.all([
+  const [markt, werteRes, reihenRes, syncRes, lageRes, ereignisRes] = await Promise.all([
     ladeFuerStichtag(stichtag).catch(() => null),
     supabase.from("makro_werte").select("ccy, feld, wert, vorwert, stand, quelle"),
+    // Automatisch geholte Reihen: die letzten zwei Werte je Feld reichen —
+    // der jüngste ist der Stand, der davor macht den Trendpfeil.
+    supabase.from("makro_reihen").select("ccy, feld, datum, wert, serie")
+      .order("datum", { ascending: false }).limit(2000),
+    supabase.from("makro_sync").select("gelaufen, bericht").eq("id", 1).maybeSingle(),
     supabase.from("makro_lage").select("ccy, zyklus, notiz"),
     supabase.from("makro_ereignisse")
       .select("id, titel, datum, bis, profitiert, leidet, notiz")
       .order("datum", { ascending: false }).limit(20),
-    fetchRanking().catch(() => []),
   ]);
 
   const hand: Record<string, Partial<Record<string, HandWert>>> = {};
+
+  /*
+   * Zuerst die automatischen Reihen, danach die Handeingaben — so gewinnt
+   * eine Zahl, die Kerim selbst eingetragen hat, immer. Das ist Absicht: die
+   * OECD-Reihen hinken zwei bis sechs Wochen hinterher, und wer den frischen
+   * Wert kennt, soll ihn setzen können, ohne dass der Cron ihn überschreibt.
+   */
+  const jeSerie = new Map<string, { datum: string; wert: number; serie: string }[]>();
+  for (const r of (reihenRes.data ?? []) as Record<string, unknown>[]) {
+    const schluessel = `${r.ccy}|${r.feld}`;
+    const liste = jeSerie.get(schluessel) ?? [];
+    if (liste.length < 2) {
+      liste.push({ datum: String(r.datum), wert: Number(r.wert), serie: String(r.serie) });
+      jeSerie.set(schluessel, liste);
+    }
+  }
+  for (const [schluessel, werte] of jeSerie) {
+    const [ccy, feld] = schluessel.split("|");
+    hand[ccy] = hand[ccy] ?? {};
+    hand[ccy][feld] = {
+      wert: werte[0]?.wert ?? null,
+      vorwert: werte[1]?.wert ?? null,
+      stand: werte[0]?.datum ?? null,
+      quelle: werte[0] ? `FRED · ${werte[0].serie}` : null,
+    };
+  }
+
   for (const r of (werteRes.data ?? []) as Record<string, unknown>[]) {
     const ccy = String(r.ccy);
     hand[ccy] = hand[ccy] ?? {};
@@ -132,10 +174,27 @@ export async function ladeMakro(): Promise<MakroBild> {
     };
   });
 
+  const sync = syncRes.data as { gelaufen: string | null; bericht: unknown } | null;
+
+  const zeilen = rangliste(eingaben.map((e) => bewerteWaehrung(e, umfeld)));
+
+  // Monty kommt aus denselben COT-Reihen wie Ebene 3 — kein zweiter Ladeweg,
+  // der irgendwann von der Ebene abweichen könnte.
+  const cotStaende: CotStand[] = G8.map((ccy) => {
+    if (!markt) return { ccy, kommRang: null, retailRang: null, divergenz: 0 as const };
+    const b = cotBildFuer(markt.daten, ccy, stichtag);
+    return { ccy, kommRang: b.kommRang, retailRang: b.retailRang, divergenz: b.divergenz };
+  });
+
   return {
     stichtag,
-    zeilen: rangliste(eingaben.map((e) => bewerteWaehrung(e, umfeld))),
+    sync: {
+      gelaufen: sync?.gelaufen ?? null,
+      bericht: (sync?.bericht && typeof sync.bericht === "object"
+        ? sync.bericht as Record<string, string> : {}),
+    },
+    zeilen,
     umfeld, regime, notizen, zyklen, hand, ereignisse,
-    mlRanking,
+    monty: montyAbgleich(zeilen, cotStaende),
   };
 }

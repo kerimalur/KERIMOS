@@ -60,7 +60,10 @@ function TradeZeile({ t, verlauf, konfluenzen, offen, bildfehler }: {
   const r = signiertesR(t);
   const setups = SETUPS.filter((s) => t.setups[s.key]);
   const rechnung = rechnungFuer(verlauf, t.id);
-  const lage = t.fundamentalSnapshot?.ranking.urteil;
+  // Neue Snapshots tragen `fundamental` (drei Ebenen), ältere `ranking`
+  // (Q-Score). Beide kennen dieselben vier Urteile, deshalb reicht hier eins.
+  const s0 = t.fundamentalSnapshot;
+  const lage = s0?.fundamental?.urteil ?? s0?.ranking?.urteil;
   const learning = t.antworten[LEARNING_KEY];
 
   return (

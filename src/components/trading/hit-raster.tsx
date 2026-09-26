@@ -303,15 +303,16 @@ function HitDialog({
             <div className="rounded-2xl border border-line/60 p-3"><Hinweis>{lageFehler}</Hinweis></div>
           ) : !lage ? (
             <div className="rounded-2xl border border-line/60 p-3">
-              <Hinweis>Ranking, COT und Saisonalität werden geholt …</Hinweis>
+              <Hinweis>Fundamentals, COT und Saisonalität werden geholt …</Hinweis>
             </div>
           ) : (
             <div className="space-y-2">
-              <Zeile titel="Ranking" ton={tonVon(lage.ranking.urteil)}
-                wert={lage.ranking.baseQ === null ? "—"
-                  : `${lage.ranking.baseCode} Q${lage.ranking.baseQ} · `
-                    + `${lage.ranking.quoteCode} Q${lage.ranking.quoteQ}`}
-                satz={lage.rankingSatz} />
+              <Zeile titel="Drei Ebenen"
+                ton={lage.fundamentalFehler ? "neutral" : tonVon(lage.fundamental.urteil)}
+                wert={lage.fundamental.abstand === null ? "—" : lage.fundamental.grund}
+                satz={lage.fundamentalFehler ?? lage.fundamental.satz}
+                warnung={!!lage.fundamentalFehler}
+                fuss="Wirtschaft · Zentralbank · Sentiment — dieselbe Rechnung wie auf Fundamentals" />
 
               <Zeile titel="Commercials / Retail"
                 ton={lage.cotFehler ? "neutral" : tonAusSatz(lage.cotSatz)}

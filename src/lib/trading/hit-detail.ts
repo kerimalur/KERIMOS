@@ -1,6 +1,8 @@
 import "server-only";
 import { heuteISO } from "@/lib/time";
-import { checkFundamental, fetchRanking, type FundamentalCheck } from "@/lib/supabase/trading";
+import type { FundamentalCheck } from "@/lib/supabase/trading";
+import { ladeMakro } from "@/lib/makro/laden";
+import { paarUrteil, type PaarUrteil } from "@/lib/makro/bewertung";
 import { ladeFuerStichtag, ladeKurse } from "@/lib/confluence/daten";
 import { cotBildFuer, type CotBild } from "@/lib/confluence/cot-divergenz";
 import { saisonZum, MONATS_KURZ, type MonatsBild } from "@/lib/confluence/saison";
@@ -11,8 +13,8 @@ import { holeTageskerzen, zu3D, zuWoche, erkenneZeitrahmen, type Kerze, type Zei
  * Was im Cockpit-Popup zu einem GVA-Hit steht.
  *
  * **Zwei Teile, zwei Aufrufe.** Der Chart braucht Kerzen von OANDA (über das
- * Screener-Backend auf Render), die Lage braucht COT, Kurse und das Ranking
- * aus Supabase. Beides in einem Aufruf hiess: das Popup zeigt nichts, bis das
+ * Screener-Backend auf Render), die Lage braucht COT, Kurse und die drei
+ * Fundamental-Ebenen aus Supabase. Beides in einem Aufruf hiess: das Popup zeigt nichts, bis das
  * Langsamste fertig ist — und wenn eine der beiden Quellen zickt, bleibt auch
  * die andere leer. Getrennt erscheint jeder Teil, sobald er da ist.
  *
@@ -55,9 +57,24 @@ export interface CotSeite {
 export interface HitLage {
   paar: string;
   seite: "long" | "short";
-  /** Das allgemeine Ranking — dieselbe Quelle wie im Cockpit-Raster. */
-  ranking: FundamentalCheck;
-  rankingSatz: string;
+  /**
+   * Die drei Ebenen zu diesem Paar — dieselbe Rechnung wie auf Fundamentals.
+   *
+   * Ersetzt seit dem 26.09.2026 den Q-Score. Der stand hier als „EUR Q5 ·
+   * USD Q1" und war nirgends aufzuschlüsseln; jetzt steht dieselbe Zahl da,
+   * die auch in der Rangliste steht, und der Weg dahin ist auf der
+   * Fundamentals-Seite Zeile für Zeile nachlesbar.
+   */
+  fundamental: PaarUrteil;
+  fundamentalFehler: string | null;
+  /**
+   * Der alte Q-Score-Block. Nur noch für Snapshots aus der Zeit davor: die
+   * liegen als JSON in `trades.fundamental_snapshot` und sollen weiter
+   * lesbar bleiben, statt nach dem Umbau leer auszusehen. Neu geschrieben
+   * wird das Feld nicht mehr.
+   */
+  ranking?: FundamentalCheck;
+  rankingSatz?: string;
   /** Monty: Commercials gegen Retail, je Währung des Paares. */
   cotBasis: CotSeite | null;
   cotKurs: CotSeite | null;
@@ -134,14 +151,6 @@ export async function baueHitChart(
 
 /* --------------------------------------------------------------- Sätze */
 
-function rankingText(f: FundamentalCheck): string {
-  if (f.urteil === "unbekannt") return "Für dieses Paar liegt kein Wochen-Ranking vor.";
-  const q = `${f.baseCode} Q${f.baseQ} · ${f.quoteCode} Q${f.quoteQ}`;
-  if (f.urteil === "bestaetigt") return `Rückenwind — das Ranking zeigt in dieselbe Richtung (${q}).`;
-  if (f.urteil === "dagegen") return `Gegenwind — das Ranking zeigt in die andere Richtung (${q}).`;
-  return `Ohne Aussage: keine der beiden Währungen steht im Extrem (${q}).`;
-}
-
 /**
  * Monty in einem Satz. `divergenz` ist +1, wenn Commercials gestreckt long und
  * Retail gestreckt short stehen — also die Konstellation, auf die Kerim wartet.
@@ -191,14 +200,19 @@ export async function baueHitLage(
 
   // `allSettled` statt `all`: eine hängende COT-Abfrage darf das Ranking nicht
   // mitreissen. Jeder Teil scheitert für sich und sagt, warum.
-  const [rankingE, cotE, kurseE] = await Promise.allSettled([
-    fetchRanking(),
+  const [makroE, cotE, kurseE] = await Promise.allSettled([
+    ladeMakro(),
     ladeFuerStichtag(heute),
     ladeKurse(sauber),
   ]);
 
-  const ranking = rankingE.status === "fulfilled" ? rankingE.value : [];
-  const check = checkFundamental(sauber, seite === "long" ? "LONG" : "SHORT", ranking);
+  const fundamental = makroE.status === "fulfilled"
+    ? paarUrteil(makroE.value.zeilen, sauber, seite)
+    : paarUrteil([], sauber, seite);
+  const fundamentalFehler = makroE.status === "rejected"
+    ? "Die fundamentale Lage konnte nicht geladen werden."
+    : null;
+  if (makroE.status === "rejected") console.error("hit-lage Makro:", makroE.reason);
 
   let cotBasis: CotSeite | null = null;
   let cotKurs: CotSeite | null = null;
@@ -226,10 +240,7 @@ export async function baueHitLage(
 
   return {
     paar: sauber, seite, stichtag: heute,
-    ranking: check,
-    rankingSatz: rankingE.status === "fulfilled"
-      ? rankingText(check)
-      : "Ranking konnte nicht geladen werden.",
+    fundamental, fundamentalFehler,
     cotBasis, cotKurs, cotFehler,
     cotSatz: cotText(cotBasis, cotKurs, seite),
     saison, saisonFehler,

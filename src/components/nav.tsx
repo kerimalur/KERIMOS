@@ -27,9 +27,9 @@ type Section = "analyse" | "journal" | null;
  * Ein Eintrag der Hauptnavigation.
  *
  * `auch` gibt es, seit ein Bereich aus zwei getrennten Adressen besteht:
- * Confluence führt auf /trading/ranking (die Übersicht), enthält aber auch
- * /trading/confluence (Monty). Ohne die Liste leuchtet auf Monty gar kein
- * Punkt, und man weiss beim Blick nach oben nicht mehr, wo man ist.
+ * „Alarme" führt auf /trading/einstellungen, deckt aber auch /trading/alarme
+ * ab. Ohne die Liste leuchtet dort gar kein Punkt, und man weiss beim Blick
+ * nach oben nicht mehr, wo man ist.
  */
 interface NavLink {
   href: string;
@@ -50,7 +50,6 @@ const ANALYSE: NavConfig = {
     { href: "/trading/cockpit", label: "Cockpit" },
     { href: "/trading/fundamentals", label: "Fundamentals" },
     { href: "/trading/waehrungen", label: "Währungen" },
-    { href: "/trading/ranking", label: "Confluence", auch: ["/trading/confluence"] },
     { href: "/trading/einstellungen", label: "Alarme", auch: ["/trading/alarme"] },
   ],
   secondary: [],
