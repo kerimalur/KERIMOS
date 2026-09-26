@@ -135,7 +135,7 @@ export async function ereignisLoeschen(fd: FormData) {
  * prüft und schreibt.
  *
  * Geprüft wird hart: nur angemeldet, nur bekannte Währung/Feld-Paare aus
- * dem Katalog, nur Zahlen und gültige Daten, höchstens 26 Werte. Geschrieben
+ * dem Katalog, nur Zahlen und gültige Daten, höchstens 60 Werte. Geschrieben
  * wird nach derselben Regel wie beim Cron: die frischere Quelle gewinnt.
  */
 export async function makroAusBrowser(reihen: {
@@ -160,7 +160,7 @@ export async function makroAusBrowser(reihen: {
       .filter((w) => /^\d{4}-\d{2}-\d{2}$/.test(w.datum) && Number.isFinite(Number(w.wert)))
       .map((w) => ({ datum: w.datum, wert: Number(w.wert) }))
       .sort((a, b) => a.datum.localeCompare(b.datum))
-      .slice(-26);
+      .slice(-60);
     if (werte.length === 0) continue;
     const text = await speichereReihe(db, { ccy: r.ccy, feld: r.feld, serie: r.serie, werte });
     if (!text.startsWith("behalten") && !text.startsWith("fehlt")) {

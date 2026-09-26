@@ -68,8 +68,9 @@ export async function ladeMakro(): Promise<MakroBild> {
     supabase.from("makro_werte").select("ccy, feld, wert, vorwert, stand, quelle"),
     // Automatisch geholte Reihen: die letzten zwei Werte je Feld reichen —
     // der jüngste ist der Stand, der davor macht den Trendpfeil.
-    supabase.from("makro_reihen").select("ccy, feld, datum, wert, serie")
-      .order("datum", { ascending: false }).limit(2000),
+    // Die View liefert je Reihe nur die jüngsten zwei Werte (Migration 30).
+    supabase.from("makro_reihen_stand").select("ccy, feld, datum, wert, serie")
+      .order("datum", { ascending: false }),
     supabase.from("makro_sync").select("gelaufen, bericht").eq("id", 1).maybeSingle(),
     supabase.from("makro_lage").select("ccy, zyklus, notiz"),
     supabase.from("makro_ereignisse")

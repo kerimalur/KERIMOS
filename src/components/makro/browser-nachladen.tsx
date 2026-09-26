@@ -27,7 +27,7 @@ export function BrowserNachladen() {
     setLaeuft(true);
     setText("Hole OECD- und Weltbank-Daten im Browser …");
     try {
-      const abJahr = new Date().getUTCFullYear() - 3;
+      const abJahr = new Date().getUTCFullYear() - 5;
       const sets = [...new Set(oecdZuordnung().map((z) => z.set))] as OecdSet[];
       const daten = new Map<OecdSet, Map<string, { datum: string; wert: number }[]>>();
       const fehler: string[] = [];
@@ -51,7 +51,7 @@ export function BrowserNachladen() {
           const laender = [...new Set(weltbankZuordnung().filter((z) => z.indikator === ind).map((z) => z.land))];
           const bis = new Date().getUTCFullYear();
           const r = await fetch(`https://api.worldbank.org/v2/country/${laender.join(";")}/indicator/${ind}`
-            + `?format=json&per_page=500&date=${bis - 8}:${bis}`);
+            + `?format=json&per_page=500&date=${bis - 10}:${bis}`);
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           const j = await r.json() as [unknown, { countryiso3code: string; date: string; value: number | null }[] | null];
           const je = new Map<string, { datum: string; wert: number }[]>();

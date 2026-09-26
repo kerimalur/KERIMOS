@@ -98,7 +98,7 @@ export function pmiAusKalender(termine: KalenderTermin[]): PmiReihe[] {
         const werte = [...jeMonat.entries()]
           .map(([datum, wert]) => ({ datum, wert }))
           .sort((a, b) => a.datum.localeCompare(b.datum))
-          .slice(-26);
+          .slice(-60);
 
         out.push({ ccy, feld, serie: `Forex Factory · ${m.name} · ${ccy}`, werte });
         break;

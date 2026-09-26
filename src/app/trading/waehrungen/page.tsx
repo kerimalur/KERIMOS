@@ -65,7 +65,7 @@ export default async function WaehrungenSeite({ searchParams }: {
           wo man hinwechselt. */}
       <div className="flex flex-wrap gap-1.5">
         {b.zeilen.map((z) => (
-          <Link key={z.ccy} href={`/trading/waehrungen?w=${z.ccy}`}
+          <Link key={z.ccy} href={`/trading/waehrungen/${z.ccy}`}
             className={cx("rounded-xl px-3 py-1.5 text-sm transition duration-150 ease-tactile",
               z.ccy === gewaehlt
                 ? "bg-accent font-medium text-ink-on shadow-glow-accent"
@@ -96,6 +96,8 @@ export default async function WaehrungenSeite({ searchParams }: {
                 {urteilWort(zeile.gesamt)}
               </Badge>
               {zyklus && <Badge tone="accent">{ZYKLUS_LABEL[zyklus as keyof typeof ZYKLUS_LABEL]}</Badge>}
+              <Link href={`/trading/waehrungen/${gewaehlt}`}
+                className="text-xs text-accent-soft hover:underline">Verlauf ansehen →</Link>
               <span className="ml-auto"><ScoreBalken score={zeile.gesamt} breit={160} /></span>
             </div>
             <p className="mt-3 text-sm text-ink-soft">{ROHSTOFF_BEZUG[gewaehlt]}</p>

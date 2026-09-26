@@ -22,10 +22,10 @@ export function periodeZuDatum(p: string): string | null {
   return m ? m[1] : null;
 }
 
-/** Aufsteigend nach Datum, nur echte Zahlen, höchstens die letzten 26. */
+/** Aufsteigend nach Datum, nur echte Zahlen, höchstens die letzten 60 (fünf Jahre monatlich). */
 export function sortiert(w: Beobachtung[]): Beobachtung[] {
   return w.filter((x) => Number.isFinite(x.wert))
-    .sort((a, b) => a.datum.localeCompare(b.datum)).slice(-26);
+    .sort((a, b) => a.datum.localeCompare(b.datum)).slice(-60);
 }
 
 /**

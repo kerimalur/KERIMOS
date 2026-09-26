@@ -39,7 +39,7 @@ export type { Beobachtung };
  * einer Reihe zu landen, in der 0 etwas völlig anderes hiesse.
  */
 export async function holeSerie(
-  kandidat: string, limit = 26,
+  kandidat: string, limit = 60,
 ): Promise<{ werte: Beobachtung[]; fehler: string | null }> {
   const [id, units] = kandidat.split("@");
   const key = process.env.FRED_API_KEY;

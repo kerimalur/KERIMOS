@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { cx } from "@/components/ui";
 import { manuellerLink } from "@/lib/makro/links";
 import type { EbenenBild, RangZeile, Teil } from "@/lib/makro/bewertung";
@@ -166,7 +167,10 @@ export function RangTabelle({ zeilen, monty }: {
           {zeilen.map((z) => (
             <tr key={z.ccy} className="border-t border-line/70">
               <td className="py-2 pr-3 text-xs text-ink-faint">{z.rang}</td>
-              <td className="py-2 pr-3 font-display font-bold text-ink">{z.ccy}</td>
+              <td className="py-2 pr-3 font-display font-bold text-ink">
+                <Link href={`/trading/waehrungen/${z.ccy}`} className="hover:text-accent-soft hover:underline"
+                  title={`Verlauf ${z.ccy}`}>{z.ccy}</Link>
+              </td>
               <td className="py-2 pr-3">
                 <span className="flex flex-wrap items-center gap-2">
                   <ScoreBalken score={z.gesamt} />
