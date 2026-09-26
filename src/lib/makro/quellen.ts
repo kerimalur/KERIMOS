@@ -2,6 +2,8 @@ import "server-only";
 import { holeSerie } from "./fred";
 import { type Beobachtung, periodeZuDatum, sortiert, parseOecdCsv } from "./perioden";
 import { QUELLEN, quellenName, oecdUrl, type OecdSet, type Quelle } from "./katalog";
+import { pmiAusKalender, PMI_MUSTER, type KalenderTermin } from "./pmi";
+import { createTradingClient } from "@/lib/supabase/trading";
 
 /**
  * Der Server-Lauf: holt jeden Kandidaten aus dem Katalog (lib/makro/katalog.ts)
@@ -110,6 +112,61 @@ export interface FeldErgebnis {
   fehler: string | null;
 }
 
+/* ---------------------------------------------------------------- PMI */
+
+/**
+ * PMI aus dem Forex-Factory-Kalender (siehe lib/makro/pmi.ts): die ganze
+ * Historie aus `calendar_events` der Trading-DB, die der Screener täglich
+ * füllt, plus der aktuelle Kalender direkt — falls der Screener-Lauf hängt.
+ */
+async function holePmi(): Promise<FeldErgebnis[]> {
+  const termine: KalenderTermin[] = [];
+  const fehler: string[] = [];
+
+  const trading = createTradingClient();
+  if (trading) {
+    const ab = new Date(Date.now() - 800 * 86_400_000).toISOString();
+    const { data, error } = await trading.from("calendar_events")
+      .select("title, currency, event_time, previous")
+      .gte("event_time", ab)
+      .or("title.ilike.%PMI%,title.ilike.%Business NZ%")
+      .limit(5000);
+    if (error) fehler.push(`Trading-DB: ${error.message}`);
+    termine.push(...((data ?? []) as KalenderTermin[]));
+  } else {
+    fehler.push("Trading-DB nicht verbunden");
+  }
+
+  for (const woche of ["thisweek", "nextweek"]) {
+    try {
+      const roh = JSON.parse(await holeText(
+        `https://nfs.faireconomy.media/ff_calendar_${woche}.json`, 10000)) as
+        { title: string; country: string; date: string; previous: string }[];
+      termine.push(...roh.map((r) => ({
+        title: r.title, currency: r.country, event_time: new Date(r.date).toISOString(), previous: r.previous,
+      })));
+    } catch (e) {
+      fehler.push(`Forex Factory ${woche}: ${e instanceof Error ? e.message : "?"}`);
+    }
+  }
+
+  const reihen = pmiAusKalender(termine);
+  const ergebnisse: FeldErgebnis[] = reihen.map((r) => ({
+    ccy: r.ccy, feld: r.feld, serie: r.serie, werte: r.werte, fehler: null,
+  }));
+  for (const [ccy, felder] of Object.entries(PMI_MUSTER)) {
+    for (const feld of Object.keys(felder)) {
+      if (!reihen.some((r) => r.ccy === ccy && r.feld === feld)) {
+        ergebnisse.push({
+          ccy, feld, serie: null, werte: [],
+          fehler: `kein PMI-Termin im Kalender${fehler.length ? ` (${fehler.join(" · ")})` : ""}`,
+        });
+      }
+    }
+  }
+  return ergebnisse;
+}
+
 export async function holeAlles(): Promise<FeldErgebnis[]> {
   const oecd = oecdLader();
   const imf = imfLader();
@@ -151,5 +208,6 @@ export async function holeAlles(): Promise<FeldErgebnis[]> {
       return { ccy, feld, serie: quellenName(beste.q), werte: beste.werte, fehler: null };
     }));
 
-  return Promise.all(auftraege);
+  const [rest, pmi] = await Promise.all([Promise.all(auftraege), holePmi()]);
+  return [...rest, ...pmi];
 }

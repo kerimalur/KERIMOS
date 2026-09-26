@@ -149,7 +149,11 @@ for (const [ccy, land] of Object.entries(LAND3)) {
 }
 
 /** Felder, die ein Lauf automatisch füllen kann (für die Seite). */
-export const AUTO_FELDER = [...new Set(Object.values(QUELLEN).flatMap((f) => Object.keys(f)))];
+export const AUTO_FELDER = [
+  ...new Set(Object.values(QUELLEN).flatMap((f) => Object.keys(f))),
+  // PMI kommen aus dem Forex-Factory-Kalender (lib/makro/pmi.ts).
+  "pmi_industrie", "pmi_dienste",
+];
 
 export function quellenName(q: Quelle): string {
   switch (q.typ) {

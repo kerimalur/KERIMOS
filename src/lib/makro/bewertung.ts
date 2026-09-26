@@ -158,7 +158,7 @@ function ebeneWirtschaft(e: Eingabe): EbenenBild {
     return {
       key: feld, label, wert: h.wert, einheit: "Punkte", delta: d,
       score: h.wert === null ? null : klemme((h.wert - 50) / 5),
-      text: h.wert === null ? "Von Hand, wenn du ihn nachträgst — es gibt keine freie Quelle."
+      text: h.wert === null ? "Kein Wert im Kalender — von Hand nachtragen."
         : `${h.wert.toFixed(1)} — ${h.wert >= 50 ? "Expansion" : "Kontraktion"}`
           + (d === null ? "." : `, ${d >= 0 ? "+" : ""}${d.toFixed(1)} zum Vormonat.`),
     };
@@ -605,10 +605,10 @@ export const HAND_FELDER: FeldInfo[] = [
     quelle: "OECD (CLI), für CHF/NZD nicht mehr veröffentlicht" },
   { key: "pmi_industrie", label: "PMI Industrie", einheit: "Punkte",
     hinweis: "Über 50 wächst die Industrie, darunter schrumpft sie.",
-    quelle: "Trading Economics · S&P Global / ISM / procure.ch" },
+    quelle: "Forex Factory (S&P Global / HCOB / ISM / procure.ch), monatlich" },
   { key: "pmi_dienste", label: "PMI Dienste", einheit: "Punkte",
     hinweis: "In den USA und UK die wichtigere der beiden Zahlen.",
-    quelle: "Trading Economics · S&P Global / ISM" },
+    quelle: "Forex Factory (S&P Global / HCOB / ISM), monatlich" },
   { key: "bip_yoy", label: "BIP zum Vorjahr", einheit: "%", auto: true,
     hinweis: "Wächst die Wirtschaft überhaupt?",
     quelle: "OECD / Eurostat / BEA, quartalsweise" },

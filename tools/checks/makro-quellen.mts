@@ -45,5 +45,24 @@ check("jedes Feld hat einen Link", ["USD","EUR","GBP","JPY","AUD","NZD","CAD","C
   ["fruehindikator","pmi_industrie","pmi_dienste","bip_yoy","arbeitslos","handelsbilanz",
    "rendite_10j","anleihe_nachfrage","staatsschulden"].every((f) => manuellerLink(c, f))), true);
 
+const { pmiAusKalender, vormonat, zahlAus } = await import("../../src/lib/makro/pmi.ts");
+check("Vormonat Sept → Aug", vormonat("2026-09-23T08:00:00Z"), "2026-08-01");
+check("Vormonat Jan → Dez Vorjahr", vormonat("2026-01-05T08:00:00Z"), "2025-12-01");
+check("Zahl", [zahlAus("52.8"), zahlAus(""), zahlAus(null)], [52.8, null, null]);
+const termine = [
+  { title: "Final Manufacturing PMI", currency: "EUR", event_time: "2026-09-01T08:00:00Z", previous: "52.5" },
+  { title: "Flash Manufacturing PMI", currency: "EUR", event_time: "2026-09-23T08:00:00Z", previous: "52.8" },
+  { title: "French Flash Manufacturing PMI", currency: "EUR", event_time: "2026-09-23T07:15:00Z", previous: "51.5" },
+  { title: "Final Manufacturing PMI", currency: "EUR", event_time: "2026-10-01T08:00:00Z", previous: "52.3" },
+  { title: "Flash Manufacturing PMI", currency: "USD", event_time: "2026-09-23T13:45:00Z", previous: "53.2" },
+  { title: "ISM Manufacturing PMI", currency: "USD", event_time: "2026-10-01T14:00:00Z", previous: "49.6" },
+];
+const r = pmiAusKalender(termine);
+const eur = r.find((x) => x.ccy === "EUR" && x.feld === "pmi_industrie");
+check("EUR: pro Monat der spätere Termin, Frankreich ignoriert", eur?.werte,
+  [{ datum: "2026-08-01", wert: 52.8 }, { datum: "2026-09-01", wert: 52.3 }]);
+check("USD nimmt ISM, nicht S&P", r.find((x) => x.ccy === "USD" && x.feld === "pmi_industrie")?.serie,
+  "Forex Factory · ISM Manufacturing PMI · USD");
+
 if (fails > 0) { console.log(`\n${fails} Fehler`); process.exit(1); }
 console.log("\nalles OK");
