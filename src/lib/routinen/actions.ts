@@ -75,6 +75,8 @@ export async function handlungAnlegen(zielId: string, titel: string): Promise<st
 
 export async function handlungAendern(id: string, felder: {
   titel?: string; tage?: number[]; uhrzeit?: string | null;
+  /** Zahl = x-mal pro Woche, null = zurück auf feste Tage. */
+  proWoche?: number | null;
 }): Promise<string | null> {
   const supabase = await zugang();
   const patch: Record<string, unknown> = {};
@@ -84,6 +86,10 @@ export async function handlungAendern(id: string, felder: {
     patch.titel = t;
   }
   if (felder.tage !== undefined) patch.tage = tageSauber(felder.tage);
+  if (felder.proWoche !== undefined) {
+    patch.pro_woche = felder.proWoche === null ? null
+      : Math.min(14, Math.max(1, Math.round(Number(felder.proWoche)) || 1));
+  }
   if (felder.uhrzeit !== undefined) {
     patch.uhrzeit = zeitSauber(felder.uhrzeit);
     // Neue Zeit heisst: heute darf nochmal erinnert werden.
@@ -97,6 +103,22 @@ export async function handlungAendern(id: string, felder: {
 export async function handlungLoeschen(id: string): Promise<string | null> {
   const supabase = await zugang();
   const { error } = await supabase.from("routine_handlungen").delete().eq("id", id);
+  neuLaden();
+  return error ? error.message : null;
+}
+
+/**
+ * Heute (oder an einem anderen Tag dieser Woche) erledigt — umschalten.
+ * Ein zweiter Tipp nimmt den Haken wieder weg.
+ */
+export async function erledigtUmschalten(handlungId: string, datum: string): Promise<string | null> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(datum)) return "Ungültiges Datum.";
+  const supabase = await zugang();
+  const { data } = await supabase.from("routine_erledigt").select("id")
+    .eq("handlung_id", handlungId).eq("datum", datum).maybeSingle();
+  const { error } = data
+    ? await supabase.from("routine_erledigt").delete().eq("id", (data as { id: string }).id)
+    : await supabase.from("routine_erledigt").insert({ handlung_id: handlungId, datum });
   neuLaden();
   return error ? error.message : null;
 }

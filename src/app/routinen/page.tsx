@@ -2,7 +2,8 @@ import { SeitenKopf } from "@/components/seiten-kopf";
 import { RoutinenListe } from "@/components/routinen/liste";
 import { RoutinenHeute } from "@/components/routinen/heute";
 import { ladeRoutinen } from "@/lib/routinen/laden";
-import { heuteWochentag } from "@/lib/time";
+import { heuteISO, heuteWochentag } from "@/lib/time";
+import { heuteFaellig } from "@/lib/routinen/typen";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,7 @@ export const dynamic = "force-dynamic";
 export default async function RoutinenPage() {
   const ziele = await ladeRoutinen();
   const tag = heuteWochentag();
+  const heute = heuteISO();
 
   return (
     <div className="py-2">
@@ -22,8 +24,8 @@ export default async function RoutinenPage() {
       {ziele.length > 0 && (
         <div className="mb-5 rounded-2xl border border-accent/25 bg-accent-tint/40 p-4">
           <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.12em] text-accent-soft">Heute</p>
-          <RoutinenHeute ziele={ziele} wochentag={tag} />
-          {ziele.every((z) => z.handlungen.every((h) => !h.tage.includes(tag))) && (
+          <RoutinenHeute ziele={ziele} wochentag={tag} heute={heute} />
+          {heuteFaellig(ziele, tag, heute).length === 0 && (
             <p className="text-sm text-ink-muted">Heute steht nichts an.</p>
           )}
         </div>
@@ -32,7 +34,7 @@ export default async function RoutinenPage() {
       <RoutinenListe ziele={ziele} />
 
       <p className="mt-6 text-xs text-ink-faint">
-        🔔 Mit Uhrzeit kommt die Push-Meldung genau dann, ohne Uhrzeit gesammelt um 07:00.
+        🔔 Mit Uhrzeit kommt die Push-Meldung genau dann, ohne Uhrzeit gesammelt um 07:00 — nur solange nicht abgehakt. Bei „x-mal pro Woche“ täglich, bis die Anzahl erreicht ist.
         Push einschalten: Alarme → Dieses Gerät.
       </p>
     </div>

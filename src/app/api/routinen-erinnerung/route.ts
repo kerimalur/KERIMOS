@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { sendePush } from "@/lib/push";
-import { handlungAus } from "@/lib/routinen/laden";
-import { faelligeErinnerungen } from "@/lib/routinen/typen";
-import { heuteISO, heuteMinuten, heuteWochentag } from "@/lib/time";
+import { handlungAus, erledigtAnhaengen, HANDLUNG_SPALTEN } from "@/lib/routinen/laden";
+import { faelligeErinnerungen, zusatz } from "@/lib/routinen/typen";
+import { addDays, heuteISO, heuteMinuten, heuteWochentag, weekStart } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -51,16 +51,22 @@ export async function GET(request: NextRequest) {
     }, { status: 503 });
   }
 
-  const [h, z] = await Promise.all([
-    supabase.from("routine_handlungen")
-      .select("id, ziel_id, titel, tage, uhrzeit, zuletzt_erinnert, reihenfolge"),
+  const montag = weekStart(heuteISO());
+  const [h, z, e] = await Promise.all([
+    supabase.from("routine_handlungen").select(HANDLUNG_SPALTEN),
     supabase.from("routine_ziele").select("id, titel"),
+    // Was diese Woche schon abgehakt ist: „3× Gym" erinnert nur, solange
+    // noch etwas offen ist, und nie an einem Tag, an dem schon abgehakt wurde.
+    supabase.from("routine_erledigt").select("handlung_id, datum")
+      .gte("datum", montag).lte("datum", addDays(montag, 6)),
   ]);
   if (h.error) return NextResponse.json({ ok: false, fehler: h.error.message }, { status: 500 });
 
   const zielName = new Map(((z.data ?? []) as { id: string; titel: string }[])
     .map((r) => [r.id, r.titel]));
-  const handlungen = ((h.data ?? []) as Record<string, unknown>[]).map(handlungAus);
+  const handlungen = erledigtAnhaengen(
+    ((h.data ?? []) as Record<string, unknown>[]).map(handlungAus),
+    (e.data ?? []) as { handlung_id: string; datum: string }[]);
 
   const jetzt = { datum: heuteISO(), wochentag: heuteWochentag(), minuten: heuteMinuten() };
   const { einzeln, sammel } = faelligeErinnerungen(handlungen, jetzt);
@@ -71,7 +77,7 @@ export async function GET(request: NextRequest) {
   for (const x of einzeln) {
     const r = await sendePush({
       title: x.titel,
-      body: `Für dein Ziel „${zielName.get(x.ziel_id) ?? "…"}".`,
+      body: `Für dein Ziel „${zielName.get(x.ziel_id) ?? "…"}".${zusatz(x) ? ` ${zusatz(x)}.` : ""}`,
       tag: `routine-${x.id}`,
       url: "/routinen",
     });
@@ -81,7 +87,7 @@ export async function GET(request: NextRequest) {
   if (sammel.length > 0) {
     const r = await sendePush({
       title: "Heute für deine Ziele",
-      body: sammel.map((x) => `• ${x.titel}`).join("\n"),
+      body: sammel.map((x) => `• ${x.titel}${zusatz(x) ? ` (${zusatz(x)})` : ""}`).join("\n"),
       tag: "routinen-morgen",
       url: "/routinen",
     });

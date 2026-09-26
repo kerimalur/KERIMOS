@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useTransition } from "react";
 import { cx } from "@/components/ui";
-import { WOCHENTAGE, proWoche, type Handlung, type RoutineZiel } from "@/lib/routinen/typen";
+import { WOCHENTAGE, proWoche, istAnzahl, type Handlung, type RoutineZiel } from "@/lib/routinen/typen";
 import {
   routineZielAnlegen, routineZielAendern, routineZielLoeschen,
   handlungAnlegen, handlungAendern, handlungLoeschen,
@@ -137,6 +137,8 @@ function HandlungZeile({ h }: { h: Handlung }) {
   const aendern = (felder: Parameters<typeof handlungAendern>[1]) =>
     start(async () => setFehler(await handlungAendern(h.id, felder)));
 
+  const anzahl = istAnzahl(h);
+
   const tagUmschalten = (tag: number) =>
     aendern({ tage: h.tage.includes(tag) ? h.tage.filter((t) => t !== tag) : [...h.tage, tag] });
 
@@ -148,17 +150,55 @@ function HandlungZeile({ h }: { h: Handlung }) {
         className="min-w-[10rem] flex-1 rounded-lg border border-transparent bg-transparent px-1.5 py-1
                    text-sm text-ink outline-none hover:border-line focus:border-accent focus:bg-field" />
 
-      <div className="flex gap-0.5">
-        {WOCHENTAGE.map((w) => (
-          <button key={w.tag} type="button" onClick={() => tagUmschalten(w.tag)}
-            className={cx("h-7 w-7 rounded-lg text-[11px] font-medium transition",
-              h.tage.includes(w.tag) ? "bg-accent text-ink-on" : "bg-sand text-ink-faint hover:text-ink-soft")}>
-            {w.kurz}
-          </button>
-        ))}
+      {/* Zwei Arten: feste Tage (Meal Prep am Sonntag) oder x-mal pro Woche,
+          Tag egal (Gym 3×). Der Umschalter merkt sich nichts Kaputtes: beim
+          Wechsel zurück auf feste Tage bleiben die alten Tage stehen. */}
+      <div className="flex rounded-lg bg-sand p-0.5 text-[11px]">
+        <button type="button" onClick={() => { if (anzahl) aendern({ proWoche: null }); }}
+          className={cx("rounded-md px-2 py-1 transition", !anzahl ? "bg-card text-ink shadow-card" : "text-ink-faint hover:text-ink-soft")}>
+          Feste Tage
+        </button>
+        <button type="button" onClick={() => { if (!anzahl) aendern({ proWoche: Math.max(1, h.tage.length || 3) }); }}
+          className={cx("rounded-md px-2 py-1 transition", anzahl ? "bg-card text-ink shadow-card" : "text-ink-faint hover:text-ink-soft")}>
+          x-mal pro Woche
+        </button>
       </div>
 
-      <label className="flex items-center gap-1.5 text-xs text-ink-muted" title="Push-Erinnerung um diese Zeit; leer = gesammelt um 07:00">
+      {anzahl ? (
+        <div className="flex items-center gap-2">
+          <div className="flex items-center rounded-lg border border-line bg-field">
+            <button type="button" disabled={(h.pro_woche ?? 1) <= 1}
+              onClick={() => aendern({ proWoche: (h.pro_woche ?? 1) - 1 })}
+              className="h-7 w-7 text-ink-soft hover:text-ink disabled:opacity-30">−</button>
+            <span className="tabular w-10 text-center text-sm text-ink">{h.pro_woche}×</span>
+            <button type="button" disabled={(h.pro_woche ?? 1) >= 14}
+              onClick={() => aendern({ proWoche: (h.pro_woche ?? 1) + 1 })}
+              className="h-7 w-7 text-ink-soft hover:text-ink disabled:opacity-30">+</button>
+          </div>
+          {/* Wochenfortschritt: ein Punkt je geplantem Mal. */}
+          <span className="flex items-center gap-1" title={`${h.erledigt.length} von ${h.pro_woche} diese Woche`}>
+            {Array.from({ length: h.pro_woche ?? 0 }, (_, i) => (
+              <span key={i} className={cx("h-2 w-2 rounded-full",
+                i < h.erledigt.length ? "bg-good" : "border border-line-strong")} />
+            ))}
+            <span className="ml-1 text-[11px] text-ink-faint">{h.erledigt.length}/{h.pro_woche}</span>
+          </span>
+        </div>
+      ) : (
+        <div className="flex gap-0.5">
+          {WOCHENTAGE.map((w) => (
+            <button key={w.tag} type="button" onClick={() => tagUmschalten(w.tag)}
+              className={cx("h-7 w-7 rounded-lg text-[11px] font-medium transition",
+                h.tage.includes(w.tag) ? "bg-accent text-ink-on" : "bg-sand text-ink-faint hover:text-ink-soft")}>
+              {w.kurz}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <label className="flex items-center gap-1.5 text-xs text-ink-muted"
+        title={anzahl ? "Push täglich um diese Zeit, bis die Anzahl erreicht ist; leer = gesammelt um 07:00"
+          : "Push-Erinnerung um diese Zeit; leer = gesammelt um 07:00"}>
         🔔
         <input type="time" value={h.uhrzeit ?? ""}
           onChange={(e) => aendern({ uhrzeit: e.target.value || null })}

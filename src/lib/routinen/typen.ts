@@ -14,8 +14,16 @@ export interface Handlung {
   id: string;
   ziel_id: string;
   titel: string;
-  /** Wochentage wie Date.getDay(): 0 = Sonntag … 6 = Samstag. */
+  /** Wochentage wie Date.getDay(): 0 = Sonntag … 6 = Samstag. Nur bei festen Tagen. */
   tage: number[];
+  /**
+   * x-mal pro Woche, Tag egal (z.B. Gym 3×). Null = feste Tage (`tage`).
+   * Kerim, 26.09.2026: manches macht er immer am selben Tag, Sport aber eine
+   * feste Anzahl pro Woche an wechselnden Tagen.
+   */
+  pro_woche: number | null;
+  /** Tage der laufenden Woche (Mo–So), an denen abgehakt wurde. */
+  erledigt: string[];
   /** "HH:MM" oder null — mit Uhrzeit kommt eine eigene Push-Meldung. */
   uhrzeit: string | null;
   zuletzt_erinnert: string | null;
@@ -53,22 +61,52 @@ export function minutenAus(uhrzeit: string | null): number | null {
 /** "07:30:00" → "07:30" */
 export const uhrzeitKurz = (u: string | null) => (u ? u.slice(0, 5) : null);
 
-export function istHeute(h: Handlung, wochentag: number): boolean {
+export const istAnzahl = (h: Handlung) => h.pro_woche !== null && h.pro_woche > 0;
+
+/** Wie oft pro Woche die Handlung geplant ist. */
+export const sollProWoche = (h: Handlung) => (istAnzahl(h) ? h.pro_woche! : h.tage.length);
+
+/** Bei „x-mal pro Woche": wie viele diese Woche noch offen sind. */
+export const nochOffen = (h: Handlung) => Math.max(0, sollProWoche(h) - h.erledigt.length);
+
+/**
+ * Steht die Handlung heute an?
+ *   feste Tage     heute ist einer der Tage (abgehakt oder nicht — sie steht
+ *                  an, und die Liste zeigt sie als erledigt)
+ *   x-mal/Woche    diese Woche ist noch etwas offen, oder heute wurde schon
+ *                  abgehakt (damit es sichtbar bleibt)
+ */
+export function istHeute(h: Handlung, wochentag: number, heute: string): boolean {
+  if (istAnzahl(h)) return nochOffen(h) > 0 || h.erledigt.includes(heute);
+  return h.tage.includes(wochentag);
+}
+
+/** Erinnern ja/nein: heute fällig und heute noch nicht abgehakt. */
+export function mussErinnern(h: Handlung, wochentag: number, heute: string): boolean {
+  if (h.erledigt.includes(heute)) return false;
+  if (istAnzahl(h)) return nochOffen(h) > 0;
   return h.tage.includes(wochentag);
 }
 
 /** Wie oft pro Woche man etwas für das Ziel tut. */
 export function proWoche(z: RoutineZiel): number {
-  return z.handlungen.reduce((s, h) => s + h.tage.length, 0);
+  return z.handlungen.reduce((s, h) => s + sollProWoche(h), 0);
+}
+
+/** Kurzer Zusatz zur Handlung, z.B. „noch 2× diese Woche". */
+export function zusatz(h: Handlung): string | null {
+  if (!istAnzahl(h)) return null;
+  const offen = nochOffen(h);
+  return offen === 0 ? `${h.pro_woche}× geschafft` : `noch ${offen}× diese Woche`;
 }
 
 /** Heute fällige Handlungen, nach Ziel gruppiert; Ziele ohne heutige Handlung fallen weg. */
-export function heuteFaellig(ziele: RoutineZiel[], wochentag: number) {
+export function heuteFaellig(ziele: RoutineZiel[], wochentag: number, heute: string) {
   return ziele
     .map((z) => ({
       ziel: z,
       handlungen: z.handlungen
-        .filter((h) => istHeute(h, wochentag))
+        .filter((h) => istHeute(h, wochentag, heute))
         .sort((a, b) => (minutenAus(a.uhrzeit) ?? 9999) - (minutenAus(b.uhrzeit) ?? 9999)),
     }))
     .filter((g) => g.handlungen.length > 0);
@@ -92,7 +130,8 @@ export interface Jetzt {
 export function faelligeErinnerungen(handlungen: Handlung[], j: Jetzt): {
   einzeln: Handlung[]; sammel: Handlung[];
 } {
-  const heute = handlungen.filter((h) => istHeute(h, j.wochentag) && h.zuletzt_erinnert !== j.datum);
+  const heute = handlungen.filter((h) =>
+    mussErinnern(h, j.wochentag, j.datum) && h.zuletzt_erinnert !== j.datum);
   const imFenster = (soll: number) => j.minuten >= soll && j.minuten - soll < NACHHOLFENSTER;
 
   return {

@@ -56,7 +56,7 @@ export interface WetterKurz {
 
 export interface RoutineKurz {
   ziel: string;
-  handlungen: { titel: string; uhrzeit: string | null }[];
+  handlungen: { titel: string; uhrzeit: string | null; zusatz?: string | null }[];
 }
 
 export interface WillkommenProps {
@@ -166,6 +166,7 @@ export function Willkommen(p: WillkommenProps) {
                                               font-bold leading-snug text-white">
                     {h.titel}
                     {h.uhrzeit && <span className="ml-2 text-sm font-normal text-white/55">{h.uhrzeit}</span>}
+                    {h.zusatz && <span className="ml-2 text-sm font-normal text-white/55">{h.zusatz}</span>}
                   </p>
                 ))}
               </div>

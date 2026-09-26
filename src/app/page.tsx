@@ -7,7 +7,7 @@ import { begruessung, type Lage } from "@/lib/start/begruessung";
 import { spruchFuer } from "@/lib/start/sprueche";
 import { fetchWeather, regenSatz } from "@/lib/weather";
 import { ladeRoutinen } from "@/lib/routinen/laden";
-import { heuteFaellig } from "@/lib/routinen/typen";
+import { heuteFaellig, zusatz } from "@/lib/routinen/typen";
 import { ladeWochenziele, aktuelleWoche } from "@/lib/wochenziele/laden";
 import { WochenzieleKurz } from "@/components/wochenziele/kurz";
 import { heuteISO, heuteWochentag, addDays } from "@/lib/time";
@@ -50,10 +50,15 @@ export default async function Start() {
   ]);
   const wochentag = heuteWochentag();
   const spruch = spruchFuer(heute);
-  const routinenHeute = heuteFaellig(routinen, wochentag).map((g) => ({
-    ziel: g.ziel.titel,
-    handlungen: g.handlungen.map((h) => ({ titel: h.titel, uhrzeit: h.uhrzeit })),
-  }));
+  // Im Empfang nur, was heute noch zu tun ist — Abgehaktes fällt raus.
+  const routinenHeute = heuteFaellig(routinen, wochentag, heute)
+    .map((g) => ({
+      ziel: g.ziel.titel,
+      handlungen: g.handlungen
+        .filter((h) => !h.erledigt.includes(heute))
+        .map((h) => ({ titel: h.titel, uhrzeit: h.uhrzeit, zusatz: zusatz(h) })),
+    }))
+    .filter((g) => g.handlungen.length > 0);
 
   const lage: Lage = {
     stunde: jetzt.getHours(),
