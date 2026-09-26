@@ -5,10 +5,15 @@
 // korrigiert, müssen sich der Kontostand von heute, der Stand vor jedem
 // späteren Trade und damit dessen Risiko und R mitverschieben. Genau das
 // fehlte vorher, und genau deshalb blieb das R beim Bearbeiten stehen.
-import {
-  baueVerlauf, rechneR, monatsStartVon,
-  type VerlaufTrade, type VerlaufBuchung, type VerlaufKonto,
+import type {
+  VerlaufTrade, VerlaufBuchung, VerlaufKonto,
 } from "../../src/lib/trading/konto-verlauf";
+
+// Dynamisch geladen: je nach tsx-Version scheitert der statische Import einer
+// .ts-Datei aus einer .mts-Datei mit "does not provide an export named …".
+// Der Umweg kostet eine Zeile und läuft überall.
+const { baueVerlauf, rechneR, monatsStartVon } =
+  await import("../../src/lib/trading/konto-verlauf.ts");
 
 let fails = 0;
 function check(name: string, actual: unknown, expected: unknown) {

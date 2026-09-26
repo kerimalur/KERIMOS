@@ -194,8 +194,6 @@ export function baueVerlauf(
     ]);
 
     for (const e of ereignisse) {
-      if (e.date < monatsStart) standMonatsanfang = stand;
-
       if (e.art === "buchung") {
         const betrag = Math.abs(e.b.amount);
         if (e.b.buchungsTyp === "deposit") { einzahlungen += betrag; stand += betrag; }
@@ -220,14 +218,13 @@ export function baueVerlauf(
         });
       }
 
+      // NACH dem Verbuchen: alles, was vor dem Monatsanfang lag, gehört zum
+      // Stand, mit dem der Monat begonnen hat. Vorher gesetzt hätte es den
+      // letzten Trade des Vormonats in den laufenden Monat gezogen.
+      if (e.date < monatsStart) standMonatsanfang = rund(stand);
+
       if (stand > hoechststand) hoechststand = stand;
       if (hoechststand - stand > drawdown) drawdown = rund(hoechststand - stand);
-    }
-
-    // Kein Ereignis nach dem Monatswechsel: dann ist der Stand seit dem
-    // Monatsanfang unverändert.
-    if (ereignisse.length === 0 || ereignisse[ereignisse.length - 1].date < monatsStart) {
-      standMonatsanfang = stand;
     }
 
     // Offene Trades: noch kein Geld bewegt, aber sie tragen Risiko. Für sie
