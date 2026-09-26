@@ -21,7 +21,17 @@ import { Logo } from "./logo";
  * Lesezeichen, den PWA-Shortcut und die Links in alten Push-Meldungen, ohne
  * dass sich an der Bedienung etwas ändert.
  */
-type Section = "analyse" | "journal" | null;
+type Section = "gva" | "fundamentals" | "journal" | null;
+
+/**
+ * Drei Bereiche statt zwei (26.09.2026, zweiter Schnitt am selben Tag).
+ *
+ * Kerims Aufteilung auf der Startseite: eine Kachel für die GVA (Übersicht,
+ * Cockpit, Alarme), eine für die fundamentale Analyse (Fundamentals,
+ * Währungen) und eine fürs Journal (Journal, Backtest). Die Kopfzeile folgt
+ * derselben Aufteilung — wer über die GVA-Kachel reinkommt, sieht oben nur
+ * die GVA-Seiten.
+ */
 
 /**
  * Ein Eintrag der Hauptnavigation.
@@ -44,13 +54,19 @@ interface NavConfig {
   secondary: NavLink[];
 }
 
-const ANALYSE: NavConfig = {
+const GVA: NavConfig = {
   home: { href: "/trading", label: "Übersicht" },
   primary: [
     { href: "/trading/cockpit", label: "Cockpit" },
-    { href: "/trading/fundamentals", label: "Fundamentals" },
-    { href: "/trading/waehrungen", label: "Währungen" },
     { href: "/trading/einstellungen", label: "Alarme", auch: ["/trading/alarme"] },
+  ],
+  secondary: [],
+};
+
+const FUNDAMENTALS: NavConfig = {
+  home: { href: "/trading/fundamentals", label: "Fundamentals", auch: ["/trading/confluence"] },
+  primary: [
+    { href: "/trading/waehrungen", label: "Währungen" },
   ],
   secondary: [],
 };
@@ -63,32 +79,41 @@ const JOURNAL: NavConfig = {
   secondary: [],
 };
 
-// Journal zuerst prüfen: seine Pfade liegen unter /trading und würden sonst
-// von der Analyse eingefangen.
+const CONFIG: Record<Exclude<Section, null>, NavConfig> = {
+  gva: GVA, fundamentals: FUNDAMENTALS, journal: JOURNAL,
+};
+
+// Reihenfolge der Prüfung: die spezifischen Pfade zuerst — alles liegt unter
+// /trading und würde sonst von der GVA eingefangen.
 const JOURNAL_PATHS = ["/trading/journal", "/trading/backtest"];
-const ANALYSE_PATHS = ["/trading"];
+const FUNDAMENTALS_PATHS = ["/trading/fundamentals", "/trading/waehrungen", "/trading/confluence"];
+const GVA_PATHS = ["/trading"];
 
 const SECTION_LABEL: Record<Exclude<Section, null>, string> = {
-  analyse: "Analyse",
+  gva: "GVA",
+  fundamentals: "Fundamentals",
   journal: "Journal",
 };
 
 /** Der Einstieg in den jeweils anderen Bereich — ein Klick, kein Umweg. */
 const SECTION_HOME: Record<Exclude<Section, null>, string> = {
-  analyse: "/trading",
+  gva: "/trading",
+  fundamentals: "/trading/fundamentals",
   journal: "/trading/journal",
 };
 
 function sectionOf(path: string): Section {
-  if (JOURNAL_PATHS.some((p) => path === p || path.startsWith(p + "/"))) return "journal";
-  if (ANALYSE_PATHS.some((p) => path === p || path.startsWith(p + "/"))) return "analyse";
+  const in_ = (liste: string[]) => liste.some((p) => path === p || path.startsWith(p + "/"));
+  if (in_(JOURNAL_PATHS)) return "journal";
+  if (in_(FUNDAMENTALS_PATHS)) return "fundamentals";
+  if (in_(GVA_PATHS)) return "gva";
   return null;
 }
 
 export function Nav({ email }: { email?: string }) {
   const path = usePathname();
   const section = sectionOf(path);
-  const config = section === "journal" ? JOURNAL : ANALYSE;
+  const config = section ? CONFIG[section] : GVA;
 
   /**
    * Aktiv ist der längste passende Eintrag, nicht jeder passende.
@@ -113,6 +138,13 @@ export function Nav({ email }: { email?: string }) {
     return (
       <header className="border-b border-line/70">
         <div className="mx-auto flex max-w-6xl items-center justify-end px-5 py-3">
+          {path !== "/" && (
+            <Link href="/" className="mr-auto flex items-center gap-2 text-xs text-ink-muted
+                                      transition hover:text-ink-soft" title="Zur Startseite">
+              <Logo inverted className="h-6 w-6 rounded-md" />
+              Startseite
+            </Link>
+          )}
           {email && <span className="mr-4 text-xs text-ink-faint">{email}</span>}
           <form action="/auth/signout" method="post">
             <button className="text-xs text-ink-muted transition hover:text-ink-soft">
@@ -133,9 +165,9 @@ export function Nav({ email }: { email?: string }) {
             <Logo inverted className="h-7 w-7 rounded-lg" />
           </Link>
 
-          {/* Bereichswechsel: Analyse ist vor dem Trade, Journal danach. */}
+          {/* Bereichswechsel: GVA, Fundamentals, Journal — wie die Kacheln der Startseite. */}
           <div className="mr-4 flex items-center gap-1 rounded-xl bg-sand p-1">
-            {(["analyse", "journal"] as const).map((s) => (
+            {(["gva", "fundamentals", "journal"] as const).map((s) => (
               <Link key={s} href={SECTION_HOME[s]}
                 className={cx(
                   "rounded-lg px-3 py-1 font-display text-sm font-bold transition duration-150",

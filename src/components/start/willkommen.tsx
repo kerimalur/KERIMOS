@@ -34,8 +34,30 @@ import { BRETT_BILD } from "@/lib/start/kacheln";
  */
 
 const SCHLUESSEL = "kompass-empfang";
-/** Scroll-Weg in Pixeln für den ganzen Ablauf. */
-const WEG = 1400;
+/** Scroll-Weg in Pixeln pro Folie. */
+const WEG_JE_FOLIE = 520;
+
+/**
+ * Seit dem 26.09.2026 nachmittags mehr als Gruss und Satz: der Empfang ist
+ * eine Folge von Folien, die beim Scrollen nacheinander kommen —
+ *
+ *   Gruss → Wetter und Regen → der wichtige Satz → Spruch des Tages →
+ *   was heute für die eigenen Ziele ansteht (Routinen).
+ *
+ * Was fehlt (kein Wetter, keine Routine heute), fällt als Folie weg statt
+ * leer dazustehen.
+ */
+export interface WetterKurz {
+  temperatur: string;
+  text: string;
+  regen: string;
+  nass: boolean;
+}
+
+export interface RoutineKurz {
+  ziel: string;
+  handlungen: { titel: string; uhrzeit: string | null }[];
+}
 
 export interface WillkommenProps {
   gruss: string;
@@ -43,6 +65,9 @@ export interface WillkommenProps {
   ziel: string | null;
   zielText: string | null;
   datum: string;
+  wetter: WetterKurz | null;
+  spruch: string | null;
+  routinen: RoutineKurz[];
 }
 
 const klemme = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
@@ -51,11 +76,106 @@ export function Willkommen(p: WillkommenProps) {
   const [phase, setPhase] = useState<"pruefen" | "laeuft" | "geht" | "weg">("pruefen");
   const huelleRef = useRef<HTMLDivElement>(null);
   const bildRef = useRef<HTMLDivElement>(null);
-  const grussRef = useRef<HTMLDivElement>(null);
-  const satzRef = useRef<HTMLDivElement>(null);
+  const folienRefs = useRef<(HTMLDivElement | null)[]>([]);
   const hinweisRef = useRef<HTMLDivElement>(null);
   const balkenRef = useRef<HTMLDivElement>(null);
   const zielFortschritt = useRef(0);
+
+  const folien: { id: string; inhalt: React.ReactNode }[] = [
+    {
+      id: "gruss",
+      inhalt: (
+        <>
+          <span className="font-display text-[clamp(28px,6vw,68px)] font-bold leading-[1.05]
+                           tracking-tight text-white drop-shadow-[0_4px_30px_rgba(0,0,0,0.6)]">
+            {p.gruss}
+          </span>
+          <span className="mt-3 text-[clamp(11px,1.5vw,14px)] uppercase tracking-[0.3em] text-white/55">
+            {p.datum}
+          </span>
+        </>
+      ),
+    },
+    ...(p.wetter ? [{
+      id: "wetter",
+      inhalt: (
+        <>
+          <span className="text-[clamp(11px,1.5vw,14px)] uppercase tracking-[0.3em] text-white/55">
+            Wetter in Solothurn
+          </span>
+          <span className="mt-3 font-display text-[clamp(40px,8vw,88px)] font-bold leading-none
+                           text-white drop-shadow-[0_4px_30px_rgba(0,0,0,0.6)]">
+            {p.wetter.temperatur}
+          </span>
+          <span className="mt-2 text-[clamp(14px,2vw,20px)] text-white/75">{p.wetter.text}</span>
+          <span className={`mt-5 max-w-2xl font-display text-[clamp(18px,2.8vw,32px)] font-bold
+                            leading-snug drop-shadow-[0_4px_24px_rgba(0,0,0,0.6)]
+                            ${p.wetter.nass ? "text-sky-200" : "text-white"}`}>
+            {p.wetter.regen}
+          </span>
+        </>
+      ),
+    }] : []),
+    {
+      id: "satz",
+      inhalt: (
+        <>
+          <span className="max-w-2xl font-display text-[clamp(19px,3.2vw,38px)] font-bold
+                           leading-snug text-white drop-shadow-[0_4px_24px_rgba(0,0,0,0.6)]">
+            {p.satz}
+          </span>
+          {p.ziel && p.zielText && (
+            <Link href={p.ziel}
+              onClick={() => { zielFortschritt.current = 1; }}
+              className="mt-6 rounded-xl border border-white/30 bg-white/10 px-5 py-2
+                         text-sm font-medium text-white backdrop-blur
+                         transition hover:border-white/70 hover:bg-white/20">
+              {p.zielText} →
+            </Link>
+          )}
+        </>
+      ),
+    },
+    ...(p.spruch ? [{
+      id: "spruch",
+      inhalt: (
+        <>
+          <span className="text-[clamp(11px,1.5vw,14px)] uppercase tracking-[0.3em] text-white/55">
+            Für heute
+          </span>
+          <span className="mt-4 max-w-3xl font-display text-[clamp(20px,3.4vw,42px)] font-bold
+                           italic leading-snug text-white drop-shadow-[0_4px_24px_rgba(0,0,0,0.6)]">
+            „{p.spruch}"
+          </span>
+        </>
+      ),
+    }] : []),
+    ...(p.routinen.length > 0 ? [{
+      id: "routinen",
+      inhalt: (
+        <>
+          <span className="text-[clamp(11px,1.5vw,14px)] uppercase tracking-[0.3em] text-white/55">
+            Heute für deine Ziele
+          </span>
+          <div className="mt-5 grid max-w-3xl gap-x-10 gap-y-4 text-left sm:grid-cols-2">
+            {p.routinen.map((r) => (
+              <div key={r.ziel}>
+                <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">{r.ziel}</p>
+                {r.handlungen.map((h) => (
+                  <p key={h.titel} className="mt-1 font-display text-[clamp(16px,2.2vw,24px)]
+                                              font-bold leading-snug text-white">
+                    {h.titel}
+                    {h.uhrzeit && <span className="ml-2 text-sm font-normal text-white/55">{h.uhrzeit}</span>}
+                  </p>
+                ))}
+              </div>
+            ))}
+          </div>
+        </>
+      ),
+    }] : []),
+  ];
+  const anzahl = folien.length;
   const fertig = useRef(false);
 
   // Entscheiden, ob der Empfang überhaupt läuft. Erst im Effekt, weil
@@ -95,7 +215,7 @@ export function Willkommen(p: WillkommenProps) {
     let letzteBeruehrung = 0;
 
     const schieben = (delta: number) => {
-      zielFortschritt.current = klemme(zielFortschritt.current + delta / WEG, 0, 1);
+      zielFortschritt.current = klemme(zielFortschritt.current + delta / (WEG_JE_FOLIE * anzahl), 0, 1);
     };
 
     const aufRad = (e: WheelEvent) => { schieben(e.deltaY); e.preventDefault(); };
@@ -128,20 +248,21 @@ export function Willkommen(p: WillkommenProps) {
         bildRef.current.style.filter = `blur(${(1 - f) * 16}px) saturate(${0.7 + f * 0.5})`;
         bildRef.current.style.opacity = String(0.45 + f * 0.55);
       }
-      if (grussRef.current) {
-        // Der Gruss ist zuerst da und geht als Erstes wieder — er hat seine
-        // Arbeit getan, sobald man ihn gelesen hat.
-        const t = 1 - klemme((f - 0.05) / 0.4, 0, 1);
-        grussRef.current.style.opacity = String(t);
-        grussRef.current.style.transform = `translateY(${(1 - t) * -26}px) scale(${0.97 + t * 0.03})`;
-        grussRef.current.style.filter = `blur(${(1 - t) * 9}px)`;
-      }
-      if (satzRef.current) {
-        const t = klemme((f - 0.42) / 0.3, 0, 1);
-        satzRef.current.style.opacity = String(t);
-        satzRef.current.style.transform = `translateY(${(1 - t) * 22}px)`;
-        satzRef.current.style.filter = `blur(${(1 - t) * 7}px)`;
-      }
+      // Folie i ist voll da zwischen p = i und p = i + 0.5, geht bis i + 0.75
+      // raus, und die nächste kommt bis i + 1 herein — nacheinander, nicht
+      // überblendet, sonst stehen zwei Texte übereinander.
+      const pos = f * anzahl;
+      folienRefs.current.forEach((el, i) => {
+        if (!el) return;
+        const rein = i === 0 ? 1 : klemme((pos - (i - 0.25)) / 0.25, 0, 1);
+        const raus = i === anzahl - 1 ? 1 : 1 - klemme((pos - (i + 0.5)) / 0.25, 0, 1);
+        const t = Math.min(rein, raus);
+        const hoch = raus < 1; // beim Gehen nach oben, beim Kommen von unten
+        el.style.opacity = String(t);
+        el.style.transform = `translateY(${(1 - t) * (hoch ? -26 : 22)}px) scale(${0.97 + t * 0.03})`;
+        el.style.filter = `blur(${(1 - t) * 8}px)`;
+        el.style.pointerEvents = t > 0.5 ? "auto" : "none";
+      });
       if (hinweisRef.current) {
         hinweisRef.current.style.opacity = String(klemme(1 - f * 4, 0, 1));
       }
@@ -169,7 +290,7 @@ export function Willkommen(p: WillkommenProps) {
       window.removeEventListener("keydown", aufTaste);
       freigeben();
     };
-  }, [phase]);
+  }, [phase, anzahl]);
 
   if (phase === "pruefen" || phase === "weg") return null;
 
@@ -190,34 +311,14 @@ export function Willkommen(p: WillkommenProps) {
       <div aria-hidden className="absolute inset-0 bg-gradient-to-b
                                   from-black/75 via-black/45 to-black/85" />
 
-      <div ref={grussRef} className="absolute inset-0 flex flex-col items-center
-                                     justify-center px-8 text-center">
-        <span className="font-display text-[clamp(28px,6vw,68px)] font-bold leading-[1.05]
-                         tracking-tight text-white drop-shadow-[0_4px_30px_rgba(0,0,0,0.6)]">
-          {p.gruss}
-        </span>
-        <span className="mt-3 text-[clamp(11px,1.5vw,14px)] uppercase tracking-[0.3em]
-                         text-white/55">
-          {p.datum}
-        </span>
-      </div>
-
-      <div ref={satzRef} className="absolute inset-0 flex flex-col items-center
-                                    justify-center px-8 text-center opacity-0">
-        <span className="max-w-2xl font-display text-[clamp(19px,3.2vw,38px)] font-bold
-                         leading-snug text-white drop-shadow-[0_4px_24px_rgba(0,0,0,0.6)]">
-          {p.satz}
-        </span>
-        {p.ziel && p.zielText && (
-          <Link href={p.ziel}
-            onClick={() => { zielFortschritt.current = 1; }}
-            className="mt-6 rounded-xl border border-white/30 bg-white/10 px-5 py-2
-                       text-sm font-medium text-white backdrop-blur
-                       transition hover:border-white/70 hover:bg-white/20">
-            {p.zielText} →
-          </Link>
-        )}
-      </div>
+      {folien.map((folie, i) => (
+        <div key={folie.id} ref={(el) => { folienRefs.current[i] = el; }}
+          className="absolute inset-0 flex flex-col items-center justify-center overflow-y-auto
+                     px-8 text-center"
+          style={{ opacity: i === 0 ? 1 : 0, pointerEvents: i === 0 ? "auto" : "none" }}>
+          {folie.inhalt}
+        </div>
+      ))}
 
       <div ref={hinweisRef}
         className="pointer-events-none absolute bottom-[clamp(28px,7vh,64px)] left-1/2

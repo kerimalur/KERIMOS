@@ -46,6 +46,25 @@ und die Karte der aktiven Trades.
 
 ---
 
+## Umbau vom 26.09.2026 (nachmittags)
+
+- **Startseite:** elf Kacheln — GVA (Übersicht, Cockpit, Alarme), Fundamentals
+  (Fundamentals, Währungen), Journal, Backtest (öffnet zusätzlich TradingView),
+  TradingView, Wirtschaftskalender, Google Kalender, Essen, Wochenziele,
+  Routinen, Obsidian. Vantage ist raus. Der Scroll-Empfang zeigt nacheinander
+  Gruss → Wetter/Regen (Open-Meteo, Solothurn) → wichtigen Satz → Spruch des
+  Tages → heutige Routinen; dieselben Infos plus Wochenziele stehen im
+  Randstreifen neben dem Brett.
+- **Wochenziele** (`/wochenziele`): Titel + Details, drei Stati. Unfertiges
+  wandert beim ersten Laden der neuen Woche automatisch mit und wird dringend.
+- **Routinen** (`/routinen`): Ziele und Handlungen mit Wochentagen und
+  optionaler Uhrzeit. Push über `/api/routinen-erinnerung` (cron-job.org, alle
+  15 min, braucht `CRON_SECRET` und `SUPABASE_SERVICE_ROLE_KEY`).
+- **Essen** (`/m/Essen`): nur noch Monatskalender mit Notiz pro Tag. Die alten
+  Ansichten liegen unter `../_backup/kerimos-essen-2026-09-26` und im Git-Tag
+  `essen-alt-2026-09-26`.
+- Tabellen: `supabase/migrations/28_wochenziele_routinen_essen.sql`.
+
 ## Was drin ist
 
 | Bereich | Funktion |

@@ -31,7 +31,8 @@
     "check:naehrwerte": "npx -y tsx tools/checks/naehrwerte.mts",
     "check:konto": "npx -y tsx tools/checks/konto-verlauf.mts",
     "check:makro": "npx -y tsx tools/checks/makro.mts",
-    "check:start": "npx -y tsx tools/checks/start.mts"
+    "check:start": "npx -y tsx tools/checks/start.mts",
+    "check:routinen": "npx -y tsx tools/checks/routinen.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

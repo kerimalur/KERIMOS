@@ -17,6 +17,9 @@ export function heutePlus(n: number): string {
 }
 
 /** Wochentag von heute in Zürcher Zeit: 0 = Sonntag, wie Date.getDay(). */
+export function heuteWochentag(): number {
+  return new Date(`${heuteISO()}T12:00:00Z`).getUTCDay();
+}
 
 /** Aktuelle Uhrzeit in Zürich als Minuten seit Mitternacht. */
 export function heuteMinuten(): number {

@@ -1,6 +1,8 @@
 "use client";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { appOeffnen } from "@/lib/start/app-oeffnen";
 import { cx } from "@/components/ui";
 import {
   KACHELN, BRETT_VERHAELTNIS, ausschnitt, ausschnittMobil, type Kachel,
@@ -61,6 +63,7 @@ export function Brett() {
 function Feld({ k, bild }: { k: Kachel; bild: React.CSSProperties }) {
   if (k.art === "frei") return <Frei k={k} bild={bild} />;
   if (k.art === "app") return <AppFeld k={k} bild={bild} />;
+  if (k.art === "intern" && k.oeffnet) return <InternMitApp k={k} bild={bild} />;
 
   const inhalt = <Inneres k={k} bild={bild} />;
 
@@ -104,7 +107,7 @@ function Inneres({ k, bild }: { k: Kachel; bild: React.CSSProperties }) {
         </span>
       </div>
       {k.art === "extern" && <Ecke zeichen="↗" />}
-      {k.art === "app" && <Ecke zeichen="⌘" />}
+      {(k.art === "app" || k.oeffnet) && <Ecke zeichen="⌘" />}
     </>
   );
 }
@@ -157,22 +160,7 @@ function AppFeld({ k, bild }: { k: Kachel; bild: React.CSSProperties }) {
     e.preventDefault();
     if (warte) return;
     setWarte(true);
-
-    let weg = false;
-    const merken = () => { if (document.hidden) weg = true; };
-    document.addEventListener("visibilitychange", merken);
-    window.addEventListener("blur", merken);
-
-    window.location.href = k.ziel;
-
-    window.setTimeout(() => {
-      document.removeEventListener("visibilitychange", merken);
-      window.removeEventListener("blur", merken);
-      setWarte(false);
-      if (!weg && !document.hidden && k.ersatz) {
-        window.open(k.ersatz, "_blank", "noopener,noreferrer");
-      }
-    }, 1200);
+    appOeffnen(k.ziel, k.ersatz, () => setWarte(false));
   };
 
   return (
@@ -185,5 +173,32 @@ function AppFeld({ k, bild }: { k: Kachel; bild: React.CSSProperties }) {
         </span>
       )}
     </a>
+  );
+}
+
+/**
+ * Ein Feld, das in KerimOS weiterführt UND eine App öffnet.
+ *
+ * Kerims Wunsch: ein Klick auf Backtest bringt ihn in den Backtest-Tab, und
+ * TradingView geht gleichzeitig auf. Erst das Protokoll, dann — einen
+ * Augenblick später — die Navigation; sonst kann der Seitenwechsel den
+ * App-Aufruf abwürgen. Die Prüfung, ob die App reagiert hat, läuft weiter,
+ * auch wenn das Brett schon weg ist (siehe lib/start/app-oeffnen.ts).
+ */
+function InternMitApp({ k, bild }: { k: Kachel; bild: React.CSSProperties }) {
+  const router = useRouter();
+
+  const oeffnen = (e: React.MouseEvent) => {
+    // Mittelklick / Strg-Klick: nur den Tab öffnen wie bei jedem Link.
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    e.preventDefault();
+    appOeffnen(k.oeffnet!.ziel, k.oeffnet!.ersatz);
+    window.setTimeout(() => router.push(k.ziel), 150);
+  };
+
+  return (
+    <Link href={k.ziel} onClick={oeffnen} className={RAHMEN}>
+      <Inneres k={k} bild={bild} />
+    </Link>
   );
 }

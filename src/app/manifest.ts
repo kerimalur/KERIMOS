@@ -29,6 +29,8 @@ export default function manifest(): MetadataRoute.Manifest {
     shortcuts: [
       { name: "Trading", url: "/trading" },
       { name: "Essen", url: "/m/Essen" },
+      { name: "Wochenziele", url: "/wochenziele" },
+      { name: "Routinen", url: "/routinen" },
     ],
   };
 }

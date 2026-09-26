@@ -32,6 +32,11 @@ export interface Kachel {
   art: KachelArt;
   /** Fallback für `app`, wenn das Protokoll ins Leere läuft. */
   ersatz?: string;
+  /**
+   * Nur bei `intern`: öffnet beim Klick zusätzlich eine lokale App
+   * (Backtest → TradingView). `ersatz` ist deren Webfassung.
+   */
+  oeffnet?: { ziel: string; ersatz?: string };
   /** Ausschnitt der Collage, in Prozent: linke Kante, obere Kante, Breite, Höhe. */
   x: number; y: number; w: number; h: number;
 }
@@ -42,38 +47,39 @@ export const BRETT_BILD = "/kompass-board.jpg";
 export const BRETT_VERHAELTNIS = "5 / 4";
 
 /*
- * Die vierzehn Felder decken die Collage LÜCKENLOS ab: fünf Spalten
- * (0–17, 17–35.5, 35.5–58, 58–80.8, 80.8–100 — die gemessenen Nähte des
- * Bildes), und in jeder Spalte summieren sich die Höhen auf 100.
+ * Elf Felder, LÜCKENLOS über die Collage: fünf Spalten (0–17, 17–35.5,
+ * 35.5–58, 58–80.8, 80.8–100 — die gemessenen Nähte des Bildes), und in
+ * jeder Spalte summieren sich die Höhen auf 100.
  *
- * Das ist der Unterschied zur ersten Fassung vom Vormittag: dort sassen die
- * Felder nur auf den Fotos und liessen die dunklen Zwischenräume der Collage
- * frei. Das sah aus wie ein halbleeres Brett. Jetzt schlucken die
- * Nachbarfelder diese Ränder — der dunkle Streifen über dem Gym-Foto gehört
- * zum Cockpit, die dunkle Fläche oben in Spalte 4 ist ein eigenes Feld. Die
- * einzige Fuge ist die 3px Polsterung zwischen den Kacheln.
+ * Stand 26.09.2026 nachmittags, Kerims Aufteilung: Vantage raus. Die sechs
+ * Trading-Seiten sind drei Kacheln geworden — GVA (Übersicht, Cockpit,
+ * Alarme), Fundamentals (Fundamentals, Währungen) und Journal (Journal,
+ * Backtest als eigene Kachel, weil sie zusätzlich TradingView öffnet). Neu:
+ * Wochenziele, Routinen, Obsidian. Die zwei freien Felder sind vergeben.
  */
 export const KACHELN: Kachel[] = [
   /* ── Spalte 1 (0–17) ────────────────────────────────────────────────── */
-  { id: "vantage", name: "Vantage", unterzeile: "Broker", art: "extern",
-    ziel: "https://www.vantagemarkets.com/", x: 0, y: 0, w: 17, h: 50.7 },
-  { id: "essen", name: "Essen", unterzeile: "Plan & Einkauf", art: "intern",
+  { id: "routinen", name: "Routinen", unterzeile: "Ziele & was ich dafür tue", art: "intern",
+    ziel: "/routinen", x: 0, y: 0, w: 17, h: 50.7 },
+  { id: "essen", name: "Essen", unterzeile: "Was ich gegessen habe", art: "intern",
     ziel: "/m/Essen", x: 0, y: 50.7, w: 17, h: 15.1 },
   { id: "kalender", name: "Kalender", unterzeile: "Google", art: "extern",
     ziel: "https://calendar.google.com/calendar/r", x: 0, y: 65.8, w: 17, h: 34.2 },
 
   /* ── Spalte 2 (17–35.5) ─────────────────────────────────────────────── */
-  { id: "trades", name: "Aktive Trades", unterzeile: "Was gerade läuft", art: "intern",
-    ziel: "/trading", x: 17, y: 0, w: 18.5, h: 35.1 },
+  { id: "obsidian", name: "Obsidian", unterzeile: "Öffnet die App", art: "app",
+    ziel: "obsidian://open", x: 17, y: 0, w: 18.5, h: 35.1 },
   { id: "tradingview", name: "TradingView", unterzeile: "Öffnet die App", art: "app",
     ziel: "tradingview://", ersatz: "https://www.tradingview.com/chart/",
     x: 17, y: 35.1, w: 18.5, h: 24.4 },
-  { id: "backtest", name: "Backtest", unterzeile: "Üben und auswerten", art: "intern",
-    ziel: "/trading/backtest", x: 17, y: 59.5, w: 18.5, h: 40.5 },
+  { id: "backtest", name: "Backtest", unterzeile: "Öffnet auch TradingView", art: "intern",
+    ziel: "/trading/backtest",
+    oeffnet: { ziel: "tradingview://", ersatz: "https://www.tradingview.com/chart/" },
+    x: 17, y: 59.5, w: 18.5, h: 40.5 },
 
   /* ── Spalte 3 (35.5–58) — das grösste Feld, was am häufigsten aufgeht ── */
-  { id: "cockpit", name: "Cockpit", unterzeile: "GVA-Hits", art: "intern",
-    ziel: "/trading/cockpit", x: 35.5, y: 0, w: 22.5, h: 61.5 },
+  { id: "gva", name: "GVA", unterzeile: "Übersicht · Cockpit · Alarme", art: "intern",
+    ziel: "/trading", x: 35.5, y: 0, w: 22.5, h: 61.5 },
   { id: "journal", name: "Journal", unterzeile: "Trades & Konto", art: "intern",
     ziel: "/trading/journal", x: 35.5, y: 61.5, w: 22.5, h: 38.5 },
 
@@ -81,18 +87,12 @@ export const KACHELN: Kachel[] = [
   { id: "wirtschaftskalender", name: "Wirtschaftskalender", unterzeile: "Forex Factory",
     art: "extern", ziel: "https://www.forexfactory.com/calendar",
     x: 58, y: 0, w: 22.8, h: 23 },
-  { id: "fundamentals", name: "Fundamentals", unterzeile: "Drei Ebenen", art: "intern",
-    ziel: "/trading/fundamentals", x: 58, y: 23, w: 22.8, h: 38.5 },
-  { id: "alarme", name: "Alarme", unterzeile: "Push & Telegram", art: "intern",
-    ziel: "/trading/einstellungen", x: 58, y: 61.5, w: 22.8, h: 38.5 },
+  { id: "fundamentals", name: "Fundamentals", unterzeile: "Fundamentals · Währungen", art: "intern",
+    ziel: "/trading/fundamentals", x: 58, y: 23, w: 22.8, h: 77 },
 
-  /* ── Spalte 5 (80.8–100) ────────────────────────────────────────────── */
-  { id: "waehrungen", name: "Währungen", unterzeile: "Einzeln, ungepaart", art: "intern",
-    ziel: "/trading/waehrungen", x: 80.8, y: 0, w: 19.2, h: 50.7 },
-  { id: "frei-1", name: "frei", unterzeile: "sag mir, was hier hin soll", art: "frei",
-    ziel: "", x: 80.8, y: 50.7, w: 19.2, h: 19.3 },
-  { id: "frei-2", name: "frei", unterzeile: "sag mir, was hier hin soll", art: "frei",
-    ziel: "", x: 80.8, y: 70, w: 19.2, h: 30 },
+  /* ── Spalte 5 (80.8–100) — „Be that one" ────────────────────────────── */
+  { id: "wochenziele", name: "Wochenziele", unterzeile: "Was diese Woche zählt", art: "intern",
+    ziel: "/wochenziele", x: 80.8, y: 0, w: 19.2, h: 100 },
 ];
 
 /**
