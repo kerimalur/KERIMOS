@@ -15,8 +15,15 @@ export function createTradingClient() {
   const key = process.env.TRADING_SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
 
+  // Seit 28.09.2026 liegen die Trading-Tabellen im Kompass-Projekt, Schema
+  // "trading" (dort gibt es in public schon ein eigenes accounts/transactions).
+  // Ohne Variable bleibt es bei "public" — so läuft der Code gegen die alte
+  // Datenbank unverändert weiter, bis die Umgebungsvariablen umgestellt sind.
+  const schema = process.env.TRADING_SUPABASE_SCHEMA?.trim() || "public";
+
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
+    db: { schema },
   });
 }
 
