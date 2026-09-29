@@ -14,10 +14,9 @@ import { heuteISO } from "@/lib/time";
 /**
  * Werkzeuge des KerimOS-MCP-Servers (29.09.2026).
  *
- * `registriereLesen` nutzen beide Routen: die alte mit Geheimnis im Pfad
- * (/api/mcp/<MCP_SECRET>, nur lesen) und die neue mit OAuth (/api/mcp).
- * `registriereSchreiben` hängt nur an der OAuth-Route — dort gibt es ein
- * geprüftes Benutzer-Token, und alle Schreibzugriffe laufen mit RLS.
+ * Beide hängen an /api/mcp (OAuth über Supabase). Die frühere Route mit
+ * Geheimnis im Pfad (/api/mcp/<MCP_SECRET>) ist seit 29.09.2026 entfernt.
+ * Schreibzugriffe laufen mit dem geprüften Benutzer-Token, also unter RLS.
  */
 
 const DATUM = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Format YYYY-MM-DD");
