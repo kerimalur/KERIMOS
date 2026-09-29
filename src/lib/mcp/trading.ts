@@ -1,6 +1,6 @@
 import "server-only";
 import {
-  checkFundamental, fetchRankingMitWoche, fetchScreener, fetchTodayEvents, fetchWatchlist,
+  fetchScreener, fetchTodayEvents, fetchWatchlist,
   fetchWeekEvents, pairTf, sortiereNachDringlichkeit, tradingConfigured,
 } from "@/lib/supabase/trading";
 import { fetchTrades, type SessionTyp } from "@/lib/trading/journal";
@@ -29,8 +29,8 @@ function brauchtTrading() {
 
 export async function mcpGvaStatus() {
   brauchtTrading();
-  const [board, offeneHits, linien, ranking] = await Promise.all([
-    fetchScreener(), ladeOffeneHits(), fetchWatchlist(), fetchRankingMitWoche(),
+  const [board, offeneHits, linien] = await Promise.all([
+    fetchScreener(), ladeOffeneHits(), fetchWatchlist(),
   ]);
 
   const relevant = sortiereNachDringlichkeit(board?.data ?? [])
@@ -47,20 +47,15 @@ export async function mcpGvaStatus() {
           erreichbar: false,
           hinweis: "Screener-Backend (Render) antwortet nicht — schläft evtl. oder Timeout.",
         },
-    hitUndPrepare: relevant.map((p) => {
-      const f = checkFundamental(p.pair, p.near, ranking.currencies);
-      return {
-        pair: p.pair,
-        status: p.status,
-        richtung: p.near,
-        timeframe: pairTf(p),
-        preis: p.price,
-        abstandPips: p.distance,
-        veraltet: p.stale,
-        fundamental: f.urteil,
-        fundamentalGrund: f.grund,
-      };
-    }),
+    hitUndPrepare: relevant.map((p) => ({
+      pair: p.pair,
+      status: p.status,
+      richtung: p.near,
+      timeframe: pairTf(p),
+      preis: p.price,
+      abstandPips: p.distance,
+      veraltet: p.stale,
+    })),
     offeneHits: offeneHits.map((s) => ({
       pair: s.pair,
       richtung: s.lineType,
@@ -77,7 +72,6 @@ export async function mcpGvaStatus() {
       zeitAlarm: l.alarm_time ? l.alarm_time.slice(0, 5) : null,
       sichtbarBis: l.show_until,
     })),
-    rankingWoche: ranking.weekStart,
   };
 }
 
@@ -188,24 +182,5 @@ export async function mcpWirtschaftskalender(zeitraum: "heute" | "woche") {
       vorher: e.previous,
       aktuell: e.actual,
     })),
-  };
-}
-
-// ------------------------------------------------------------------ Ranking
-
-export async function mcpRanking() {
-  brauchtTrading();
-  const r = await fetchRankingMitWoche();
-  return {
-    woche: r.weekStart,
-    hinweis: "strength_quintile: 5 = stärkstes Fünftel, 1 = schwächstes. Nur Q5/Q1 geben Richtung.",
-    waehrungen: [...r.currencies]
-      .sort((a, b) => b.score - a.score)
-      .map((c) => ({
-        waehrung: c.ccy,
-        score: Math.round(c.score * 1000) / 1000,
-        quintil: c.strength_quintile,
-        treiber: c.topFeatures.map((f) => `${f.feature} ${f.value >= 0 ? "+" : ""}${f.value.toFixed(3)}`),
-      })),
   };
 }

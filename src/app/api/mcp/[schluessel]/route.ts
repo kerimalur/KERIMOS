@@ -3,7 +3,7 @@ import { createMcpHandler } from "mcp-handler";
 import { z } from "zod";
 import { mcpEssenNotizen, mcpRoutinen, mcpWochenziele } from "@/lib/mcp/kompass";
 import {
-  mcpBacktest, mcpGvaStatus, mcpRanking, mcpTrades, mcpWirtschaftskalender,
+  mcpBacktest, mcpGvaStatus, mcpTrades, mcpWirtschaftskalender,
 } from "@/lib/mcp/trading";
 import { heuteISO } from "@/lib/time";
 
@@ -115,8 +115,8 @@ const handler = createMcpHandler((server) => {
   server.registerTool("gva_status", {
     title: "GVA-Status",
     description:
-      "Live-Board des GVA-Screeners (nur HIT/PREPARE, sortiert nach Dringlichkeit, " +
-      "mit Fundamental-Check gegen das Wochen-Ranking), offene GVA-Hits ohne Entscheidung " +
+      "Live-Board des GVA-Screeners (nur HIT/PREPARE, sortiert nach Dringlichkeit), " +
+      "offene GVA-Hits ohne Entscheidung " +
       "und Kerims selbst gezeichnete Linien.",
     annotations: { ...NUR_LESEN, openWorldHint: true },
   }, async () => antwort(() => mcpGvaStatus()));
@@ -159,14 +159,6 @@ const handler = createMcpHandler((server) => {
     }),
     annotations: NUR_LESEN,
   }, async ({ zeitraum }) => antwort(() => mcpWirtschaftskalender(zeitraum ?? "heute")));
-
-  server.registerTool("waehrungs_ranking", {
-    title: "Währungs-Ranking",
-    description:
-      "Fundamentales Wochen-Ranking der 8 Hauptwährungen (Champion-Modell): Score, " +
-      "Stärke-Quintil und die drei stärksten Treiber je Währung.",
-    annotations: NUR_LESEN,
-  }, async () => antwort(() => mcpRanking()));
 }, {
   serverInfo: { name: "kerimos", version: "1.0.0" },
   instructions:

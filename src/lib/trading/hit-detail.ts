@@ -1,6 +1,5 @@
 import "server-only";
 import { heuteISO } from "@/lib/time";
-import type { FundamentalCheck } from "@/lib/supabase/trading";
 import { ladeMakro } from "@/lib/makro/laden";
 import { paarUrteil, type PaarUrteil } from "@/lib/makro/bewertung";
 import { ladeFuerStichtag, ladeKurse } from "@/lib/confluence/daten";
@@ -28,6 +27,21 @@ const SAISON_FENSTER = 15 as const;
 /** Wie viele Kerzen vor und nach der bildenden Kerze der Chart zeigt. */
 export const CHART_VORLAUF = 18;
 export const CHART_NACHLAUF = 4;
+
+/**
+ * Form des alten Q-Score-Blocks in `trades.fundamental_snapshot` (bis
+ * 26.09.2026). Das ML-Ranking ist seit dem 29.09.2026 komplett entfernt;
+ * der Typ bleibt nur, damit alte Snapshots lesbar bleiben.
+ */
+export interface AltesRankingUrteil {
+  urteil: "bestaetigt" | "dagegen" | "neutral" | "unbekannt";
+  grund: string;
+  rankingSeite?: "LONG" | "SHORT" | "NEUTRAL" | null;
+  baseCode?: string;
+  quoteCode?: string;
+  baseQ?: number | null;
+  quoteQ?: number | null;
+}
 
 export interface ChartBild {
   zeitrahmen: Zeitrahmen;
@@ -73,7 +87,7 @@ export interface HitLage {
    * lesbar bleiben, statt nach dem Umbau leer auszusehen. Neu geschrieben
    * wird das Feld nicht mehr.
    */
-  ranking?: FundamentalCheck;
+  ranking?: AltesRankingUrteil;
   rankingSatz?: string;
   /** Monty: Commercials gegen Retail, je Währung des Paares. */
   cotBasis: CotSeite | null;

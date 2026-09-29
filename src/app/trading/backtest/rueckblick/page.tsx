@@ -148,7 +148,8 @@ export default async function RueckblickSeite({ searchParams }: { searchParams: 
           ) : (
             <Empty>
               Für diese Woche gibt es keinen Labor-Snapshot. Die Tabelle
-              `weekly_outlook_snapshots` wird vom Screener befüllt.
+              `weekly_outlook_snapshots` ist ein eingefrorener Stand bis
+              28.09.2026 und wird nicht mehr nachgeführt.
             </Empty>
           )}
         </Card>
