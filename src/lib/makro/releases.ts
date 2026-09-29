@@ -372,3 +372,183 @@ export function entscheidUrteil(r: Release): { text: string; ton: "gut" | "schle
     ? { text: "Überraschung falkenhaft", ton: "gut" }
     : { text: "Überraschung taubenhaft", ton: "schlecht" };
 }
+
+/* ------------------------------------------------------------- MT5 */
+
+/**
+ * Eine Zeile aus trading.mt5_kalender — der Wirtschaftskalender des
+ * MetaTrader, von KerimosKalender.mq5 geschrieben und von der Brücke
+ * hochgeladen (29.09.2026). Werte roh, wie MT5 sie liefert.
+ */
+export interface Mt5Zeile {
+  value_id: number;
+  event_id: number;
+  ccy: string;
+  name: string;
+  importance: string | null;
+  event_time: string;
+  actual: number | null;
+  forecast: number | null;
+  previous: number | null;
+  multiplier: string | null;
+  unit: string | null;
+}
+
+/** MT5 und Forex Factory schreiben Zahlen in anderer Grösse (162 gegen 162000). */
+const FAKTOREN = [1, 1e-3, 1e3, 1e-6, 1e6, 1e-9, 1e9];
+const TOLERANZ_MS = 90 * 60_000;
+
+const gleich = (a: number, b: number) =>
+  Math.abs(a - b) <= Math.max(0.051, Math.abs(b) * 1e-3);
+
+function woerter(s: string): Set<string> {
+  return new Set(s.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/)
+    .filter((w) => w.length > 1 && !["the", "of", "and", "flash", "final", "prelim", "m", "y", "q"].includes(w)));
+}
+function aehnlich(a: string, b: string): number {
+  const x = woerter(a), y = woerter(b);
+  if (x.size === 0 || y.size === 0) return 0;
+  let n = 0;
+  for (const w of x) if (y.has(w)) n++;
+  return n / Math.max(x.size, y.size);
+}
+
+function mt5Einheit(z: Mt5Zeile): string {
+  if ((z.unit ?? "").toUpperCase().includes("PERCENT")) return "%";
+  const m = (z.multiplier ?? "").toUpperCase();
+  if (m.includes("THOUSAND")) return "K";
+  if (m.includes("MILLION")) return "M";
+  if (m.includes("BILLION")) return "B";
+  if (m.includes("TRILLION")) return "T";
+  return "";
+}
+
+function mt5Impact(z: Mt5Zeile): string | null {
+  const i = (z.importance ?? "").toUpperCase();
+  if (i.includes("HIGH")) return "High";
+  if (i.includes("MODERATE")) return "Medium";
+  if (i.includes("LOW")) return "Low";
+  return null;
+}
+
+export interface Mt5Bericht {
+  zeilen: number;
+  zugeordnet: number;
+  istGesetzt: number;
+  historie: number;
+  ohneZuordnung: number;
+}
+
+/**
+ * MT5-Kalender in die Releases einarbeiten.
+ *
+ * 1. Zuordnen: gleiche Währung, Zeit ±90 Minuten (MT5 rechnet in Serverzeit,
+ *    der Sommerzeit-Versatz der Vergangenheit ist nicht exakt bekannt), und
+ *    dann entscheidet der VORWERT — der ist auf beiden Seiten dieselbe Zahl,
+ *    nur evtl. in anderer Grösse. Der passende Faktor gilt danach für die
+ *    ganze Reihe (event_id).
+ * 2. Ist setzen: MT5 schlägt die Rekonstruktion, JBlanked bleibt unberührt.
+ * 3. Historie: Termine vor dem Forex-Factory-Fenster, deren event_id einmal
+ *    zugeordnet wurde, kommen unter dem Forex-Factory-Titel dazu — so wird
+ *    die Reihe im Diagramm eine Linie statt zwei. Reihen, die nie zugeordnet
+ *    wurden (z.B. Business NZ PMI, den Forex Factory nicht führt), kommen
+ *    ganz unter dem MT5-Namen dazu — aber nur mit mittlerer oder hoher
+ *    Wichtigkeit, sonst füllt sich die Tabelle mit Nebensachen.
+ *
+ * Die Erwartung der Historie ist die Prognose von MetaQuotes, nicht der
+ * Forex-Factory-Konsens. Wo beides da ist, gilt Forex Factory.
+ */
+export function mitMt5(releases: Release[], mt5: Mt5Zeile[], jetzt = Date.now()): { releases: Release[]; bericht: Mt5Bericht } {
+  const out = releases.map((r) => ({ ...r }));
+  const jeCcy = new Map<string, Release[]>();
+  for (const r of out) {
+    const l = jeCcy.get(r.ccy) ?? [];
+    l.push(r);
+    jeCcy.set(r.ccy, l);
+  }
+  const ffStart = out.reduce((m, r) => Math.min(m, Date.parse(r.event_time)), Infinity);
+
+  // 1. Kandidaten mit Punktzahl sammeln, dann gierig vergeben.
+  type Paar = { m: Mt5Zeile; r: Release; faktor: number; punkte: number };
+  const paare: Paar[] = [];
+  for (const m of mt5) {
+    const t = Date.parse(m.event_time);
+    for (const r of jeCcy.get(m.ccy) ?? []) {
+      if (Math.abs(Date.parse(r.event_time) - t) > TOLERANZ_MS) continue;
+      let faktor = 1, punkte = 0;
+      if (m.previous !== null && r.vorwert !== null) {
+        const k = FAKTOREN.find((f) => gleich(m.previous! * f, r.vorwert!));
+        if (k === undefined) continue; // Vorwert passt in keiner Grösse: anderer Termin
+        faktor = k;
+        punkte += 2;
+        if (m.forecast !== null && r.erwartung !== null && gleich(m.forecast * k, r.erwartung)) punkte += 1;
+      }
+      const name = aehnlich(m.name, r.serie);
+      punkte += name;
+      if (punkte < 1.2) continue; // ohne passenden Vorwert muss der Name klar passen
+      paare.push({ m, r, faktor, punkte });
+    }
+  }
+  paare.sort((a, b) => b.punkte - a.punkte);
+  const mVergeben = new Set<number>();
+  const rVergeben = new Set<string>();
+  const zuordnung = new Map<number, { titel: string; serie: string; kategorie: Kategorie; einheit: string; faktor: number }>();
+  let istGesetzt = 0;
+  for (const p of paare) {
+    if (mVergeben.has(p.m.value_id) || rVergeben.has(p.r.id)) continue;
+    mVergeben.add(p.m.value_id);
+    rVergeben.add(p.r.id);
+    if (!zuordnung.has(p.m.event_id)) {
+      zuordnung.set(p.m.event_id, {
+        titel: p.r.titel, serie: p.r.serie, kategorie: p.r.kategorie,
+        einheit: p.r.einheit, faktor: p.faktor,
+      });
+    }
+    // 2. Ist setzen — nur für veröffentlichte Termine.
+    if (p.m.actual !== null && Date.parse(p.m.event_time) <= jetzt && p.r.ist_quelle !== "jblanked") {
+      p.r.ist = Math.round(p.m.actual * p.faktor * 1e6) / 1e6;
+      p.r.ist_quelle = "mt5";
+      istGesetzt++;
+    }
+  }
+
+  // 3. Historie.
+  let historie = 0, ohneZuordnung = 0;
+  for (const m of mt5) {
+    if (mVergeben.has(m.value_id)) continue;
+    const t = Date.parse(m.event_time);
+    if (t > jetzt) continue;
+    if (m.actual === null) continue;
+    const z = zuordnung.get(m.event_id);
+    if (z) {
+      // Eine bekannte Reihe im Forex-Factory-Fenster, aber ohne Partner:
+      // dort steht der Termin schon (nur ohne passenden Vorwert) — nicht doppeln.
+      if (t >= ffStart - TOLERANZ_MS) continue;
+      out.push({
+        id: `mt5:${m.value_id}`, ccy: m.ccy, titel: z.titel, serie: z.serie, kategorie: z.kategorie,
+        event_time: new Date(t).toISOString(), impact: mt5Impact(m), einheit: z.einheit,
+        erwartung: m.forecast === null ? null : m.forecast * z.faktor,
+        ist: m.actual * z.faktor,
+        vorwert: m.previous === null ? null : m.previous * z.faktor,
+        ist_quelle: "mt5", abweichung: null, z: null,
+      });
+      historie++;
+    } else {
+      const impact = mt5Impact(m);
+      if (impact !== "High" && impact !== "Medium") continue;
+      const serie = serieVon(m.name);
+      out.push({
+        id: `mt5:${m.value_id}`, ccy: m.ccy, titel: m.name, serie, kategorie: kategorieVon(serie),
+        event_time: new Date(t).toISOString(), impact, einheit: mt5Einheit(m),
+        erwartung: m.forecast, ist: m.actual, vorwert: m.previous,
+        ist_quelle: "mt5", abweichung: null, z: null,
+      });
+      ohneZuordnung++;
+    }
+  }
+
+  return {
+    releases: out,
+    bericht: { zeilen: mt5.length, zugeordnet: mVergeben.size, istGesetzt, historie, ohneZuordnung },
+  };
+}

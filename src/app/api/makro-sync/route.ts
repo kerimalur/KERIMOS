@@ -93,8 +93,10 @@ export async function GET(request: NextRequest) {
 
 function releasesZeile(r: Awaited<ReturnType<typeof syncReleases>>): string {
   const quellen = Object.entries(r.jeQuelle).map(([q, n]) => `${q} ${n}`).join(", ") || "keine";
+  const mt5 = typeof r.mt5 === "string" ? r.mt5
+    : `${r.mt5.zeilen} Zeilen, ${r.mt5.zugeordnet} zugeordnet, ${r.mt5.istGesetzt} Ist, ${r.mt5.historie + r.mt5.ohneZuordnung} Historie`;
   return `${r.releases} Termine · ${r.mitErwartung} mit Erwartung · ${r.mitIst} mit Ist (${quellen}) · `
-    + `JBlanked: ${r.jblanked}${r.fehler.length ? ` · Fehler: ${r.fehler.join(" | ")}` : ""}`;
+    + `MT5: ${mt5} · JBlanked: ${r.jblanked}${r.fehler.length ? ` · Fehler: ${r.fehler.join(" | ")}` : ""}`;
 }
 
 /**

@@ -3,8 +3,8 @@ import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createTradingClient, G8 } from "@/lib/supabase/trading";
 import {
-  kategorieVon, mitAbweichung, parseWert, releasesAusKalender, serieVon,
-  type KalenderZeile, type Release,
+  kategorieVon, mitAbweichung, mitMt5, parseWert, releasesAusKalender, serieVon,
+  type KalenderZeile, type Mt5Bericht, type Mt5Zeile, type Release,
 } from "./releases";
 
 /**
@@ -12,13 +12,14 @@ import {
  * Trading-DB → public.makro_releases, mit Ist und Abweichung.
  *
  * Woher das Ist kommt, in dieser Reihenfolge:
- *   1. JBlanked News API (Forex-Factory-Spiegel mit Ist), wenn
- *      JBLANKED_API_KEY gesetzt ist. Gratis, aber streng begrenzt — deshalb
- *      pro Lauf genau EIN Abruf (die laufende Woche). Mit &voll=1 einmalig
- *      der Zeitraum ab 2024, damit die Grafiken Historie haben.
- *   2. Rekonstruktion aus dem „previous" des Folgetermins (releases.ts).
- * Ein Ist aus 1 wird nie durch 2 überschrieben, auch nicht in späteren
- * Läufen: bestehende JBlanked-Werte werden vor dem Rechnen geladen.
+ *   1. MT5-Wirtschaftskalender (trading.mt5_kalender), vom MetaTrader auf
+ *      Kerims PC geschrieben und von der MT5-Brücke hochgeladen. Gratis, mit
+ *      Historie ab 2024 — aber nur frisch, wenn der PC läuft.
+ *   2. JBlanked News API, falls JBLANKED_API_KEY gesetzt ist. Stand
+ *      29.09.2026 verlangt jeder Endpunkt Credits; der Code bleibt für den
+ *      Fall, dass sich das ändert, und schweigt ohne Key.
+ *   3. Rekonstruktion aus dem „previous" des Folgetermins (releases.ts).
+ * Ein Ist aus 1 oder 2 wird nie durch 3 überschrieben.
  */
 
 const JB_BASIS = "https://www.jblanked.com/news/api/forex-factory/calendar";
@@ -38,6 +39,7 @@ interface JbEvent {
 
 export interface ReleasesBericht {
   kalenderZeilen: number;
+  mt5: Mt5Bericht | string;
   releases: number;
   mitErwartung: number;
   mitIst: number;
@@ -100,6 +102,32 @@ export function zuRelease(r: Record<string, unknown>): Release {
     abweichung: num(r.abweichung),
     z: num(r.z),
   };
+}
+
+async function alleMt5Zeilen(): Promise<{ zeilen: Mt5Zeile[]; fehler: string | null }> {
+  const trading = createTradingClient();
+  if (!trading) return { zeilen: [], fehler: "Trading-DB nicht verbunden" };
+  const zeilen: Mt5Zeile[] = [];
+  for (let von = 0; ; von += SEITE) {
+    const { data, error } = await trading.from("mt5_kalender")
+      .select("value_id, event_id, ccy, name, importance, event_time, actual, forecast, previous, multiplier, unit")
+      .in("ccy", [...G8])
+      .order("value_id", { ascending: true })
+      .range(von, von + SEITE - 1);
+    if (error) return { zeilen, fehler: `mt5_kalender: ${error.message}` };
+    for (const r of (data ?? []) as Record<string, unknown>[]) {
+      zeilen.push({
+        value_id: Number(r.value_id), event_id: Number(r.event_id),
+        ccy: String(r.ccy), name: String(r.name),
+        importance: (r.importance as string | null) ?? null,
+        event_time: new Date(String(r.event_time)).toISOString(),
+        actual: num(r.actual), forecast: num(r.forecast), previous: num(r.previous),
+        multiplier: (r.multiplier as string | null) ?? null, unit: (r.unit as string | null) ?? null,
+      });
+    }
+    if (!data || data.length < SEITE) break;
+  }
+  return { zeilen, fehler: null };
 }
 
 /* ----------------------------------------------------------- JBlanked */
@@ -174,11 +202,13 @@ async function holeJb(pfad: string, key: string): Promise<JbEvent[]> {
 
 export async function syncReleases(db: SupabaseClient, opt: { voll?: boolean } = {}): Promise<ReleasesBericht> {
   const fehler: string[] = [];
-  const [{ zeilen, fehler: kalFehler }, bestand] = await Promise.all([
+  const [{ zeilen, fehler: kalFehler }, bestand, mt5Daten] = await Promise.all([
     alleKalenderZeilen(),
     bestehendeReleases(db),
+    alleMt5Zeilen(),
   ]);
   if (kalFehler) fehler.push(kalFehler);
+  if (mt5Daten.fehler) fehler.push(mt5Daten.fehler);
 
   // 1. Aus dem Kalender, mit Rekonstruktion.
   const ausKalender = releasesAusKalender(zeilen, G8);
@@ -186,6 +216,9 @@ export async function syncReleases(db: SupabaseClient, opt: { voll?: boolean } =
 
   // 2. Frühere echte Ist-Werte und reine JBlanked-Historie übernehmen.
   for (const alt of bestand) {
+    // MT5-Historie wird unten aus mt5_kalender neu gebaut — die alte Fassung
+    // nicht mitschleppen, sonst stünde dieselbe id zweimal im Upsert.
+    if (alt.id.startsWith("mt5:") && mt5Daten.zeilen.length > 0) continue;
     const neu = nachId.get(alt.id);
     if (!neu) {
       // Nur noch in der Tabelle: Historie aus JBlanked (oder ein Termin, den
@@ -196,8 +229,17 @@ export async function syncReleases(db: SupabaseClient, opt: { voll?: boolean } =
     }
   }
 
-  // 3. JBlanked, falls ein Schlüssel da ist.
-  let jbText = "kein JBLANKED_API_KEY — Ist nur rekonstruiert";
+  // 3. MT5: Ist setzen und Historie ergänzen.
+  let mt5Bericht: Mt5Bericht | string = "keine Zeilen in trading.mt5_kalender (MT5-Dienst oder Brücke läuft nicht?)";
+  if (mt5Daten.zeilen.length > 0) {
+    const { releases: mitM, bericht } = mitMt5([...nachId.values()], mt5Daten.zeilen);
+    nachId.clear();
+    for (const r of mitM) nachId.set(r.id, r);
+    mt5Bericht = bericht;
+  }
+
+  // 4. JBlanked, falls ein Schlüssel da ist.
+  let jbText = "aus (kein JBLANKED_API_KEY)";
   const key = process.env.JBLANKED_API_KEY?.trim();
   if (key) {
     try {
@@ -249,7 +291,9 @@ export async function syncReleases(db: SupabaseClient, opt: { voll?: boolean } =
     }
   }
 
-  // 4. Abweichung und z über die ganze Historie neu rechnen, dann schreiben.
+  // 5. Abweichung und z über die ganze Historie neu rechnen, dann schreiben.
+  // nachId ist nach id eindeutig — ein Upsert-Stück mit derselben id zweimal
+  // bräche mit „cannot affect row a second time" ab.
   const alle = mitAbweichung([...nachId.values()]);
   let geschrieben = 0;
   for (let i = 0; i < alle.length; i += 500) {
@@ -267,6 +311,7 @@ export async function syncReleases(db: SupabaseClient, opt: { voll?: boolean } =
 
   return {
     kalenderZeilen: zeilen.length,
+    mt5: mt5Bericht,
     releases: alle.length,
     mitErwartung: alle.filter((r) => r.erwartung !== null).length,
     mitIst: alle.filter((r) => r.ist !== null).length,

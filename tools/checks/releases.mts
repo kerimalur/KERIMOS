@@ -6,7 +6,7 @@
 // der deutsche Flash-PMI und die BoJ noch stimmen.
 import {
   parseWert, serieVon, kategorieVon, istInvertiert, releasesAusKalender, mitAbweichung,
-  indexBis, szenario, entscheidUrteil, type KalenderZeile,
+  indexBis, szenario, entscheidUrteil, mitMt5, type KalenderZeile, type Mt5Zeile,
 } from "../../src/lib/makro/releases";
 
 let fails = 0;
@@ -78,6 +78,31 @@ check("USD-Index positiv", idx.wert !== null && idx.wert > 0, true);
 /* Szenario */
 check("Szenario Claims", szenario(r("cl2")).startsWith("Ist unter 201K"), true);
 check("Szenario BoJ", szenario(r("boj2")).startsWith("Erhöhung auf 1.25 %"), true);
+
+/* MT5: Zuordnung über den Vorwert, Faktor, Historie */
+const m5 = (value_id: number, event_id: number, ccy: string, name: string, event_time: string,
+  actual: number | null, forecast: number | null, previous: number | null, importance = "CALENDAR_IMPORTANCE_HIGH"): Mt5Zeile =>
+  ({ value_id, event_id, ccy, name, importance, event_time, actual, forecast, previous, multiplier: "CALENDAR_MULTIPLIER_THOUSANDS", unit: "CALENDAR_UNIT_JOB" });
+const jetzt = Date.parse("2026-09-29T12:00:00Z");
+const { releases: mitM, bericht } = mitMt5(rel, [
+  // NFP Sep: MT5 in Einzelwerten (162000), Forex Factory in K (162)
+  m5(1, 840030016, "USD", "Nonfarm Payrolls", "2026-09-04T12:30:00Z", 158000, 60000, -23000),
+  // Claims 24.09 mit echtem Ist, eine Stunde Zeitversatz (Sommerzeit)
+  m5(2, 840030020, "USD", "Initial Jobless Claims", "2026-09-24T13:30:00Z", 198, 203, 196),
+  // Historie derselben NFP-Reihe vor dem Forex-Factory-Fenster
+  m5(3, 840030016, "USD", "Nonfarm Payrolls", "2024-05-03T12:30:00Z", 175000, 240000, 315000),
+  // Reihe, die Forex Factory nicht führt
+  m5(4, 554500001, "NZD", "Business NZ PMI", "2026-09-11T22:30:00Z", 49.1, null, 48.8, "CALENDAR_IMPORTANCE_MODERATE"),
+  // unwichtige Reihe ohne Partner: bleibt draussen
+  m5(5, 554500002, "NZD", "Visitor Arrivals", "2026-09-10T22:45:00Z", 1.2, null, 0.8, "CALENDAR_IMPORTANCE_LOW"),
+], jetzt);
+const mr = (id: string) => mitM.find((x) => x.id === id);
+check("MT5 NFP zugeordnet, Faktor 1e-3", [mr("nfp1")?.ist, mr("nfp1")?.ist_quelle], [158, "mt5"]);
+check("MT5 Claims trotz 1h Versatz", [mr("cl2")?.ist, mr("cl2")?.ist_quelle], [198, "mt5"]);
+check("MT5 Historie unter FF-Titel", [mr("mt5:3")?.titel, mr("mt5:3")?.ist, mr("mt5:3")?.erwartung], ["Non-Farm Employment Change", 175, 240]);
+check("MT5 Business NZ dazu", [mr("mt5:4")?.serie, mr("mt5:4")?.kategorie], ["Business NZ PMI", "wachstum"]);
+check("MT5 Unwichtiges draussen", mr("mt5:5"), undefined);
+check("MT5 Bericht", [bericht.zugeordnet, bericht.istGesetzt, bericht.historie, bericht.ohneZuordnung], [2, 2, 1, 1]);
 
 console.log(fails === 0 ? "\nAlles gut." : `\n${fails} Fehler.`);
 process.exit(fails === 0 ? 0 : 1);
