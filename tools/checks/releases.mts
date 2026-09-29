@@ -104,5 +104,16 @@ check("MT5 Business NZ dazu", [mr("mt5:4")?.serie, mr("mt5:4")?.kategorie], ["Bu
 check("MT5 Unwichtiges draussen", mr("mt5:5"), undefined);
 check("MT5 Bericht", [bericht.zugeordnet, bericht.istGesetzt, bericht.historie, bericht.ohneZuordnung], [2, 2, 1, 1]);
 
+/* Doppelung: MT5-Reihe ohne Zuordnung, aber zur Zeit eines FF-Termins derselben Kategorie */
+const { bericht: b2 } = mitMt5(rel, [
+  // Anträge zur selben Minute wie die FF-Claims, aber anderer Vorwert: nicht zuordenbar, trotzdem doppelt
+  m5(10, 840099999, "USD", "Erstanträge auf Arbeitslosenhilfe", "2026-09-17T12:30:00Z", 196, 207, 999, "CALENDAR_IMPORTANCE_HIGH"),
+], jetzt);
+check("MT5 Doppelung bleibt draussen", b2.ohneZuordnung, 0);
+check("Deutsch: Arbeitslosenrate", [kategorieVon("Arbeitslosenrate"), istInvertiert("Arbeitslosenrate")], ["arbeit", true]);
+check("Deutsch: Kern-VPI", kategorieVon("Kern-VPI n.s.b. m/m"), "inflation");
+check("Deutsch: EZB-Zins", kategorieVon("ECB Einlagenzinsentscheid"), "notenbank");
+check("Deutsch: BIP", kategorieVon("BIP m/m"), "wachstum");
+
 console.log(fails === 0 ? "\nAlles gut." : `\n${fails} Fehler.`);
 process.exit(fails === 0 ? 0 : 1);

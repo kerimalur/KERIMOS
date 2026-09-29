@@ -96,18 +96,27 @@ const RE_ARBEIT = /(Employment|Payroll|Unemployment|Claims|Claimant|Jobless|Earn
 const RE_WACHSTUM = /(PMI|ISM|Business NZ|Ivey|Tankan|GDP|Retail Sales|Industrial Production|Manufacturing Sales|Trade Balance|Current Account|Durable Goods|Construction Output|Factory Orders)/i;
 const RE_STIMMUNG = /(Sentiment|Confidence|ZEW|Ifo|Optimism|Economic Watchers)/i;
 
+// Kerims MetaTrader läuft auf Deutsch — die MT5-Namen kommen deutsch an
+// ("Beschäftigung außerhalb der Landwirtschaft"). Für Reihen, die Forex
+// Factory nicht führt, braucht die Einordnung deshalb auch deutsche Begriffe.
+const DE_NOTENBANK = /(Zinsentscheid|Leitzins|Einlagenzins|Einlagensatz|Refinanzierungssatz|Zinssatzentscheidung)/i;
+const DE_INFLATION = /(VPI|HVPI|Verbraucherpreis|Erzeugerpreis|Preisindex|Inflation|Preise)/i;
+const DE_ARBEIT = /(Beschäftigung|Beschäftigten|Arbeitslos|Erstanträge|Lohn|Löhne|Verdienst|Erwerbs)/i;
+const DE_WACHSTUM = /(BIP|Bruttoinlandsprodukt|Einzelhandel|Industrieproduktion|Handelsbilanz|Leistungsbilanz|Einkaufsmanager|Auftragseingang|Hersteller|Dienstleister)/i;
+const DE_STIMMUNG = /(Vertrauen|Stimmung|Geschäftsklima|Konsumklima|Optimismus)/i;
+
 export function kategorieVon(serie: string): Kategorie {
-  if (RE_NOTENBANK.test(serie)) return "notenbank";
-  if (RE_INFLATION.test(serie)) return "inflation";
-  if (RE_ARBEIT.test(serie)) return "arbeit";
-  if (RE_WACHSTUM.test(serie)) return "wachstum";
-  if (RE_STIMMUNG.test(serie)) return "stimmung";
+  if (RE_NOTENBANK.test(serie) || DE_NOTENBANK.test(serie)) return "notenbank";
+  if (RE_INFLATION.test(serie) || DE_INFLATION.test(serie)) return "inflation";
+  if (RE_ARBEIT.test(serie) || DE_ARBEIT.test(serie)) return "arbeit";
+  if (RE_WACHSTUM.test(serie) || DE_WACHSTUM.test(serie)) return "wachstum";
+  if (RE_STIMMUNG.test(serie) || DE_STIMMUNG.test(serie)) return "stimmung";
   return "sonstiges";
 }
 
 /** Höher ist schlechter: Arbeitslosigkeit und Anträge auf Arbeitslosenhilfe. */
 export function istInvertiert(serie: string): boolean {
-  return /(Unemployment|Claims|Claimant|Jobless)/i.test(serie);
+  return /(Unemployment|Claims|Claimant|Jobless|Arbeitslos|Erstanträge)/i.test(serie);
 }
 
 /**
@@ -450,10 +459,16 @@ export interface Mt5Bericht {
  * 2. Ist setzen: MT5 schlägt die Rekonstruktion, JBlanked bleibt unberührt.
  * 3. Historie: Termine vor dem Forex-Factory-Fenster, deren event_id einmal
  *    zugeordnet wurde, kommen unter dem Forex-Factory-Titel dazu — so wird
- *    die Reihe im Diagramm eine Linie statt zwei. Reihen, die nie zugeordnet
- *    wurden (z.B. Business NZ PMI, den Forex Factory nicht führt), kommen
- *    ganz unter dem MT5-Namen dazu — aber nur mit mittlerer oder hoher
- *    Wichtigkeit, sonst füllt sich die Tabelle mit Nebensachen.
+ *    die Reihe im Diagramm eine Linie statt zwei.
+ * 4. Reihen, die nie zugeordnet wurden, kommen unter dem MT5-Namen dazu —
+ *    aber nur, wenn Forex Factory sie wirklich NICHT führt (z.B. Business NZ
+ *    PMI). Der Test: im Forex-Factory-Fenster lag nie ein Forex-Factory-
+ *    Termin derselben Währung und Kategorie zur selben Zeit. Sonst ist es
+ *    fast immer eine Doppelung, die nur nicht zugeordnet werden konnte
+ *    (S&P-PMI der USA: MT5 und Forex Factory führen beim Final einen anderen
+ *    Vorwert). Am 29.09.2026 hätte die lockere Regel 5500 Doppelungen
+ *    gebracht, darunter US-CPI und Kern-PCE ein zweites Mal im Index.
+ *    Ausserdem nur mittlere oder hohe Wichtigkeit.
  *
  * Die Erwartung der Historie ist die Prognose von MetaQuotes, nicht der
  * Forex-Factory-Konsens. Wo beides da ist, gilt Forex Factory.
@@ -512,7 +527,27 @@ export function mitMt5(releases: Release[], mt5: Mt5Zeile[], jetzt = Date.now())
     }
   }
 
-  // 3. Historie.
+  // 3./4. Historie. Zuerst: welche nie zugeordneten Reihen führt Forex
+  // Factory wirklich nicht?
+  const ffEnde = out.reduce((m, r) => Math.max(m, Date.parse(r.event_time)), -Infinity);
+  const ffZeiten = new Map<string, number[]>();
+  for (const r of out) {
+    const k = `${r.ccy}|${r.kategorie}`;
+    const l = ffZeiten.get(k) ?? [];
+    l.push(Date.parse(r.event_time));
+    ffZeiten.set(k, l);
+  }
+  const eigenstaendig = new Map<number, boolean>();
+  for (const m of mt5) {
+    if (zuordnung.has(m.event_id) || mVergeben.has(m.value_id)) continue;
+    const t = Date.parse(m.event_time);
+    if (t < ffStart || t > ffEnde) continue;
+    const kat = kategorieVon(serieVon(m.name));
+    const kollision = (ffZeiten.get(`${m.ccy}|${kat}`) ?? []).some((x) => Math.abs(x - t) <= TOLERANZ_MS);
+    const bisher = eigenstaendig.get(m.event_id);
+    eigenstaendig.set(m.event_id, (bisher ?? true) && !kollision);
+  }
+
   let historie = 0, ohneZuordnung = 0;
   for (const m of mt5) {
     if (mVergeben.has(m.value_id)) continue;
@@ -534,6 +569,9 @@ export function mitMt5(releases: Release[], mt5: Mt5Zeile[], jetzt = Date.now())
       });
       historie++;
     } else {
+      // Nie im Forex-Factory-Fenster gesehen (eingestellt) oder dort mit
+      // Kollision: weglassen.
+      if (eigenstaendig.get(m.event_id) !== true) continue;
       const impact = mt5Impact(m);
       if (impact !== "High" && impact !== "Medium") continue;
       const serie = serieVon(m.name);

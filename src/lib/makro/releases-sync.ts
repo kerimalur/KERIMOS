@@ -306,6 +306,21 @@ export async function syncReleases(db: SupabaseClient, opt: { voll?: boolean } =
     geschrieben += stueck.length;
   }
 
+  // MT5-Zeilen, die dieser Lauf nicht mehr erzeugt (z.B. weil die Regel für
+  // Doppelungen strenger wurde), aus der Tabelle entfernen — sonst blieben
+  // sie für immer stehen, denn ein Upsert löscht nichts.
+  if (mt5Daten.zeilen.length > 0 && fehler.length === 0) {
+    const jetzt = new Set(alle.map((r) => r.id));
+    const weg = bestand.filter((r) => r.id.startsWith("mt5:") && !jetzt.has(r.id)).map((r) => r.id);
+    for (let i = 0; i < weg.length; i += 200) {
+      const { error } = await db.from("makro_releases").delete().in("id", weg.slice(i, i + 200));
+      if (error) {
+        fehler.push(`Aufräumen: ${error.message}`);
+        break;
+      }
+    }
+  }
+
   const jeQuelle: Record<string, number> = {};
   for (const r of alle) if (r.ist_quelle) jeQuelle[r.ist_quelle] = (jeQuelle[r.ist_quelle] ?? 0) + 1;
 
