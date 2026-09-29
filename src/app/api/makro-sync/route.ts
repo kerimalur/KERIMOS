@@ -30,6 +30,7 @@ export const maxDuration = 300;
  *     &job=releases           nur die Veröffentlichungen (alle 15 Minuten)
  *     &job=releases&voll=1    einmalig: JBlanked-Historie ab 2024 nachladen
  *     &job=reihen             nur die Monatsreihen
+ *     &job=jb-test&pfad=...   Probeabruf bei JBlanked (siehe jbTest unten)
  * Ohne &job laufen beide.
  */
 export async function GET(request: NextRequest) {
@@ -50,6 +51,9 @@ export async function GET(request: NextRequest) {
   }
 
   const job = request.nextUrl.searchParams.get("job");
+  if (job === "jb-test") {
+    return NextResponse.json(await jbTest(request.nextUrl.searchParams.get("pfad") ?? ""));
+  }
   if (job && job !== "releases" && job !== "reihen") {
     return NextResponse.json({ ok: false, fehler: `unbekannter Job: ${job}` }, { status: 400 });
   }
@@ -91,4 +95,74 @@ function releasesZeile(r: Awaited<ReturnType<typeof syncReleases>>): string {
   const quellen = Object.entries(r.jeQuelle).map(([q, n]) => `${q} ${n}`).join(", ") || "keine";
   return `${r.releases} Termine · ${r.mitErwartung} mit Erwartung · ${r.mitIst} mit Ist (${quellen}) · `
     + `JBlanked: ${r.jblanked}${r.fehler.length ? ` · Fehler: ${r.fehler.join(" | ")}` : ""}`;
+}
+
+/**
+ * Probeabruf bei JBlanked (29.09.2026): Der Zeitraum-Abruf ab 2024 gab mit
+ * dem Gratis-Key HTTP 401. Bevor ein zweiter Weg zur Historie gebaut wird,
+ * zeigt dieser Aufruf, was die anderen Endpunkte mit demselben Key liefern —
+ * Status, Aufbau und die ersten Einträge. Nur feste Pfade, damit die Route
+ * kein offener Proxy wird. Gratis-Limit: ein Abruf alle 5 Minuten.
+ */
+const JB_TEST_PFADE = [
+  "full-list/", "list/", "calendar/", "calendar/today/", "calendar/week/",
+] as const;
+
+async function jbTest(pfad: string) {
+  const key = process.env.JBLANKED_API_KEY?.trim();
+  if (!key) return { ok: false, fehler: "JBLANKED_API_KEY fehlt" };
+  if (!(JB_TEST_PFADE as readonly string[]).includes(pfad)) {
+    return { ok: false, fehler: `pfad muss einer von diesen sein: ${JB_TEST_PFADE.join(", ")}` };
+  }
+  const url = `https://www.jblanked.com/news/api/forex-factory/${pfad}`;
+  const start = Date.now();
+  try {
+    const r = await fetch(url, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(50_000),
+      headers: { Authorization: `Api-Key ${key}`, "Content-Type": "application/json" },
+    });
+    const text = await r.text();
+    const basis = {
+      url, status: r.status, sekunden: Math.round((Date.now() - start) / 100) / 10,
+      contentType: r.headers.get("content-type"), bytes: text.length,
+    };
+    let json: unknown;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      return { ok: r.ok, ...basis, text: text.slice(0, 1500) };
+    }
+    return { ok: r.ok, ...basis, aufbau: aufbau(json), beispiel: beispiel(json) };
+  } catch (e) {
+    return { ok: false, url, fehler: e instanceof Error ? e.message : "unbekannt" };
+  }
+}
+
+/** Grobe Beschreibung der Struktur: Typ, Länge, Schlüssel — zwei Ebenen tief. */
+function aufbau(x: unknown, tiefe = 0): unknown {
+  if (Array.isArray(x)) {
+    return { typ: "liste", laenge: x.length, element: x.length && tiefe < 2 ? aufbau(x[0], tiefe + 1) : null };
+  }
+  if (x && typeof x === "object") {
+    const o = x as Record<string, unknown>;
+    const schluessel = Object.keys(o);
+    return {
+      typ: "objekt",
+      schluessel: schluessel.slice(0, 30),
+      anzahl: schluessel.length,
+      ...(tiefe < 2 && schluessel.length
+        ? { erster: { [schluessel[0]]: aufbau(o[schluessel[0]], tiefe + 1) } }
+        : {}),
+    };
+  }
+  return typeof x;
+}
+
+/** Die ersten zwei Einträge, gekürzt — genug, um Felder und Datumsformat zu sehen. */
+function beispiel(x: unknown): string {
+  const kopf = Array.isArray(x) ? x.slice(0, 2)
+    : x && typeof x === "object" ? Object.fromEntries(Object.entries(x as Record<string, unknown>).slice(0, 2))
+      : x;
+  return JSON.stringify(kopf).slice(0, 4000);
 }
