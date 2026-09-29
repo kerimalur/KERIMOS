@@ -47,8 +47,8 @@ export const PMI_MUSTER: Record<string, { pmi_industrie: Muster; pmi_dienste: Mu
   JPY: { pmi_industrie: INDUSTRIE, pmi_dienste: DIENSTE },
   AUD: { pmi_industrie: INDUSTRIE, pmi_dienste: DIENSTE },
   NZD: {
-    pmi_industrie: [{ name: "Business NZ Manufacturing Index", re: /^Business NZ Manufacturing Index$/i }],
-    pmi_dienste: [{ name: "Business NZ Services Index", re: /^Business NZ Services Index$/i }],
+    pmi_industrie: [{ name: "Business NZ Manufacturing Index", re: /^Business ?NZ Manufacturing Index$/i }],
+    pmi_dienste: [{ name: "Business NZ Services Index", re: /^Business ?NZ Services Index$/i }],
   },
   // Einen S&P-Dienste-PMI für Kanada führt der Feed nicht (Stand 29.09.2026).
   // Der Ivey PMI misst die Einkaufsmanager der ganzen Wirtschaft inklusive

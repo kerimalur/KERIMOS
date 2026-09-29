@@ -3,6 +3,7 @@ import { holeAlles } from "@/lib/makro/quellen";
 import { makroDb, speichereReihe, bestehendeReihe, berichtErgaenzen } from "@/lib/makro/speichern";
 import { syncReleases } from "@/lib/makro/releases-sync";
 import { wochenideenLauf } from "@/lib/makro/wochenideen";
+import { rechneZurueck, rueckrechnungWennFaellig } from "@/lib/makro/rueckrechnung";
 
 export const dynamic = "force-dynamic";
 // Der Lauf „releases" rechnet die ganze Historie neu und schreibt sie in
@@ -32,6 +33,8 @@ export const maxDuration = 300;
  *     &job=releases&voll=1    einmalig: JBlanked-Historie ab 2024 nachladen
  *     &job=reihen             nur die Monatsreihen
  *     &job=wochenideen        nur die Wochenaussicht (anlegen + nachmessen)
+ *     &job=rueckrechnung      Rückrechnung ab 2024 sofort neu rechnen
+ * Der volle Lauf rechnet die Rückrechnung einmal pro Woche mit.
  *     &job=jb-test&pfad=...   Probeabruf bei JBlanked (siehe jbTest unten)
  * Ohne &job laufen beide.
  */
@@ -61,6 +64,11 @@ export async function GET(request: NextRequest) {
     await berichtErgaenzen(db, { wochenideen: text });
     return NextResponse.json({ ok: true, wochenideen: text });
   }
+  if (job === "rueckrechnung") {
+    const text = await rechneZurueck();
+    await berichtErgaenzen(db, { rueckrechnung: text });
+    return NextResponse.json({ ok: !/fehlt|Fehler|Schreiben|Löschen/.test(text), rueckrechnung: text });
+  }
   if (job && job !== "releases" && job !== "reihen") {
     return NextResponse.json({ ok: false, fehler: `unbekannter Job: ${job}` }, { status: 400 });
   }
@@ -80,6 +88,7 @@ export async function GET(request: NextRequest) {
   if (releases) bericht.releases = releasesZeile(releases);
   // Die Wochenaussicht nach den Releases — sie braucht das frische Urteil.
   if (job !== "reihen") bericht.wochenideen = await wochenideenLauf();
+  if (!job) bericht.rueckrechnung = await rueckrechnungWennFaellig().catch((e) => `Fehler: ${e instanceof Error ? e.message : "?"}`);
 
   await Promise.all(ergebnisse.map(async (e) => {
     const schluessel = `${e.ccy}.${e.feld}`;

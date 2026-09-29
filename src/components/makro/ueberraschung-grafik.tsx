@@ -180,7 +180,7 @@ export function IstGegenErwartung({ serien, ccy }: { serien: SerieDaten[]; ccy: 
               axisLine={false} tickLine={false} minTickGap={30} />
             <YAxis orientation="right" width={44} domain={["auto", "auto"]}
               tick={{ fill: ACHSE, fontSize: 10 }} axisLine={false} tickLine={false} />
-            {s && /PMI|ISM|Business NZ|Ivey/i.test(s.serie) && (
+            {s && /PMI|ISM|Business ?NZ|Ivey/i.test(s.serie) && (
               <ReferenceLine y={50} stroke="#9A8C74" strokeDasharray="4 4"
                 label={{ value: "50", position: "insideBottomLeft", fill: ACHSE, fontSize: 10 }} />
             )}

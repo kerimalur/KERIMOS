@@ -129,7 +129,7 @@ async function holePmi(): Promise<FeldErgebnis[]> {
     const { data, error } = await trading.from("calendar_events")
       .select("title, currency, event_time, previous")
       .gte("event_time", ab)
-      .or("title.ilike.%PMI%,title.ilike.%Business NZ%")
+      .or("title.ilike.%PMI%,title.ilike.%Business NZ%,title.ilike.%BusinessNZ%")
       .limit(5000);
     if (error) fehler.push(`Trading-DB: ${error.message}`);
     termine.push(...((data ?? []) as KalenderTermin[]));

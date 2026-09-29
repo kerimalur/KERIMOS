@@ -143,12 +143,12 @@ const KERN: KernDef[] = [
   {
     key: "pmi_industrie", label: "PMI Industrie", ebene: 1, pmi: true, teil: "pmi_industrie",
     muster: [/^ISM Manufacturing PMI$/i, /^Manufacturing PMI$/i, /^procure\.ch Manufacturing PMI$/i,
-      /^Business NZ (Manufacturing Index|PMI)$/i, /^German Manufacturing PMI$/i, /Manufacturing PMI$/i,
+      /^Business ?NZ (Manufacturing Index|PMI)$/i, /^German Manufacturing PMI$/i, /Manufacturing PMI$/i,
       /PMI der Hersteller/i, /PMI\) verarbeitendes Gewerbe/i, /^BusinessNZ Herstellerindex$/i],
   },
   {
     key: "pmi_dienste", label: "PMI Dienste", ebene: 1, pmi: true, teil: "pmi_dienste",
-    muster: [/^ISM Services PMI$/i, /^Services PMI$/i, /^Ivey PMI$/i, /^Business NZ Services Index$/i,
+    muster: [/^ISM Services PMI$/i, /^Services PMI$/i, /^Ivey PMI$/i, /^Business ?NZ Services Index$/i,
       /^German Services PMI$/i, /Services PMI$/i, /PMI der Dienstleister/i, /PMI\) Dienstleistungen/i,
       /^BusinessNZ Dienstleistungsindex$/i],
   },
@@ -467,4 +467,12 @@ export interface UrteilKurz {
 
 export function kurzform(u: UrteilBild): UrteilKurz {
   return { ccy: u.ccy, wort: u.wort, score: u.score, gruende: u.gruende.slice(0, 3).map((g) => g.text) };
+}
+
+/** Der jüngste Wert einer Kernzahl mit Ist bis `jetzt` — für die Rückrechnung. */
+export function kernWert(key: string, releases: Release[], jetzt: number): Release | null {
+  const def = KERN.find((k) => k.key === key);
+  if (!def) return null;
+  const reihe = reiheFuer(def, releases, jetzt).filter((r) => r.ist !== null);
+  return reihe[reihe.length - 1] ?? null;
 }

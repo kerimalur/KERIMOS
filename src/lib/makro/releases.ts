@@ -92,17 +92,17 @@ export function serieVon(titel: string): string {
 
 const RE_NOTENBANK = /(Cash Rate|Policy Rate|Funds Rate|Bank Rate|Refinancing Rate|Overnight Rate|Deposit Facility Rate|Official Cash Rate)$/i;
 const RE_INFLATION = /(CPI|PPI|PCE|HICP|Price Index|Prices|Inflation)/i;
-const RE_ARBEIT = /(Employment|Payroll|Unemployment|Claims|Claimant|Jobless|Earnings|Wage|Labor Cost)/i;
-const RE_WACHSTUM = /(PMI|ISM|Business NZ|Ivey|Tankan|GDP|Retail Sales|Industrial Production|Manufacturing Sales|Trade Balance|Current Account|Durable Goods|Construction Output|Factory Orders)/i;
-const RE_STIMMUNG = /(Sentiment|Confidence|ZEW|Ifo|Optimism|Economic Watchers)/i;
+const RE_ARBEIT = /(Employment|Payroll|Unemployment|Claims|Claimant|Jobless|Earnings|Wage|Labor Cost|JOLTS|Job Openings)/i;
+const RE_WACHSTUM = /(PMI|ISM|Business ?NZ|Ivey|Tankan|GDP|Retail Sales|Industrial Production|Manufacturing Sales|Trade Balance|Current Account|Durable Goods|Construction Output|Factory Orders|Manufacturing Index|Housing Starts|Building Permits|Building Approvals|Home Sales|Consumer Spending|Household Spending|Wholesale Sales|Capital Expenditure|Tertiary Industry)/i;
+const RE_STIMMUNG = /(Sentiment|Confidence|ZEW|Ifo|Optimism|Economic Watchers|Climate|Economic Barometer)/i;
 
 // Kerims MetaTrader läuft auf Deutsch — die MT5-Namen kommen deutsch an
 // ("Beschäftigung außerhalb der Landwirtschaft"). Für Reihen, die Forex
 // Factory nicht führt, braucht die Einordnung deshalb auch deutsche Begriffe.
 const DE_NOTENBANK = /(Zinsentscheid|Leitzins|Einlagenzins|Einlagensatz|Refinanzierungssatz|Zinssatzentscheidung)/i;
 const DE_INFLATION = /(VPI|HVPI|Verbraucherpreis|Erzeugerpreis|Preisindex|Inflation|Preise)/i;
-const DE_ARBEIT = /(Beschäftigung|Beschäftigten|Arbeitslos|Erstanträge|Lohn|Löhne|Verdienst|Erwerbs)/i;
-const DE_WACHSTUM = /(BIP|Bruttoinlandsprodukt|Einzelhandel|Industrieproduktion|Handelsbilanz|Leistungsbilanz|Einkaufsmanager|Auftragseingang|Hersteller|Dienstleister)/i;
+const DE_ARBEIT = /(Beschäftigung|Beschäftigten|Arbeitslos|Arbeitssuchende|Erstanträge|Lohn|Löhne|Verdienst|Erwerbs)/i;
+const DE_WACHSTUM = /(BIP|Bruttoinlandsprodukt|Einzelhandel|Einzelhändler|Auftragseing|Industrieproduktion|Handelsbilanz|Leistungsbilanz|Einkaufsmanager|Auftragseingang|Hersteller|Dienstleister)/i;
 const DE_STIMMUNG = /(Vertrauen|Stimmung|Geschäftsklima|Konsumklima|Optimismus)/i;
 
 export function kategorieVon(serie: string): Kategorie {
@@ -116,7 +116,7 @@ export function kategorieVon(serie: string): Kategorie {
 
 /** Höher ist schlechter: Arbeitslosigkeit und Anträge auf Arbeitslosenhilfe. */
 export function istInvertiert(serie: string): boolean {
-  return /(Unemployment|Claims|Claimant|Jobless|Arbeitslos|Erstanträge)/i.test(serie);
+  return /(Unemployment|Claims|Claimant|Jobless|Arbeitslos|Arbeitssuchende|Erstanträge)/i.test(serie);
 }
 
 /**
@@ -128,7 +128,7 @@ export function istInvertiert(serie: string): boolean {
 export function schrittVon(serie: string, kategorie: Kategorie, einheit: string, erwartung: number | null): number {
   const f = Math.abs(erwartung ?? 0);
   if (kategorie === "notenbank") return 0.25;
-  if (/(PMI|ISM|Business NZ|Ivey)/i.test(serie)) return 1;
+  if (/(PMI|ISM|Business ?NZ|Ivey)/i.test(serie)) return 1;
   if (einheit === "%") return /Retail Sales/i.test(serie) ? 0.3 : 0.1;
   if (einheit === "K") {
     if (/Non-Farm Employment Change/i.test(serie)) return 50;

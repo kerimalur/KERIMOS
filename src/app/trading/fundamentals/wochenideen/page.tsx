@@ -2,6 +2,8 @@ import Link from "next/link";
 import { tradingConfigured } from "@/lib/supabase/trading";
 import { ladeWochenideen, type WochenIdee } from "@/lib/makro/wochenideen";
 import { montagVon } from "@/lib/makro/wochenideen-rechnen";
+import { ladeRueckrechnung } from "@/lib/makro/rueckrechnung";
+import { zufallsBand } from "@/lib/makro/rueckrechnung-rechnen";
 import { wochenideenJetzt } from "@/lib/wochenideen-actions";
 import { EinschaetzungForm } from "@/components/makro/einschaetzung-form";
 import { Info } from "@/components/makro/info";
@@ -37,7 +39,7 @@ function Prozent({ p, pips }: { p: number | null; pips: number | null }) {
 
 interface Gruppe { label: string; n: number; treffer: number | null; schnitt: number | null }
 
-function gruppe(label: string, ideen: WochenIdee[]): Gruppe {
+function gruppe(label: string, ideen: { prozent_2w: number | null }[]): Gruppe {
   const mit = ideen.filter((i) => i.prozent_2w !== null);
   const treffer = mit.filter((i) => i.prozent_2w! > 0).length;
   return {
@@ -47,11 +49,16 @@ function gruppe(label: string, ideen: WochenIdee[]): Gruppe {
   };
 }
 
-function GruppenKarten({ gruppen }: { gruppen: Gruppe[] }) {
+function GruppenKarten({ gruppen, band = false }: { gruppen: Gruppe[]; band?: boolean }) {
   return (
     <div className="grid gap-2 sm:grid-cols-3">
-      {gruppen.map((g) => (
-        <div key={g.label} className="rounded-xl bg-sand/60 px-3 py-2.5">
+      {gruppen.map((g) => {
+        const zb = band ? zufallsBand(g.n) : null;
+        const ueber = zb !== null && g.treffer !== null && g.treffer > 50 + zb;
+        const unter = zb !== null && g.treffer !== null && g.treffer < 50 - zb;
+        return (
+        <div key={g.label} className={cx("rounded-xl px-3 py-2.5",
+          ueber ? "bg-good-tint" : unter ? "bg-bad-tint" : "bg-sand/60")}>
           <p className="text-[11px] uppercase tracking-wide text-ink-muted">{g.label}</p>
           <p className="tabular mt-1 font-mono text-lg text-ink">
             {g.treffer === null ? "—" : `${g.treffer} %`}
@@ -60,8 +67,14 @@ function GruppenKarten({ gruppen }: { gruppen: Gruppe[] }) {
           <p className="text-[11px] text-ink-muted">
             {g.n} gemessen · Schnitt {g.schnitt === null ? "—" : `${g.schnitt > 0 ? "+" : ""}${g.schnitt.toFixed(2)} %`}
           </p>
+          {zb !== null && (
+            <p className="text-[10px] text-ink-faint">
+              Zufall: 50 % ± {zb} — {ueber ? "klar besser als Zufall" : unter ? "klar schlechter als Zufall" : "nicht vom Zufall zu unterscheiden"}
+            </p>
+          )}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -104,7 +117,7 @@ export default async function WochenideenSeite() {
   if (!tradingConfigured()) {
     return <Card><Empty>Trading-Datenbank nicht verbunden.</Empty></Card>;
   }
-  const alle = await ladeWochenideen();
+  const [alle, rueck] = await Promise.all([ladeWochenideen(), ladeRueckrechnung()]);
   const diese = montagVon(new Date());
   const jetzt = alle.filter((i) => i.woche === diese);
   const frueher = alle.filter((i) => i.woche < diese);
@@ -214,6 +227,8 @@ export default async function WochenideenSeite() {
         )}
       </Card>
 
+      <RueckrechnungKarte rueck={rueck} />
+
       {wochen.map((w) => (
         <Card key={w}>
           <CardTitle>{wocheText(w)}</CardTitle>
@@ -223,5 +238,93 @@ export default async function WochenideenSeite() {
         </Card>
       ))}
     </div>
+  );
+}
+
+/**
+ * Die Rückrechnung ab März 2024: was die Ideen damals gebracht hätten.
+ * Getrennt nach Klasse, nach Herkunft der Erwartung (MetaQuotes-Prognose
+ * bis Juni 2026, danach Forex-Factory-Konsens), nach Jahr und nach Paar —
+ * jeweils mit dem Band, in dem Zufall läge.
+ */
+function RueckrechnungKarte({ rueck }: { rueck: Awaited<ReturnType<typeof ladeRueckrechnung>> }) {
+  const gemessen = rueck.filter((r) => r.prozent_2w !== null);
+  const jahre = [...new Set(rueck.map((r) => r.woche.slice(0, 4)))];
+  const paare = [...new Set(rueck.map((r) => r.paar))]
+    .map((p) => gruppe(p, rueck.filter((r) => r.paar === p)))
+    .filter((g) => g.n > 0)
+    .sort((a, b) => (b.schnitt ?? 0) - (a.schnitt ?? 0));
+  const stand = rueck[0]?.gerechnet_am
+    ? new Intl.DateTimeFormat("de-CH", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Zurich" }).format(new Date(rueck[0].gerechnet_am))
+    : null;
+
+  return (
+    <Card>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <CardTitle className="mb-0">Rückrechnung ab März 2024</CardTitle>
+        <Info titel="Wie zurückgerechnet wird" breit={340}>
+          Für jeden Montag das Urteil, wie es an diesem Tag möglich war — nur mit
+          Veröffentlichungen davor. Vereinfacht gegenüber live: Zentralbank nur aus den
+          Zinsentscheiden (ohne Markterwartung), Wirtschaft nur aus dem PMI (ohne BIP),
+          Überraschung genau wie live. Bis Juni 2026 ist die Erwartung die Prognose von
+          MetaQuotes, danach der Konsens. Überlappende Horizonte (jede Woche eine neue
+          2-Wochen-Messung) machen die echte Streuung grösser als das angezeigte Band.
+        </Info>
+        <span className="ml-auto text-[11px] text-ink-faint">
+          {stand ? `gerechnet ${stand} · wöchentlich neu` : "noch nicht gerechnet"}
+        </span>
+      </div>
+      {gemessen.length === 0 ? (
+        <p className="text-sm text-ink-muted">
+          Noch keine Rückrechnung vorhanden. Sie läuft beim nächsten vollen Datenlauf
+          automatisch, oder sofort über den Aufruf mit <code className="text-xs">&amp;job=rueckrechnung</code>.
+        </p>
+      ) : (
+        <div className="space-y-4">
+          <GruppenKarten band gruppen={[
+            gruppe("Klasse A · stark gegen schwach", rueck.filter((r) => r.klasse === "A")),
+            gruppe("Klasse B · stark gegen neutral", rueck.filter((r) => r.klasse === "B")),
+            gruppe("Alle Ideen", rueck),
+          ]} />
+          <div>
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Nach Herkunft der Erwartung und Jahr</p>
+            <GruppenKarten band gruppen={[
+              gruppe("MetaQuotes-Prognose", rueck.filter((r) => r.erwartung === "metaquotes")),
+              gruppe("Konsens (ab Juli 2026)", rueck.filter((r) => r.erwartung === "konsens")),
+              ...jahre.map((j) => gruppe(`Jahr ${j}`, rueck.filter((r) => r.woche.startsWith(j)))),
+            ]} />
+          </div>
+          <details>
+            <summary className="cursor-pointer text-xs text-accent-soft">Je Paar ({paare.length})</summary>
+            <table className="mt-2 w-full text-sm">
+              <thead>
+                <tr className="text-left text-[10px] uppercase tracking-[0.08em] text-ink-faint">
+                  <th className="pb-2 font-medium">Paar</th>
+                  <th className="pb-2 text-right font-medium">Ideen</th>
+                  <th className="pb-2 text-right font-medium">Aufgegangen</th>
+                  <th className="pb-2 text-right font-medium">Zufall ±</th>
+                  <th className="pb-2 text-right font-medium">Schnitt 2W</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paare.map((g) => (
+                  <tr key={g.label} className="border-t border-line/60">
+                    <td className="py-1.5 font-display text-xs font-bold text-ink">{g.label}</td>
+                    <td className="tabular py-1.5 text-right text-xs text-ink-muted">{g.n}</td>
+                    <td className="tabular py-1.5 text-right text-xs text-ink-soft">{g.treffer === null ? "—" : `${g.treffer} %`}</td>
+                    <td className="tabular py-1.5 text-right text-xs text-ink-faint">{zufallsBand(g.n)}</td>
+                    <td className="py-1.5 text-right text-xs"><Prozent p={g.schnitt} pips={null} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="mt-2 text-[11px] text-ink-faint">
+              Je Paar sind es wenige Ideen — ein Paar mit 70 % bei 10 Ideen ist noch Zufall.
+              Aussagekräftig ist zuerst die Zeile „Alle Ideen" oben.
+            </p>
+          </details>
+        </div>
+      )}
+    </Card>
   );
 }

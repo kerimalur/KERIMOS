@@ -12,6 +12,7 @@ import { urteilFuer, urteilWort } from "../../src/lib/makro/urteil";
 import { ersatzAusMt5 } from "../../src/lib/makro/pmi";
 import { messe, montagVon } from "../../src/lib/makro/wochenideen-rechnen";
 import { paarKlasse } from "../../src/lib/makro/urteil";
+import { zentralbankAm, wirtschaftAm, ideenAm, montage, zufallsBand } from "../../src/lib/makro/rueckrechnung-rechnen";
 
 let fails = 0;
 function check(name: string, actual: unknown, expected: unknown) {
@@ -187,6 +188,34 @@ check("Montag von Sonntag", montagVon(new Date("2026-10-04T10:00:00Z")), "2026-0
 check("Klasse A", paarKlasse(0.4, -0.3), "A");
 check("Klasse B (gegen neutral)", paarKlasse(0.5, 0.05), "B");
 check("Keine Idee unter 0.40", paarKlasse(0.3, 0), null);
+
+/* Rückrechnung */
+{
+  const nb = (id: string, zeit: string, vorwert: number, erwartung: number, ist: number | null) => ({
+    id, ccy: "USD", titel: "Federal Funds Rate", serie: "Federal Funds Rate", kategorie: "notenbank" as const,
+    event_time: zeit, impact: "High", einheit: "%", erwartung, ist, vorwert, ist_quelle: "mt5" as const, abweichung: null, z: null,
+  });
+  const fed = [
+    nb("f1", "2024-06-12T18:00:00Z", 5.5, 5.5, 5.5),
+    nb("f2", "2024-09-18T18:00:00Z", 5.5, 5.25, 5.0),   // Senkung
+    nb("f3", "2024-11-07T19:00:00Z", 5.0, 4.75, 4.75),  // Senkung
+    nb("f4", "2025-06-18T18:00:00Z", 4.75, 4.75, 4.75),
+  ];
+  check("ZB kurz nach Senkung = Lockerung", zentralbankAm(fed, Date.parse("2024-12-02T00:00:00Z")), -1);
+  check("ZB > 182 Tage nach letzter Senkung = Pause unten", zentralbankAm(fed, Date.parse("2025-07-07T00:00:00Z")), -0.3);
+  check("ZB kennt keine Zukunft", zentralbankAm(fed, Date.parse("2024-09-16T00:00:00Z")), -0.3);
+  check("ZB vor erstem Schritt", zentralbankAm(fed.slice(0, 1), Date.parse("2024-07-01T00:00:00Z")), 0);
+  const pmi = (id: string, zeit: string, ist: number) => ({
+    id, ccy: "USD", titel: "ISM Manufacturing PMI", serie: "ISM Manufacturing PMI", kategorie: "wachstum" as const,
+    event_time: zeit, impact: "High", einheit: "", erwartung: null, ist, vorwert: null, ist_quelle: "mt5" as const, abweichung: null, z: null,
+  });
+  check("Wirtschaft aus PMI 55 = +1", wirtschaftAm([pmi("p1", "2024-05-01T14:00:00Z", 55)], Date.parse("2024-05-06T00:00:00Z")), 1);
+  check("PMI älter als 75 Tage zählt nicht", wirtschaftAm([pmi("p1", "2024-01-02T14:00:00Z", 55)], Date.parse("2024-05-06T00:00:00Z")), null);
+  check("Montage", montage("2024-03-01", "2024-03-20"), ["2024-03-04", "2024-03-11", "2024-03-18"]);
+  const ideen = ideenAm("2024-03-04", { NZD: 0.5, CAD: -0.3, GBP: 0.05, USD: 0 }, ["NZDCAD", "GBPNZD", "NZDUSD", "USDCAD", "GBPCAD"]);
+  check("Rück-Ideen", ideen.map((i) => `${i.paar} ${i.seite} ${i.klasse}`), ["NZDCAD long A", "NZDUSD long B", "GBPNZD short B"]);
+  check("Zufallsband 100 Ideen", zufallsBand(100), 10);
+}
 
 console.log(fails === 0 ? "\nAlles gut." : `\n${fails} Fehler.`);
 process.exit(fails === 0 ? 0 : 1);
