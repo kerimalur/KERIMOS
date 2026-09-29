@@ -48,6 +48,8 @@ const ISO = /^\d{4}-\d{2}-\d{2}$/;
 export interface WochenzielMcp extends Wochenziel {
   /** Stammt aus einer früheren Woche und ist noch nicht fertig. */
   ausVorwoche: boolean;
+  /** Ergebnis der Lernkontrolle, gesetzt über wochenziel_aendern (seit 29.09.2026). */
+  lernnotiz: string | null;
 }
 
 export async function mcpWochenziele(datum?: string): Promise<{
@@ -58,7 +60,7 @@ export async function mcpWochenziele(datum?: string): Promise<{
   const woche = datum && ISO.test(datum) ? weekStart(datum) : aktuell;
 
   let q = db.from("wochenziele")
-    .select("id, woche, titel, details, status, dringend, seit, reihenfolge, erstellt")
+    .select("id, woche, titel, details, status, dringend, seit, reihenfolge, erstellt, lernnotiz")
     .eq("user_id", userId);
   q = woche === aktuell
     ? q.or(`woche.eq.${woche},and(woche.lt.${woche},status.neq.fertig)`)
@@ -67,7 +69,9 @@ export async function mcpWochenziele(datum?: string): Promise<{
   const { data, error } = await q;
   if (error) throw new Error(`wochenziele: ${error.message}`);
 
-  const ziele = sortiere(((data ?? []) as Record<string, unknown>[]).map((r) => ({
+  const zeilen = (data ?? []) as Record<string, unknown>[];
+  const lern = new Map(zeilen.map((r) => [String(r.id), (r.lernnotiz as string | null) ?? null]));
+  const ziele = sortiere(zeilen.map((r) => ({
     id: String(r.id),
     woche: String(r.woche),
     titel: String(r.titel ?? ""),
@@ -77,7 +81,7 @@ export async function mcpWochenziele(datum?: string): Promise<{
     seit: (r.seit as string | null) ?? null,
     reihenfolge: Number(r.reihenfolge ?? 0),
     erstellt: String(r.erstellt ?? ""),
-  }))).map((z) => ({ ...z, ausVorwoche: z.woche < woche }));
+  }))).map((z) => ({ ...z, ausVorwoche: z.woche < woche, lernnotiz: lern.get(z.id) ?? null }));
 
   return { woche, kw: kalenderwoche(woche), ziele };
 }

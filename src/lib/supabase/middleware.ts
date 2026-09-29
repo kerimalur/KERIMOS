@@ -32,14 +32,24 @@ export async function updateSession(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some((p) => path.startsWith(p));
 
+  // Nach der Anmeldung dorthin zurück, wo man hinwollte — nötig für die
+  // OAuth-Zustimmung (/oauth/consent?authorization_id=…), die sonst ihre
+  // Anfrage-ID verliert (29.09.2026).
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
+    const ziel = path + request.nextUrl.search;
     url.pathname = "/login";
+    url.search = path === "/" ? "" : `?next=${encodeURIComponent(ziel)}`;
     return NextResponse.redirect(url);
   }
   if (user && path === "/login") {
+    const next = request.nextUrl.searchParams.get("next");
     const url = request.nextUrl.clone();
+    url.search = "";
     url.pathname = "/";
+    if (next && next.startsWith("/") && !next.startsWith("//")) {
+      return NextResponse.redirect(new URL(next, request.nextUrl.origin));
+    }
     return NextResponse.redirect(url);
   }
   return response;

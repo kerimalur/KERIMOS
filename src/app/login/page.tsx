@@ -31,7 +31,9 @@ export default function LoginPage() {
       setMode("signin");
       return;
     }
-    router.push("/");
+    // Zurück zur Seite, die den Login verlangt hat (z.B. OAuth-Zustimmung).
+    const next = new URLSearchParams(window.location.search).get("next");
+    router.push(next && next.startsWith("/") && !next.startsWith("//") ? next : "/");
     router.refresh();
   }
 

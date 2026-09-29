@@ -24,7 +24,10 @@ export const config = {
   // und im Workflow sieht man nur "HTTP 307". Genau das ist den drei
   // Zeit-Erinnerungen passiert, die es seit dem 09.09.2026 nicht mehr gibt.
   //
+  // .well-known ist frei, weil MCP-Clients dort ohne Cookies die
+  // OAuth-Metadaten für /api/mcp abholen (seit 29.09.2026).
+  //
   // Muss ein einziges Zeichenketten-Literal sein - Next.js liest den Wert
   // statisch aus, zusammengesetzte Ausdrücke lassen den Build scheitern.
-  matcher: ["/((?!api/mcp|api/marktdaten-sync|api/gva-alarm|api/makro-sync|api/routinen-erinnerung|_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  matcher: ["/((?!\\.well-known|api/mcp|api/marktdaten-sync|api/gva-alarm|api/makro-sync|api/routinen-erinnerung|_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
 };
