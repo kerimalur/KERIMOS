@@ -276,10 +276,12 @@ export function NaechsteTermine({ termine }: { termine: Release[] }) {
             <span className="text-sm font-medium text-ink">{r.titel}</span>
             <span className="tabular whitespace-nowrap font-mono text-[11px] text-trading-bright">{zeitKurz(r.event_time)}</span>
           </div>
-          <div className="mt-1 flex gap-4 font-mono text-[11px] text-ink-muted">
-            <span>Erw. <span className="text-ink">{fmtWert(r.erwartung, r.einheit)}</span></span>
-            <span>Vorwert {fmtWert(r.vorwert, r.einheit)}</span>
-          </div>
+          {(r.erwartung !== null || r.vorwert !== null) && (
+            <div className="mt-1 flex gap-4 font-mono text-[11px] text-ink-muted">
+              <span>Erw. <span className="text-ink">{fmtWert(r.erwartung, r.einheit)}</span></span>
+              <span>Vorwert {fmtWert(r.vorwert, r.einheit)}</span>
+            </div>
+          )}
           <p className="mt-1 text-xs leading-snug text-good-bright/90">{szenario(r)}</p>
         </li>
       ))}

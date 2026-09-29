@@ -6,9 +6,10 @@
 // der deutsche Flash-PMI und die BoJ noch stimmen.
 import {
   parseWert, serieVon, kategorieVon, istInvertiert, releasesAusKalender, mitAbweichung,
-  indexBis, szenario, entscheidUrteil, mitMt5, type KalenderZeile, type Mt5Zeile,
+  indexBis, szenario, entscheidUrteil, mitMt5, istNotenbankTon, type KalenderZeile, type Mt5Zeile,
 } from "../../src/lib/makro/releases";
 import { urteilFuer, urteilWort } from "../../src/lib/makro/urteil";
+import { ersatzAusMt5 } from "../../src/lib/makro/pmi";
 
 let fails = 0;
 function check(name: string, actual: unknown, expected: unknown) {
@@ -145,6 +146,21 @@ check("Deutsch: BIP", kategorieVon("BIP m/m"), "wachstum");
   check("Urteilswort", [urteilWort(0.5), urteilWort(0.2), urteilWort(0), urteilWort(-0.2), urteilWort(-0.5)],
     ["bullish", "leicht bullish", "neutral", "leicht bearish", "bearish"]);
 }
+
+/* MT5-Ersatz: Monatszuordnung */
+{
+  const e = ersatzAusMt5([
+    { ccy: "JPY", name: "au Jibun Bank Japan Einkaufsmanagerindex (PMI) Dienstleistungen", event_time: "2026-08-21T00:30:00Z", actual: 52.0 },
+    { ccy: "JPY", name: "au Jibun Bank Japan Einkaufsmanagerindex (PMI) Dienstleistungen", event_time: "2026-09-03T00:30:00Z", actual: 52.4 },
+    { ccy: "NZD", name: "BusinessNZ Herstellerindex", event_time: "2026-09-10T22:30:00Z", actual: 48.8 },
+    { ccy: "CHF", name: "KOF Konjunkturbarometer", event_time: "2026-08-28T07:00:00Z", actual: 101.3 },
+  ]);
+  const f = (ccy: string, feld: string) => e.find((x) => x.ccy === ccy && x.feld === feld)?.werte;
+  check("JPY Dienste: Final (03.09) überschreibt Flash (21.08) für August", f("JPY", "pmi_dienste"), [{ datum: "2026-08-01", wert: 52.4 }]);
+  check("NZD PMI: Mitte September = August", f("NZD", "pmi_industrie"), [{ datum: "2026-08-01", wert: 48.8 }]);
+  check("CHF KOF: Ende August = August", f("CHF", "fruehindikator"), [{ datum: "2026-08-01", wert: 101.3 }]);
+}
+check("Notenbank-Ton erkannt", [istNotenbankTon("Fed Chair Powell Speaks"), istNotenbankTon("FOMC Meeting Minutes"), istNotenbankTon("CPI y/y")], [true, true, false]);
 
 console.log(fails === 0 ? "\nAlles gut." : `\n${fails} Fehler.`);
 process.exit(fails === 0 ? 0 : 1);

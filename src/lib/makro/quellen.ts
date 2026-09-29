@@ -2,7 +2,7 @@ import "server-only";
 import { holeSerie } from "./fred";
 import { type Beobachtung, periodeZuDatum, sortiert, parseOecdCsv } from "./perioden";
 import { QUELLEN, quellenName, oecdUrl, type OecdSet, type Quelle } from "./katalog";
-import { pmiAusKalender, PMI_MUSTER, type KalenderTermin } from "./pmi";
+import { pmiAusKalender, PMI_MUSTER, ersatzAusMt5, MT5_ERSATZ, type KalenderTermin, type Mt5Zeile } from "./pmi";
 import { createTradingClient } from "@/lib/supabase/trading";
 
 /**
@@ -167,7 +167,52 @@ async function holePmi(): Promise<FeldErgebnis[]> {
   return ergebnisse;
 }
 
+/**
+ * Ersatzreihen aus dem MT5-Kalender (lib/makro/pmi.ts, MT5_ERSATZ) — für
+ * Felder, die sonst leer bleiben oder deutlich hinterherhinken.
+ */
+async function holeMt5Ersatz(): Promise<{ ccy: string; feld: string; serie: string; werte: Beobachtung[] }[]> {
+  const trading = createTradingClient();
+  if (!trading) return [];
+  const ab = new Date(Date.now() - 800 * 86_400_000).toISOString();
+  const zeilen: Mt5Zeile[] = [];
+  for (let von = 0; ; von += 1000) {
+    const { data, error } = await trading.from("mt5_kalender")
+      .select("ccy, name, event_time, actual")
+      .in("ccy", [...new Set(MT5_ERSATZ.map((e) => e.ccy))])
+      .gte("event_time", ab)
+      .not("actual", "is", null)
+      .or("name.ilike.%BusinessNZ%,name.ilike.%Jibun%,name.ilike.%S&P Global PMI der%,name.ilike.%procure.ch%,name.ilike.%KOF%")
+      .order("event_time", { ascending: true })
+      .range(von, von + 999);
+    if (error || !data) break;
+    zeilen.push(...(data as Record<string, unknown>[]).map((r) => ({
+      ccy: String(r.ccy), name: String(r.name), event_time: String(r.event_time),
+      actual: r.actual === null ? null : Number(r.actual),
+    })));
+    if (data.length < 1000) break;
+  }
+  return ersatzAusMt5(zeilen);
+}
+
 export async function holeAlles(): Promise<FeldErgebnis[]> {
+  const ergebnisse = await holeAllesOhneMt5();
+  // MT5-Ersatz einsetzen, wo die normale Quelle nichts hat oder mehr als
+  // 45 Tage älter ist als der Ersatz.
+  const ersatz = await holeMt5Ersatz().catch(() => []);
+  const letzte = (w: Beobachtung[]) => (w.length ? Date.parse(w[w.length - 1].datum) : 0);
+  for (const e of ersatz) {
+    if (e.werte.length === 0) continue;
+    const i = ergebnisse.findIndex((r) => r.ccy === e.ccy && r.feld === e.feld);
+    const neu: FeldErgebnis = { ccy: e.ccy, feld: e.feld, serie: e.serie, werte: e.werte, fehler: null };
+    if (i < 0) ergebnisse.push(neu);
+    else if (ergebnisse[i].fehler || ergebnisse[i].werte.length === 0
+      || letzte(e.werte) > letzte(ergebnisse[i].werte) + 45 * 86_400_000) ergebnisse[i] = neu;
+  }
+  return ergebnisse;
+}
+
+async function holeAllesOhneMt5(): Promise<FeldErgebnis[]> {
   const oecd = oecdLader();
   const imf = imfLader();
 

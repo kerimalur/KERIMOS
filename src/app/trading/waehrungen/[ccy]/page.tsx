@@ -21,6 +21,7 @@ import {
 import { Info } from "@/components/makro/info";
 import { ERKLAERUNG } from "@/lib/makro/erklaerungen";
 import { BANK } from "@/lib/makro/urteil";
+import { istNotenbankTon } from "@/lib/makro/releases";
 
 export const dynamic = "force-dynamic";
 
@@ -208,7 +209,8 @@ export default async function Waehrung({ params }: { params: Promise<{ ccy: stri
               Kalender {ccy} →
             </Link>
           </div>
-          <NaechsteTermine termine={rel.naechste.filter((r) => r.impact === "High" || r.kategorie === "notenbank")} />
+          <NaechsteTermine termine={rel.naechste.filter((r) =>
+            r.impact === "High" || r.kategorie === "notenbank" || (istNotenbankTon(r.titel) && r.impact === "Medium"))} />
         </Card>
       </div>
 

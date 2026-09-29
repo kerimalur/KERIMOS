@@ -5,7 +5,7 @@ import { istVeraltet, type HandWert, type WaehrungsBild } from "@/lib/makro/bewe
 import { erwarteterSchritt, urteilFuer, type UrteilBild } from "./urteil";
 import { zuRelease } from "./releases-sync";
 import {
-  INDEX_KATEGORIEN, KATEGORIE_LABEL, indexBis, indexVerlauf, fmtWert,
+  INDEX_KATEGORIEN, KATEGORIE_LABEL, indexBis, indexVerlauf, fmtWert, istNotenbankTon,
   type Kategorie, type Release, type IndexPunkt,
 } from "./releases";
 
@@ -242,7 +242,7 @@ export async function ladeWaehrungsReleases(
     .reverse();
   const naechste = alle
     .filter((r) => { const t = Date.parse(r.event_time); return t > jetztMs && t <= grenze14; })
-    .filter((r) => r.impact === "High" || r.impact === "Medium" || r.kategorie === "notenbank");
+    .filter((r) => r.impact === "High" || r.impact === "Medium" || r.kategorie === "notenbank" || istNotenbankTon(r.titel));
   const entscheide = alle
     .filter((r) => r.kategorie === "notenbank" && Date.parse(r.event_time) <= jetztMs && r.erwartung !== null)
     .reverse()

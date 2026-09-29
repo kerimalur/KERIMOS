@@ -144,12 +144,13 @@ const KERN: KernDef[] = [
     key: "pmi_industrie", label: "PMI Industrie", ebene: 1, pmi: true, teil: "pmi_industrie",
     muster: [/^ISM Manufacturing PMI$/i, /^Manufacturing PMI$/i, /^procure\.ch Manufacturing PMI$/i,
       /^Business NZ (Manufacturing Index|PMI)$/i, /^German Manufacturing PMI$/i, /Manufacturing PMI$/i,
-      /PMI der Hersteller|verarbeitenden Gewerbe.*PMI/i],
+      /PMI der Hersteller/i, /PMI\) verarbeitendes Gewerbe/i, /^BusinessNZ Herstellerindex$/i],
   },
   {
     key: "pmi_dienste", label: "PMI Dienste", ebene: 1, pmi: true, teil: "pmi_dienste",
     muster: [/^ISM Services PMI$/i, /^Services PMI$/i, /^Ivey PMI$/i, /^Business NZ Services Index$/i,
-      /^German Services PMI$/i, /Services PMI$/i, /PMI der Dienstleister/i],
+      /^German Services PMI$/i, /Services PMI$/i, /PMI der Dienstleister/i, /PMI\) Dienstleistungen/i,
+      /^BusinessNZ Dienstleistungsindex$/i],
   },
   {
     key: "bip", label: "BIP", ebene: 1, teil: "bip_yoy",

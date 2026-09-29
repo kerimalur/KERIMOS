@@ -222,7 +222,7 @@ function ebeneWirtschaft(e: Eingabe): EbenenBild {
       // Der OECD-Frühindikator misst dasselbe — dreht die Konjunktur an oder
       // ab — und schwankt um 100. Niveau und Richtung zählen je zur Hälfte:
       // 99.4 und steigend ist etwas anderes als 99.4 und fallend.
-      key: "fruehindikator", label: "OECD-Frühindikator", wert: cli.wert,
+      key: "fruehindikator", label: "Frühindikator", wert: cli.wert,
       einheit: "Index", delta: dCli, kontext: true,
       score: cli.wert === null ? null
         : klemme(0.5 * klemme(cli.wert - 100) + 0.5 * klemme((dCli ?? 0) / 0.2)),
@@ -659,7 +659,7 @@ export interface FeldInfo {
 
 /** Die von Hand gepflegten Felder — Reihenfolge wie im Formular. */
 export const HAND_FELDER: FeldInfo[] = [
-  { key: "fruehindikator", label: "OECD-Frühindikator", einheit: "Index", auto: true,
+  { key: "fruehindikator", label: "Frühindikator", einheit: "Index", auto: true,
     hinweis: "Ersatz für den PMI. Schwankt um 100, über 100 zieht die Konjunktur an.",
     quelle: "OECD (CLI), für CHF/NZD nicht mehr veröffentlicht" },
   { key: "pmi_industrie", label: "PMI Industrie", einheit: "Punkte",

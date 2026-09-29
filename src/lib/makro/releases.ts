@@ -349,7 +349,15 @@ export function urteilUeberraschung(x: number | null): string {
  * Der Satz zu einem kommenden Termin: was ein Ist über oder unter der
  * Erwartung für die Währung hiesse.
  */
+/** Reden, Protokolle, Pressekonferenzen: keine Zahl, aber der Ton der Notenbank. */
+export function istNotenbankTon(titel: string): boolean {
+  return /(Speaks|Testifies|Press Conference|Minutes|Monetary Policy (Statement|Report|Summary)|Rate Statement|Policy Statement|Summary of Opinions|Beige Book)/i.test(titel);
+}
+
 export function szenario(r: Release): string {
+  if (istNotenbankTon(r.titel)) {
+    return `Keine Zahl — es zählt der Ton. Falkenhaft (Zinsen länger hoch / höher) stützt ${r.ccy}, taubenhaft (Senkungen in Sicht) belastet. Die Reaktion zeigt sich danach in der Markterwartung (2-Jahres-Rendite).`;
+  }
   if (r.erwartung === null) return "Keine Erwartung im Kalender — die Reaktion hängt am Vergleich mit dem Vorwert.";
   const f = fmtWert(r.erwartung, r.einheit);
   if (r.kategorie === "notenbank") {
@@ -573,7 +581,11 @@ export function mitMt5(releases: Release[], mt5: Mt5Zeile[], jetzt = Date.now())
       // Kollision: weglassen.
       if (eigenstaendig.get(m.event_id) !== true) continue;
       const impact = mt5Impact(m);
-      if (impact !== "High" && impact !== "Medium") continue;
+      // Einkaufsmanager-Indizes immer, auch mit niedriger Wichtigkeit: sie
+      // sind Kerims Kern der Ebene 1, und MT5 stuft z.B. den japanischen
+      // Industrie-PMI als „low" ein.
+      const pmi = /(PMI|Einkaufsmanager|BusinessNZ (Hersteller|Dienstleistungs)index)/i.test(m.name);
+      if (impact !== "High" && impact !== "Medium" && !pmi) continue;
       const serie = serieVon(m.name);
       out.push({
         id: `mt5:${m.value_id}`, ccy: m.ccy, titel: m.name, serie, kategorie: kategorieVon(serie),
