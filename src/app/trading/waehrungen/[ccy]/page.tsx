@@ -10,7 +10,13 @@ import { notenbankSpeichern } from "@/lib/makro-actions";
 import { EbenenVerlauf } from "@/components/makro/ebenen-verlauf";
 import { PflegeFormular, SyncLeiste } from "@/components/makro/pflege";
 import { ScoreBalken, urteilWort } from "@/components/makro/teile";
-import { Badge, Card, Empty, cx } from "@/components/ui";
+import { Badge, Card, CardTitle, Empty, cx } from "@/components/ui";
+import { ladeWaehrungsReleases, erwarteterSchritt } from "@/lib/makro/releases-laden";
+import { KATEGORIE_LABEL, fmtZ, urteilUeberraschung, type Kategorie } from "@/lib/makro/releases";
+import {
+  Datenluecken, EntscheidTabelle, NaechsteTermine, ReleasesNachKategorie, zellKlasse,
+} from "@/components/makro/ueberraschung-teile";
+import { IndexKategorien, IstGegenErwartung } from "@/components/makro/ueberraschung-grafik";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +34,11 @@ const ZYKLUS_TON: Record<Zyklus, "gut" | "schlecht" | "neutral"> = {
  *
  * Die einzige Währungsseite. Die alte Übersicht leitet hierher weiter; das
  * Pflegen der Zahlen und der Datenlauf stehen aufklappbar ganz unten.
+ *
+ * Seit dem 29.09.2026 mit „Erwartung gegen Ist" direkt unter dem Kopf: die
+ * Überraschung je Bereich, die Liniengrafik Ist gegen Erwartung je Reihe,
+ * die Zinsentscheide gegen die Erwartung, was als Nächstes kommt und was
+ * fehlt. Die Niveau-Ebenen (EbenenVerlauf) folgen darunter unverändert.
  */
 export default async function Waehrung({ params }: { params: Promise<{ ccy: string }> }) {
   const ccy = (await params).ccy.toUpperCase();
@@ -37,6 +48,8 @@ export default async function Waehrung({ params }: { params: Promise<{ ccy: stri
   }
 
   const [indikatoren, b] = await Promise.all([ladeVerlauf(ccy), ladeMakro()]);
+  const rel = await ladeWaehrungsReleases(ccy, b.hand[ccy] ?? {});
+  const schrittErwartet = erwarteterSchritt([...rel.entscheide].reverse().concat(rel.naechste));
   const I = Object.fromEntries(indikatoren.map((i) => [i.key, i])) as Record<string, Indikator>;
   const zeile = b.zeilen.find((z) => z.ccy === ccy) ?? null;
   const e1 = zeile?.ebenen.find((e) => e.ebene === 1);
@@ -89,7 +102,75 @@ export default async function Waehrung({ params }: { params: Promise<{ ccy: stri
           Urteil = Ebene 1 (Wirtschaft) und Ebene 2 (Zentralbank) je zur Hälfte.
           Ebene 3 wird angezeigt, aber noch nicht gewertet.
         </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line/50 pt-3">
+          <span className="text-xs text-ink-muted">Überraschung</span>
+          <span className={cx("tabular rounded-lg px-2.5 py-1 font-mono text-sm", zellKlasse(rel.jetzt.gesamt))}>
+            {fmtZ(rel.jetzt.gesamt)}
+          </span>
+          <span className="text-xs text-ink-soft">{urteilUeberraschung(rel.jetzt.gesamt)}</span>
+          {schrittErwartet && <Badge tone="accent">{schrittErwartet}</Badge>}
+        </div>
       </Card>
+
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-baseline gap-2">
+          <h2 className="font-display text-lg font-semibold text-ink">Erwartung gegen Ist</h2>
+          <span className="text-xs text-ink-muted">die Abweichung bewegt den Kurs, nicht die Zahl</span>
+          <Link href={`/trading/fundamentals/kalender?ccy=${ccy}`} className="ml-auto text-xs text-accent-soft hover:underline">
+            Kalender {ccy} →
+          </Link>
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-3">
+          {(["wachstum", "inflation", "arbeit"] as Kategorie[]).map((k) => (
+            <div key={k} className={cx("rounded-2xl px-4 py-3", zellKlasse(rel.jetzt[k]))}>
+              <p className="text-[11px] uppercase tracking-[0.1em] opacity-80">{KATEGORIE_LABEL[k]}</p>
+              <p className="tabular mt-1 font-mono text-xl">{fmtZ(rel.jetzt[k])}</p>
+              <p className="text-[11px] opacity-90">{urteilUeberraschung(rel.jetzt[k])}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
+          <Card>
+            <CardTitle>Ist gegen Erwartung · Verlauf</CardTitle>
+            <IstGegenErwartung serien={rel.serien} ccy={ccy} />
+          </Card>
+          <div className="space-y-4">
+            <Card>
+              <CardTitle>Als Nächstes</CardTitle>
+              <NaechsteTermine termine={rel.naechste} />
+            </Card>
+            <Card>
+              <CardTitle>Datenlücken</CardTitle>
+              <Datenluecken luecken={rel.luecken} />
+            </Card>
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card>
+            <CardTitle>Überraschungsindex {ccy}</CardTitle>
+            <IndexKategorien verlauf={rel.verlauf} />
+          </Card>
+          <Card>
+            <CardTitle>Zinsentscheide gegen die Erwartung</CardTitle>
+            <EntscheidTabelle entscheide={rel.entscheide} />
+            <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+              Falkenhaft = höher als erwartet, stützt {ccy}. Taubenhaft = tiefer, belastet.
+              Der Zyklus in Ebene 2 unten kommt automatisch aus dem Zinsverlauf; von Hand
+              übersteuern geht dort unter „bearbeiten".
+            </p>
+          </Card>
+        </div>
+
+        <Card>
+          <CardTitle>Veröffentlichungen der letzten 45 Tage</CardTitle>
+          <ReleasesNachKategorie releases={rel.letzte} />
+        </Card>
+      </section>
+
+      <h2 className="font-display text-lg font-semibold text-ink">Niveau nach den drei Ebenen</h2>
 
       <EbenenVerlauf
         ccy={ccy}

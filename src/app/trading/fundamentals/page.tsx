@@ -5,6 +5,10 @@ import { paarIdeen, GEWICHT, EBENEN_LABEL, ZYKLUS_LABEL } from "@/lib/makro/bewe
 import { PAARE } from "@/lib/trading/journal";
 import { ereignisAnlegen, ereignisLoeschen } from "@/lib/makro-actions";
 import { RangTabelle, ScoreBalken, MontyZeichen, urteilWort } from "@/components/makro/teile";
+import { ladeTerminal } from "@/lib/makro/releases-laden";
+import { QUELLE_LABEL, urteilUeberraschung, fmtZ, type IstQuelle } from "@/lib/makro/releases";
+import { UeberraschungsMatrix } from "@/components/makro/ueberraschung-teile";
+import { IndexAlle } from "@/components/makro/ueberraschung-grafik";
 import { Card, CardTitle, Stat, Badge, Empty, Button, Input, Label } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +29,18 @@ export const dynamic = "force-dynamic";
  * sich hat, entscheidet bei jedem Blick neu, welcher er glaubt. Monty steht
  * jetzt als aufklappbare Gegenprobe darunter: es sagt nicht, was zu handeln
  * ist, sondern nur, ob die Commercials gerade zustimmen.
+ *
+ * Seit dem 29.09.2026 das Makro-Terminal: oben die Überraschungs-Matrix und
+ * der Überraschungsindex (Ist gegen Erwartung, lib/makro/releases.ts), darunter
+ * die Niveau-Rangliste wie bisher. Beides steht bewusst NEBENEINANDER und wird
+ * nicht verrechnet: das Niveau sagt, wo eine Wirtschaft steht, die
+ * Überraschung, wohin der Markt sie gerade umbewertet. Wie man beides
+ * gewichtet, soll erst ein Backtest zeigen.
  */
+
+const BANK: Record<string, string> = {
+  USD: "Fed", EUR: "EZB", GBP: "BoE", JPY: "BoJ", AUD: "RBA", NZD: "RBNZ", CAD: "BoC", CHF: "SNB",
+};
 export default async function FundamentalsSeite() {
   if (!tradingConfigured()) {
     return (
@@ -39,8 +54,24 @@ export default async function FundamentalsSeite() {
     );
   }
 
-  const b = await ladeMakro();
+  const [b, t] = await Promise.all([ladeMakro(), ladeTerminal()]);
   const ideen = paarIdeen(b.zeilen, PAARE);
+
+  // Zyklus je Währung aus Ebene 2 — dort steht er schon, automatisch aus dem
+  // Zinsverlauf oder von Hand übersteuert.
+  const zyklen = Object.fromEntries(G8.map((ccy) => {
+    const teil = b.zeilen.find((z) => z.ccy === ccy)?.ebenen.find((e) => e.ebene === 2)
+      ?.teile.find((x) => x.key === "zyklus");
+    const text = teil?.score === null || teil?.score === undefined
+      ? "unbekannt" : teil.text.split(" — ")[0].replace(" (aus dem Zinsverlauf)", "");
+    const ton: "gut" | "schlecht" | "neutral" = teil?.score == null ? "neutral"
+      : teil.score > 0 ? "gut" : teil.score < 0 ? "schlecht" : "neutral";
+    return [ccy, { bank: BANK[ccy], zyklus: text, ton, hinweis: t.schritt[ccy] }];
+  }));
+  const ueberraschung = (ccy: string) => t.matrix[ccy]?.gesamt.wert ?? null;
+  const quellenText = Object.entries(t.status.jeQuelle)
+    .map(([q, n]) => `${QUELLE_LABEL[q as IstQuelle] ?? q} ${n}`).join(" · ") || "keine";
+  const nurRekonstruiert = !t.status.jeQuelle.jblanked && !t.status.jeQuelle.mt5;
   const montyJeCcy = Object.fromEntries(b.monty.zeilen.map((z) => [z.ccy, z]));
 
   const stark = b.zeilen[0];
@@ -51,17 +82,47 @@ export default async function FundamentalsSeite() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
         <div>
-          <h1 className="font-display text-xl font-bold text-ink">Fundamentals</h1>
+          <h1 className="font-display text-xl font-bold text-ink">Makro-Terminal</h1>
           <p className="mt-1 max-w-2xl text-sm text-ink-muted">
-            Drei Ebenen je Währung: läuft die Wirtschaft, was macht die
-            Notenbank daraus, wohin fliesst das Geld gerade. Stand {b.stichtag}.
+            Nicht die Zahl bewegt den Kurs, sondern ihre Abweichung von der
+            Erwartung. Oben die Überraschung, darunter das Niveau nach deinen
+            drei Ebenen. Stand {b.stichtag}.
           </p>
         </div>
-        <Link href="/trading/waehrungen"
-          className="text-xs text-accent-soft transition hover:underline">
-          Zahlen eintragen →
-        </Link>
+        <div className="flex gap-4">
+          <Link href="/trading/fundamentals/kalender"
+            className="text-xs text-accent-soft transition hover:underline">
+            Kalender →
+          </Link>
+          <Link href="/trading/waehrungen"
+            className="text-xs text-accent-soft transition hover:underline">
+            Währungen →
+          </Link>
+        </div>
       </div>
+
+      <Card>
+        <div className="mb-3 flex flex-wrap items-baseline gap-2">
+          <CardTitle className="mb-0">Überraschungs-Matrix</CardTitle>
+          <span className="ml-auto text-[11px] text-ink-faint">
+            grün = besser als erwartet · stützt &nbsp;·&nbsp; rot = schlechter · belastet &nbsp;·&nbsp; Werte in typischen Schritten (±3)
+          </span>
+        </div>
+        <UeberraschungsMatrix matrix={t.matrix} waehrungen={G8} zyklen={zyklen} />
+        <p className={`mt-3 rounded-xl px-3 py-2.5 text-[11px] leading-relaxed ${nurRekonstruiert ? "bg-warn-tint text-ink-soft" : "bg-sand/60 text-ink-muted"}`}>
+          Letzte 45 Tage: {t.status.termine45} Termine, {t.status.mitErwartung45} mit Erwartung,{" "}
+          {t.status.mitIst45} mit Ist ({quellenText}), {t.status.offenOhneIst} warten noch auf ihr Ist.
+          {nurRekonstruiert && " Das Ist wird nur aus dem Folgetermin rekonstruiert und kommt deshalb verzögert. Mit einem JBLANKED_API_KEY kommt es Minuten nach der Veröffentlichung."}
+        </p>
+      </Card>
+
+      <Card>
+        <div className="mb-3 flex flex-wrap items-baseline gap-2">
+          <CardTitle className="mb-0">Überraschungsindex</CardTitle>
+          <span className="ml-auto text-[11px] text-ink-faint">wer schlägt gerade die Erwartungen?</span>
+        </div>
+        <IndexAlle verlauf={t.verlauf} />
+      </Card>
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Card area="trading">
@@ -121,6 +182,7 @@ export default async function FundamentalsSeite() {
                 <span className="text-xs text-ink-muted">
                   {i.stark} stark gegen {i.schwach} schwach
                 </span>
+                <UeberraschungsProbe stark={ueberraschung(i.stark)} schwach={ueberraschung(i.schwach)} />
                 <span className="tabular ml-auto text-xs text-ink-soft">
                   Abstand {i.abstand.toFixed(2)}
                 </span>
@@ -133,6 +195,8 @@ export default async function FundamentalsSeite() {
           Gezeigt werden nur Paare mit mindestens 0.40 Abstand — bei zwei
           mittelmässigen Währungen ist das Urteil keins. Das ersetzt keine
           GVA-Linie, es sagt nur, in welche Richtung du sie suchen solltest.
+          Die Marke „Überraschung" zeigt, ob die jüngsten Daten dieselbe
+          Richtung stützen (starke Währung überrascht besser als die schwache).
         </p>
       </Card>
 
@@ -311,4 +375,19 @@ export default async function FundamentalsSeite() {
       </div>
     </div>
   );
+}
+
+/**
+ * Stützen die jüngsten Überraschungen das Paar? Ab 0.3 Abstand zählt es,
+ * darunter ist es Rauschen.
+ */
+function UeberraschungsProbe({ stark, schwach }: { stark: number | null; schwach: number | null }) {
+  if (stark === null || schwach === null) {
+    return <Badge tone="neutral" title="Für mindestens eine der beiden Währungen fehlen Veröffentlichungen mit Erwartung und Ist.">Überraschung ?</Badge>;
+  }
+  const d = stark - schwach;
+  const titel = `stark ${fmtZ(stark)} (${urteilUeberraschung(stark)}) · schwach ${fmtZ(schwach)} (${urteilUeberraschung(schwach)})`;
+  if (d >= 0.3) return <Badge tone="good" title={titel}>Überraschung stützt</Badge>;
+  if (d <= -0.3) return <Badge tone="warn" title={titel}>Überraschung dagegen</Badge>;
+  return <Badge tone="neutral" title={titel}>Überraschung neutral</Badge>;
 }

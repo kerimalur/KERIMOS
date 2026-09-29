@@ -50,7 +50,14 @@ export const PMI_MUSTER: Record<string, { pmi_industrie: Muster; pmi_dienste: Mu
     pmi_industrie: [{ name: "Business NZ Manufacturing Index", re: /^Business NZ Manufacturing Index$/i }],
     pmi_dienste: [{ name: "Business NZ Services Index", re: /^Business NZ Services Index$/i }],
   },
-  CAD: { pmi_industrie: INDUSTRIE, pmi_dienste: DIENSTE },
+  // Einen S&P-Dienste-PMI für Kanada führt der Feed nicht (Stand 29.09.2026).
+  // Der Ivey PMI misst die Einkaufsmanager der ganzen Wirtschaft inklusive
+  // Dienste und öffentlicher Hand, mit derselben 50er-Schwelle — der beste
+  // freie Ersatz. Die Serie heisst so, damit niemand ihn für den S&P hält.
+  CAD: {
+    pmi_industrie: INDUSTRIE,
+    pmi_dienste: [...DIENSTE, { name: "Ivey PMI (Ersatz Dienste)", re: /^Ivey PMI$/i }],
+  },
   CHF: {
     pmi_industrie: [{ name: "procure.ch Manufacturing PMI", re: /^(procure\.ch )?Manufacturing PMI$/i }],
     pmi_dienste: [{ name: "procure.ch Services PMI", re: /^(procure\.ch )?Services PMI$/i }],

@@ -67,6 +67,7 @@ const FUNDAMENTALS: NavConfig = {
   home: { href: "/trading/fundamentals", label: "Fundamentals", auch: ["/trading/confluence"] },
   primary: [
     { href: "/trading/waehrungen", label: "Währungen" },
+    { href: "/trading/fundamentals/kalender", label: "Kalender" },
   ],
   secondary: [],
 };
