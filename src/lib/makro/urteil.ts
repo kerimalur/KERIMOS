@@ -436,3 +436,35 @@ export function urteilFuer(zeile: WaehrungsBild | null, releases: Release[], jet
     kern, nachricht, grosse, schritt,
   };
 }
+
+/* ------------------------------------------------------ Paar-Klasse */
+
+/**
+ * Wie gut ein Paar zur Regel „stark gegen schwach" passt (29.09.2026):
+ *   A  stark gegen schwach — beide Seiten ziehen in dieselbe Richtung.
+ *   B  stark gegen neutral (oder neutral gegen schwach) — nur eine Seite
+ *      zieht. Kerim: „meist keine so gute Idee" — wird nur mit Vorsicht
+ *      gezeigt, und die Wochenideen messen, ob B überhaupt trägt.
+ * Beide brauchen mindestens 0.40 Abstand; darunter ist es keine Idee.
+ */
+export type PaarKlasse = "A" | "B";
+export const PAAR_ABSTAND = 0.4;
+const NEUTRAL_BIS = 0.12;
+
+export function paarKlasse(scoreStark: number | null, scoreSchwach: number | null): PaarKlasse | null {
+  if (scoreStark === null || scoreSchwach === null) return null;
+  if (scoreStark - scoreSchwach < PAAR_ABSTAND) return null;
+  return scoreStark >= NEUTRAL_BIS && scoreSchwach <= -NEUTRAL_BIS ? "A" : "B";
+}
+
+/** Die Kurzform eines Urteils für Schnappschüsse (Journal, Wochenideen). */
+export interface UrteilKurz {
+  ccy: string;
+  wort: UrteilWort;
+  score: number | null;
+  gruende: string[];
+}
+
+export function kurzform(u: UrteilBild): UrteilKurz {
+  return { ccy: u.ccy, wort: u.wort, score: u.score, gruende: u.gruende.slice(0, 3).map((g) => g.text) };
+}

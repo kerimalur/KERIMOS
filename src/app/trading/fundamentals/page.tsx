@@ -7,7 +7,7 @@ import { ereignisAnlegen, ereignisLoeschen } from "@/lib/makro-actions";
 import { RangTabelle, ScoreBalken, MontyZeichen } from "@/components/makro/teile";
 import { ladeUebersicht } from "@/lib/makro/releases-laden";
 import { QUELLE_LABEL, type IstQuelle } from "@/lib/makro/releases";
-import { BANK } from "@/lib/makro/urteil";
+import { BANK, paarKlasse, type PaarKlasse } from "@/lib/makro/urteil";
 import { ERKLAERUNG } from "@/lib/makro/erklaerungen";
 import { UeberraschungsMatrix } from "@/components/makro/ueberraschung-teile";
 import { UrteilMarke, WaehrungsZeile } from "@/components/makro/urteil-teile";
@@ -51,7 +51,10 @@ export default async function FundamentalsSeite() {
 
   // Paar-Ideen jetzt aus dem Urteil (Zentralbank, Wirtschaft, Überraschung),
   // nicht mehr nur aus dem Niveau.
-  const ideen = paarIdeen(b.zeilen.map((z) => ({ ...z, gesamt: urteile[z.ccy]?.score ?? null })), PAARE);
+  const ideen = paarIdeen(b.zeilen.map((z) => ({ ...z, gesamt: urteile[z.ccy]?.score ?? null })), PAARE)
+    .map((i) => ({ ...i, klasse: paarKlasse(urteile[i.stark]?.score ?? null, urteile[i.schwach]?.score ?? null) }));
+  const ideenA = ideen.filter((i) => i.klasse === "A");
+  const ideenB = ideen.filter((i) => i.klasse === "B");
   const montyJeCcy = Object.fromEntries(b.monty.zeilen.map((z) => [z.ccy, z]));
 
   const zyklen = Object.fromEntries(G8.map((ccy) => {
@@ -133,35 +136,29 @@ export default async function FundamentalsSeite() {
             GVA-Linie, es sagt nur, in welche Richtung du sie suchen solltest.
           </Info>
         </div>
-        {ideen.length === 0 ? (
+        {ideenA.length === 0 ? (
           <Empty>
-            Kein Paar mit deutlichem Abstand. Das ist eine Aussage: heute steht
-            keine Währung klar gegen eine andere.
+            Kein Paar stark gegen schwach. Das ist eine Aussage: heute steht keine
+            Währung klar gegen eine andere.
           </Empty>
         ) : (
-          <ul className="space-y-1.5">
-            {ideen.map((i) => {
-              const s = urteile[i.stark], w = urteile[i.schwach];
-              return (
-                <li key={i.paar + i.seite} className="rounded-xl bg-sand/50 px-3 py-2.5">
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <span className="w-[86px] font-display font-bold text-ink">{i.paar}</span>
-                    <Badge tone={i.seite === "Long" ? "good" : "bad"}>{i.seite}</Badge>
-                    <span className="flex items-center gap-1.5 text-xs text-ink-muted">
-                      {i.stark} <UrteilMarke wort={s.wort} /> gegen {i.schwach} <UrteilMarke wort={w.wort} />
-                    </span>
-                  </div>
-                  <p className="mt-1.5 text-xs text-ink-muted">
-                    <span className="text-good-bright">▲</span> {s.gruende[0]?.text ?? "—"}
-                  </p>
-                  <p className="text-xs text-ink-muted">
-                    <span className="text-bad-bright">▼</span> {w.gruende[0]?.text ?? "—"}
-                  </p>
-                </li>
-              );
-            })}
-          </ul>
+          <IdeenListe ideen={ideenA} urteile={urteile} />
         )}
+        {ideenB.length > 0 && (
+          <details className="mt-3 rounded-xl border border-warn/30 bg-warn-tint/40 px-3 py-2">
+            <summary className="cursor-pointer text-xs text-accent-soft">
+              Mit Vorsicht · stark gegen neutral ({ideenB.length})
+            </summary>
+            <p className="mt-2 text-[11px] leading-relaxed text-ink-muted">
+              Nur eine Seite zieht. Meist die schwächere Idee — die Wochenaussicht misst,
+              ob diese Klasse bei dir überhaupt trägt.
+            </p>
+            <div className="mt-2"><IdeenListe ideen={ideenB} urteile={urteile} /></div>
+          </details>
+        )}
+        <Link href="/trading/fundamentals/wochenideen" className="mt-3 inline-block text-xs text-accent-soft hover:underline">
+          Wochenaussicht und Auswertung →
+        </Link>
       </Card>
 
       <h2 className="pt-2 font-display text-base font-semibold text-ink-soft">Hintergrund</h2>
@@ -386,5 +383,35 @@ export default async function FundamentalsSeite() {
         </details>
       </Card>
     </div>
+  );
+}
+
+function IdeenListe({ ideen, urteile }: {
+  ideen: { paar: string; seite: string; stark: string; schwach: string; klasse: PaarKlasse | null }[];
+  urteile: Record<string, import("@/lib/makro/urteil").UrteilBild>;
+}) {
+  return (
+    <ul className="space-y-1.5">
+      {ideen.map((i) => {
+        const s = urteile[i.stark], w = urteile[i.schwach];
+        return (
+          <li key={i.paar + i.seite} className="rounded-xl bg-sand/50 px-3 py-2.5">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="w-[86px] font-display font-bold text-ink">{i.paar}</span>
+              <Badge tone={i.seite === "Long" ? "good" : "bad"}>{i.seite}</Badge>
+              <span className="flex items-center gap-1.5 text-xs text-ink-muted">
+                {i.stark} <UrteilMarke wort={s.wort} /> gegen {i.schwach} <UrteilMarke wort={w.wort} />
+              </span>
+            </div>
+            <p className="mt-1.5 text-xs text-ink-muted">
+              <span className="text-good-bright">▲</span> {s.gruende[0]?.text ?? "—"}
+            </p>
+            <p className="text-xs text-ink-muted">
+              <span className="text-bad-bright">▼</span> {w.gruende[0]?.text ?? "—"}
+            </p>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

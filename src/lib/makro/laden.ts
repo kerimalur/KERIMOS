@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { G8 } from "@/lib/supabase/trading";
 import { ladeFuerStichtag } from "@/lib/confluence/daten";
 import { cotBildFuer } from "@/lib/confluence/cot-divergenz";
@@ -59,9 +60,17 @@ export interface Ereignis {
 const zahl = (v: unknown): number | null =>
   v === null || v === undefined || v === "" ? null : Number(v);
 
-export async function ladeMakro(): Promise<MakroBild> {
+/**
+ * `db`: ein Service-Role-Client für Läufe ohne Anmeldung (Cron, Lage-Aufnahme
+ * beim Trade-Import). Ohne ihn liest die Funktion als angemeldeter Benutzer —
+ * und im Cron hiesse das: die Makro-Tabellen geben nichts heraus (RLS), das
+ * Urteil wäre leer. So war es bis zum 29.09.2026 bei den automatischen
+ * Lage-Schnappschüssen. Kompass hat genau einen Benutzer, der Service-Client
+ * liest also dessen Zeilen.
+ */
+export async function ladeMakro(db?: SupabaseClient): Promise<MakroBild> {
   const stichtag = heuteISO();
-  const supabase = await createClient();
+  const supabase = db ?? await createClient();
 
   const [markt, werteRes, reihenRes, syncRes, lageRes, ereignisRes] = await Promise.all([
     ladeFuerStichtag(stichtag).catch(() => null),

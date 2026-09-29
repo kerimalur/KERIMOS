@@ -68,6 +68,7 @@ const FUNDAMENTALS: NavConfig = {
   primary: [
     { href: "/trading/waehrungen", label: "Währungen" },
     { href: "/trading/fundamentals/kalender", label: "Kalender" },
+    { href: "/trading/fundamentals/wochenideen", label: "Wochenaussicht" },
   ],
   secondary: [],
 };

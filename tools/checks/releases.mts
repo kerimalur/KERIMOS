@@ -10,6 +10,8 @@ import {
 } from "../../src/lib/makro/releases";
 import { urteilFuer, urteilWort } from "../../src/lib/makro/urteil";
 import { ersatzAusMt5 } from "../../src/lib/makro/pmi";
+import { messe, montagVon } from "../../src/lib/makro/wochenideen-rechnen";
+import { paarKlasse } from "../../src/lib/makro/urteil";
 
 let fails = 0;
 function check(name: string, actual: unknown, expected: unknown) {
@@ -161,6 +163,30 @@ check("Deutsch: BIP", kategorieVon("BIP m/m"), "wachstum");
   check("CHF KOF: Ende August = August", f("CHF", "fruehindikator"), [{ datum: "2026-08-01", wert: 101.3 }]);
 }
 check("Notenbank-Ton erkannt", [istNotenbankTon("Fed Chair Powell Speaks"), istNotenbankTon("FOMC Meeting Minutes"), istNotenbankTon("CPI y/y")], [true, true, false]);
+
+/* Wochenaussicht */
+check("Montag von Mittwoch", montagVon(new Date("2026-09-30T10:00:00Z")), "2026-09-28");
+check("Montag von Sonntag", montagVon(new Date("2026-10-04T10:00:00Z")), "2026-09-28");
+{
+  // OANDA-Tageskerzen öffnen Sonntag 21:00 UTC für den Montag.
+  const k = (zeit: string, open: number, close: number) => ({ zeit, open, close });
+  const kerzen = [
+    k("2026-09-25T21:00:00Z", 1.1690, 1.1700), // Freitag davor — darf nicht zählen
+    k("2026-09-27T21:00:00Z", 1.1700, 1.1720), // Montag Woche 1
+    k("2026-10-01T21:00:00Z", 1.1750, 1.1760), // Freitag Woche 1
+    k("2026-10-08T21:00:00Z", 1.1640, 1.1650), // Freitag Woche 2
+  ];
+  const m = messe(kerzen, "2026-09-28", "long", "EURUSD", Date.parse("2026-10-11T12:00:00Z"));
+  check("Einstieg = Eröffnung Montag", m.einstieg, 1.17);
+  check("1W long", [m.prozent[1], m.pips[1]], [0.513, 60]);
+  check("2W long", [m.prozent[2], m.pips[2]], [-0.427, -50]);
+  check("3W noch nicht messbar", m.prozent[3], undefined);
+  const s = messe(kerzen, "2026-09-28", "short", "EURUSD", Date.parse("2026-10-11T12:00:00Z"));
+  check("2W short umgekehrt", s.pips[2], 50);
+}
+check("Klasse A", paarKlasse(0.4, -0.3), "A");
+check("Klasse B (gegen neutral)", paarKlasse(0.5, 0.05), "B");
+check("Keine Idee unter 0.40", paarKlasse(0.3, 0), null);
 
 console.log(fails === 0 ? "\nAlles gut." : `\n${fails} Fehler.`);
 process.exit(fails === 0 ? 0 : 1);

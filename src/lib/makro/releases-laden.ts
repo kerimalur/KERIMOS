@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { G8 } from "@/lib/supabase/trading";
 import { istVeraltet, type HandWert, type WaehrungsBild } from "@/lib/makro/bewertung";
 import { erwarteterSchritt, urteilFuer, type UrteilBild } from "./urteil";
@@ -19,8 +20,10 @@ import {
 
 const SEITE = 1000;
 
-export async function ladeReleases(opt: { ccy?: string; ab?: string; bis?: string } = {}): Promise<Release[]> {
-  const supabase = await createClient();
+export async function ladeReleases(
+  opt: { ccy?: string; ccys?: string[]; ab?: string; bis?: string; db?: SupabaseClient } = {},
+): Promise<Release[]> {
+  const supabase = opt.db ?? await createClient();
   const out: Release[] = [];
   for (let von = 0; ; von += SEITE) {
     let q = supabase.from("makro_releases")
@@ -28,6 +31,7 @@ export async function ladeReleases(opt: { ccy?: string; ab?: string; bis?: strin
       .order("event_time", { ascending: true })
       .range(von, von + SEITE - 1);
     if (opt.ccy) q = q.eq("ccy", opt.ccy);
+    if (opt.ccys) q = q.in("ccy", opt.ccys);
     if (opt.ab) q = q.gte("event_time", opt.ab);
     if (opt.bis) q = q.lte("event_time", opt.bis);
     const { data, error } = await q;
@@ -80,6 +84,21 @@ export async function ladeUebersicht(zeilen: WaehrungsBild[]): Promise<{ termina
     urteile[ccy] = urteilFuer(zeilen.find((z) => z.ccy === ccy) ?? null, releases.filter((r) => r.ccy === ccy));
   }
   return { terminal: baueTerminal(releases), urteile };
+}
+
+/**
+ * Das Urteil für ausgewählte Währungen — für Schnappschüsse (Journal,
+ * Wochenideen). `db` für Läufe ohne Anmeldung.
+ */
+export async function ladeUrteile(
+  zeilen: WaehrungsBild[], ccys: readonly string[], db?: SupabaseClient,
+): Promise<Record<string, UrteilBild>> {
+  const releases = await ladeReleases({ ab: tageZurueck(400), ccys: [...ccys], db });
+  const out: Record<string, UrteilBild> = {};
+  for (const ccy of ccys) {
+    out[ccy] = urteilFuer(zeilen.find((z) => z.ccy === ccy) ?? null, releases.filter((r) => r.ccy === ccy));
+  }
+  return out;
 }
 
 function baueTerminal(releases: Release[]): Terminal {

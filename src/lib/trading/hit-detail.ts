@@ -2,6 +2,9 @@ import "server-only";
 import { heuteISO } from "@/lib/time";
 import { ladeMakro } from "@/lib/makro/laden";
 import { paarUrteil, type PaarUrteil } from "@/lib/makro/bewertung";
+import { ladeUrteile } from "@/lib/makro/releases-laden";
+import { makroDb } from "@/lib/makro/speichern";
+import { kurzform, paarKlasse, URTEIL_GEWICHT, type PaarKlasse, type UrteilKurz } from "@/lib/makro/urteil";
 import { ladeFuerStichtag, ladeKurse } from "@/lib/confluence/daten";
 import { cotBildFuer, type CotBild } from "@/lib/confluence/cot-divergenz";
 import { saisonZum, MONATS_KURZ, type MonatsBild } from "@/lib/confluence/saison";
@@ -81,6 +84,19 @@ export interface HitLage {
    */
   fundamental: PaarUrteil;
   fundamentalFehler: string | null;
+  /**
+   * Seit dem 29.09.2026: das Urteil je Währung mit Gewichtung Zentralbank
+   * 40 % · Wirtschaft 35 % · Überraschungen 25 % (lib/makro/urteil.ts) —
+   * dieselbe Zahl wie auf dem Makro-Terminal. `fundamental` oben rechnet
+   * seitdem mit diesen Scores. Fehlt bei älteren Schnappschüssen.
+   */
+  urteilNeu?: {
+    gewichtung: string;
+    basis: UrteilKurz;
+    quote: UrteilKurz;
+    /** A = stark gegen schwach, B = stark gegen neutral, null = keine Idee. */
+    klasse: PaarKlasse | null;
+  };
   /**
    * Der alte Q-Score-Block. Nur noch für Snapshots aus der Zeit davor: die
    * liegen als JSON in `trades.fundamental_snapshot` und sollen weiter
@@ -204,8 +220,13 @@ const alsSeite = (b: CotBild): CotSeite => ({
 
 /* ---------------------------------------------------------------- Lage */
 
+/**
+ * `dienst`: ohne Anmeldung rechnen (Cron beim Trade-Import). Dann liest
+ * alles über den Service-Role-Schlüssel — sonst gäben die Makro-Tabellen
+ * nichts heraus und das Urteil wäre leer.
+ */
 export async function baueHitLage(
-  paar: string, seite: "long" | "short",
+  paar: string, seite: "long" | "short", dienst = false,
 ): Promise<HitLage> {
   const sauber = paar.replace(/[^A-Za-z]/g, "").toUpperCase();
   const heute = heuteISO();
@@ -214,15 +235,35 @@ export async function baueHitLage(
 
   // `allSettled` statt `all`: eine hängende COT-Abfrage darf das Ranking nicht
   // mitreissen. Jeder Teil scheitert für sich und sagt, warum.
+  const db = dienst ? makroDb() ?? undefined : undefined;
   const [makroE, cotE, kurseE] = await Promise.allSettled([
-    ladeMakro(),
+    ladeMakro(db),
     ladeFuerStichtag(heute),
     ladeKurse(sauber),
   ]);
 
-  const fundamental = makroE.status === "fulfilled"
-    ? paarUrteil(makroE.value.zeilen, sauber, seite)
-    : paarUrteil([], sauber, seite);
+  // Das Urteil (40/35/25) je Währung; die Paar-Rechnung läuft mit diesen
+  // Scores statt mit dem reinen Niveau.
+  let urteilNeu: HitLage["urteilNeu"];
+  let zeilenFuerPaar = makroE.status === "fulfilled" ? makroE.value.zeilen : [];
+  if (makroE.status === "fulfilled") {
+    try {
+      const u = await ladeUrteile(makroE.value.zeilen, [basisCode, kursCode], db);
+      zeilenFuerPaar = makroE.value.zeilen.map((z) => (u[z.ccy] ? { ...z, gesamt: u[z.ccy].score } : z));
+      const b = u[basisCode], q = u[kursCode];
+      if (b && q) {
+        const [stark, schwach] = (b.score ?? 0) >= (q.score ?? 0) ? [b, q] : [q, b];
+        urteilNeu = {
+          gewichtung: `Zentralbank ${URTEIL_GEWICHT.zentralbank * 100} % · Wirtschaft ${URTEIL_GEWICHT.wirtschaft * 100} % · Überraschungen ${URTEIL_GEWICHT.ueberraschung * 100} %`,
+          basis: kurzform(b), quote: kurzform(q),
+          klasse: paarKlasse(stark.score, schwach.score),
+        };
+      }
+    } catch (e) {
+      console.error("hit-lage Urteil:", e);
+    }
+  }
+  const fundamental = paarUrteil(zeilenFuerPaar, sauber, seite);
   const fundamentalFehler = makroE.status === "rejected"
     ? "Die fundamentale Lage konnte nicht geladen werden."
     : null;
@@ -254,7 +295,7 @@ export async function baueHitLage(
 
   return {
     paar: sauber, seite, stichtag: heute,
-    fundamental, fundamentalFehler,
+    fundamental, fundamentalFehler, urteilNeu,
     cotBasis, cotKurs, cotFehler,
     cotSatz: cotText(cotBasis, cotKurs, seite),
     saison, saisonFehler,

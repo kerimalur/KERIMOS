@@ -312,6 +312,8 @@ export default async function TradesSeite({
         offenStart={Boolean(vorgabe)}
       />
 
+      <UrteilAuswertung trades={alleTrades} />
+
       <Card>
         <CardTitle>Filter</CardTitle>
         <div className="space-y-2.5">
@@ -477,5 +479,63 @@ export default async function TradesSeite({
         </Card>
       )}
     </div>
+  );
+}
+
+/**
+ * Laufen Trades mit dem Urteil besser als dagegen? (29.09.2026)
+ *
+ * Zählt nur geschlossene Trades, deren Schnappschuss das Urteil mit der
+ * Gewichtung 40/35/25 trägt (`urteilNeu`) — ältere Schnappschüsse rechnen
+ * mit einem anderen Modell und würden den Vergleich verwässern. Unter etwa
+ * 30 Trades je Gruppe ist jede Differenz Zufall; die Karte sagt das dazu.
+ */
+function UrteilAuswertung({ trades }: { trades: Trade[] }) {
+  const mit = trades.filter((t) => t.status !== "open" && t.fundamentalSnapshot?.urteilNeu);
+  const gruppen = (["bestaetigt", "neutral", "dagegen"] as const).map((u) => {
+    const liste = mit.filter((t) => t.fundamentalSnapshot?.fundamental?.urteil === u);
+    const rs = liste.map((t) => signiertesR(t));
+    const gewinne = liste.filter((t) => t.result === "win").length;
+    return {
+      u, n: liste.length,
+      winrate: liste.length ? Math.round((gewinne / liste.length) * 100) : null,
+      schnitt: rs.length ? rs.reduce((a, b) => a + b, 0) / rs.length : null,
+      summe: rs.reduce((a, b) => a + b, 0),
+    };
+  });
+  const label = { bestaetigt: "mit dem Urteil", neutral: "Urteil neutral", dagegen: "gegen das Urteil" } as const;
+  return (
+    <Card>
+      <CardTitle>Mit oder gegen das Urteil</CardTitle>
+      {mit.length === 0 ? (
+        <p className="text-sm text-ink-muted">
+          Sammelt ab jetzt: Jeder neue Trade bekommt beim Import das Urteil beider
+          Währungen (Zentralbank 40 %, Wirtschaft 35 %, Überraschungen 25 %). Sobald
+          die ersten Trades geschlossen sind, steht hier, ob Trades mit dem Urteil
+          besser laufen als dagegen.
+        </p>
+      ) : (
+        <>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {gruppen.map((g) => (
+              <div key={g.u} className={cx("rounded-xl px-3 py-2.5",
+                g.u === "bestaetigt" ? "bg-good-tint" : g.u === "dagegen" ? "bg-bad-tint" : "bg-sand/60")}>
+                <p className="text-[11px] uppercase tracking-wide text-ink-muted">{label[g.u]}</p>
+                <p className="tabular mt-1 font-mono text-lg text-ink">
+                  {g.schnitt === null ? "—" : `${g.schnitt >= 0 ? "+" : ""}${g.schnitt.toFixed(2)} R`}
+                </p>
+                <p className="text-[11px] text-ink-muted">
+                  {g.n} Trade{g.n === 1 ? "" : "s"} · Trefferquote {g.winrate === null ? "—" : `${g.winrate} %`} · Summe {g.summe >= 0 ? "+" : ""}{g.summe.toFixed(1)} R
+                </p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] text-ink-faint">
+            Schnitt-R je Trade. Unter etwa 30 Trades je Gruppe ist ein Unterschied noch Zufall —
+            {mit.length < 30 ? ` bisher ${mit.length} Trades mit Urteil.` : " die Stichprobe reicht langsam für eine Aussage."}
+          </p>
+        </>
+      )}
+    </Card>
   );
 }

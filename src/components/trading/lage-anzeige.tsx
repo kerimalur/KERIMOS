@@ -48,6 +48,30 @@ export function LageAnzeige({ s }: { s: LageSnapshot }) {
         )}
       </div>
 
+      {s.urteilNeu && (
+        <div className="space-y-1.5 rounded-xl bg-sand/50 px-3 py-2.5">
+          <p className="text-[11px] uppercase tracking-wide text-ink-faint">
+            Urteil beim Einstieg
+            {s.urteilNeu.klasse && (
+              <span className="ml-2 normal-case tracking-normal text-ink-muted">
+                Klasse {s.urteilNeu.klasse} — {s.urteilNeu.klasse === "A" ? "stark gegen schwach" : "stark gegen neutral, mit Vorsicht"}
+              </span>
+            )}
+          </p>
+          {[s.urteilNeu.basis, s.urteilNeu.quote].map((u) => (
+            <div key={u.ccy}>
+              <p className="text-xs">
+                <span className="font-display font-bold text-ink">{u.ccy}</span>{" "}
+                <span className={cx(u.wort.includes("bullish") ? "text-good-bright"
+                  : u.wort.includes("bearish") ? "text-bad-bright" : "text-ink-soft")}>{u.wort}</span>
+              </p>
+              {u.gruende.map((g) => <p key={g} className="text-[11px] text-ink-muted">· {g}</p>)}
+            </div>
+          ))}
+          <p className="text-[10px] text-ink-faint">{s.urteilNeu.gewichtung}</p>
+        </div>
+      )}
+
       <div>
         <p className="text-[11px] uppercase tracking-wide text-ink-faint">COT</p>
         <p className="text-xs text-ink-soft">{s.cotFehler ?? s.cotSatz}</p>

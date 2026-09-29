@@ -19,7 +19,9 @@ export async function lageFesthalten(
 
   let lage;
   try {
-    lage = await baueHitLage(pair, richtung);
+    // Immer mit Service-Schlüssel: der Aufruf kommt meist aus dem Cron, wo
+    // niemand angemeldet ist.
+    lage = await baueHitLage(pair, richtung, true);
   } catch (e) {
     return `Lage liess sich nicht rechnen: ${e instanceof Error ? e.message : "unbekannt"}`;
   }
