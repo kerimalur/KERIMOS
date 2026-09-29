@@ -6,7 +6,7 @@ import {
 } from "recharts";
 import { cx } from "@/components/ui";
 import { KATEGORIE_LABEL, QUELLE_LABEL, fmtAbweichung, fmtWert, fmtZ, type IstQuelle } from "@/lib/makro/releases";
-import type { IndexPunkt, Kategorie } from "@/lib/makro/releases";
+import type { Kategorie } from "@/lib/makro/releases";
 import type { SerieDaten } from "@/lib/makro/releases-laden";
 
 /**
@@ -21,11 +21,6 @@ const GITTER = "#2E2519";
 const ACHSE = "#7A6E5C";
 const GUT = "#5FC2A6";
 const SCHLECHT = "#E28B72";
-
-export const WAEHRUNGS_FARBE: Record<string, string> = {
-  USD: "#3987e5", EUR: "#A38EDD", GBP: "#d95926", JPY: "#E7A96B",
-  AUD: "#199e70", NZD: "#7EE0C6", CAD: "#E28B72", CHF: "#CBC0AC",
-};
 
 const ZEITRAEUME = [
   { key: "3m", label: "3 Monate", monate: 3 },
@@ -62,97 +57,6 @@ function Leer({ text }: { text: string }) {
   return (
     <div className="flex h-full items-center justify-center rounded-xl bg-sand/40 px-4 text-center text-xs text-ink-muted">
       {text}
-    </div>
-  );
-}
-
-/* ------------------------------------------- Index aller Währungen */
-
-export function IndexAlle({ verlauf }: { verlauf: Record<string, IndexPunkt[]> }) {
-  const waehrungen = Object.keys(verlauf);
-  const [an, setAn] = useState<Set<string>>(() => new Set(waehrungen));
-  const [zeit, setZeit] = useState<ZeitKey>("6m");
-  const ab = abDatum(ZEITRAEUME.find((z) => z.key === zeit)!.monate);
-
-  const daten = useMemo(() => {
-    const map = new Map<string, Record<string, number | string | null>>();
-    for (const [ccy, punkte] of Object.entries(verlauf)) {
-      for (const p of punkte) {
-        if (p.datum < ab) continue;
-        const z = map.get(p.datum) ?? { datum: p.datum };
-        z[ccy] = p.wert;
-        map.set(p.datum, z);
-      }
-    }
-    return [...map.values()].sort((a, b) => String(a.datum).localeCompare(String(b.datum)));
-  }, [verlauf, ab]);
-
-  const hatWerte = daten.some((z) => waehrungen.some((c) => typeof z[c] === "number"));
-  const umschalten = (c: string) => setAn((alt) => {
-    const neu = new Set(alt);
-    if (neu.has(c)) neu.delete(c); else neu.add(c);
-    return neu;
-  });
-
-  return (
-    <div>
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        {waehrungen.map((c) => (
-          <button key={c} type="button" onClick={() => umschalten(c)} aria-pressed={an.has(c)}
-            className={cx("flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs transition",
-              an.has(c) ? "bg-sand text-ink" : "bg-transparent text-ink-faint line-through")}>
-            <span className="h-2 w-2 rounded-full" style={{ background: WAEHRUNGS_FARBE[c] ?? "#9A8C74" }} />
-            {c}
-          </button>
-        ))}
-        <button type="button" onClick={() => setAn(an.size === waehrungen.length ? new Set() : new Set(waehrungen))}
-          className="text-[11px] text-accent-soft hover:underline">
-          {an.size === waehrungen.length ? "alle aus" : "alle an"}
-        </button>
-        <span className="ml-auto"><ZeitWahl wert={zeit} setze={setZeit} /></span>
-      </div>
-      <div className="h-[280px]">
-        {hatWerte ? (
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={daten} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-              <CartesianGrid vertical={false} stroke={GITTER} />
-              <XAxis dataKey="datum" tickFormatter={tagKurz} tick={{ fill: ACHSE, fontSize: 10 }}
-                axisLine={false} tickLine={false} minTickGap={40} />
-              <YAxis orientation="right" width={34} domain={[-3, 3]} ticks={[-3, -2, -1, 0, 1, 2, 3]}
-                tick={{ fill: ACHSE, fontSize: 10 }} axisLine={false} tickLine={false}
-                tickFormatter={(v: number) => `${v > 0 ? "+" : ""}${v}`} />
-              <ReferenceLine y={0} stroke="#9A8C74" strokeWidth={1.5}
-                label={{ value: "wie erwartet", position: "insideBottomLeft", fill: ACHSE, fontSize: 10 }} />
-              <Tooltip cursor={{ stroke: "#9A8C74" }} content={({ active, payload, label }) => {
-                if (!active || !payload?.length) return null;
-                const sortiert = [...payload]
-                  .filter((p) => typeof p.value === "number")
-                  .sort((a, b) => Number(b.value) - Number(a.value));
-                return (
-                  <div className="rounded-lg border border-line-strong bg-[#17130F] px-3 py-2 text-xs shadow-card">
-                    <p className="mb-1 text-ink-faint">{tagLang(String(label))}</p>
-                    {sortiert.map((p) => (
-                      <p key={String(p.dataKey)} className="flex items-center gap-2 text-ink-soft">
-                        <span className="h-2 w-2 rounded-full" style={{ background: String(p.color) }} />
-                        {String(p.dataKey)}: <span className="tabular font-medium text-ink">{fmtZ(Number(p.value))}</span>
-                      </p>
-                    ))}
-                  </div>
-                );
-              }} />
-              {waehrungen.filter((c) => an.has(c)).map((c) => (
-                <Line key={c} dataKey={c} stroke={WAEHRUNGS_FARBE[c] ?? "#9A8C74"} strokeWidth={2} dot={false}
-                  activeDot={{ r: 4, stroke: "#1E1811", strokeWidth: 2 }}
-                  connectNulls type="monotone" isAnimationActive={false} />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
-        ) : <Leer text="Noch keine Veröffentlichung mit Erwartung und Ist in diesem Zeitraum." />}
-      </div>
-      <p className="mt-1 text-[11px] text-ink-faint">
-        Gewichteter Mittelwert der Überraschungen (Wachstum, Inflation, Arbeitsmarkt): jüngere und wichtigere
-        Termine zählen mehr, Halbwertszeit 30 Tage. Über null = die Daten schlagen die Erwartungen.
-      </p>
     </div>
   );
 }

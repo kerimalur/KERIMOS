@@ -8,6 +8,7 @@ import {
   parseWert, serieVon, kategorieVon, istInvertiert, releasesAusKalender, mitAbweichung,
   indexBis, szenario, entscheidUrteil, mitMt5, type KalenderZeile, type Mt5Zeile,
 } from "../../src/lib/makro/releases";
+import { urteilFuer, urteilWort } from "../../src/lib/makro/urteil";
 
 let fails = 0;
 function check(name: string, actual: unknown, expected: unknown) {
@@ -114,6 +115,36 @@ check("Deutsch: Arbeitslosenrate", [kategorieVon("Arbeitslosenrate"), istInverti
 check("Deutsch: Kern-VPI", kategorieVon("Kern-VPI n.s.b. m/m"), "inflation");
 check("Deutsch: EZB-Zins", kategorieVon("ECB Einlagenzinsentscheid"), "notenbank");
 check("Deutsch: BIP", kategorieVon("BIP m/m"), "wachstum");
+
+/* Urteil */
+{
+  const tagMs = 86_400_000;
+  const heute = Date.parse("2026-09-29T12:00:00Z");
+  const mk = (id: string, titel: string, tageZurueck: number, erwartung: number, ist: number, vorwert: number, kategorie: "wachstum" | "inflation" | "arbeit" | "notenbank", z: number, einheit = "") => ({
+    id, ccy: "USD", titel, serie: titel, kategorie, event_time: new Date(heute - tageZurueck * tagMs).toISOString(),
+    impact: "High", einheit, erwartung, ist, vorwert, ist_quelle: "mt5" as const, abweichung: ist - erwartung, z,
+  });
+  const rel2 = [
+    mk("a", "ISM Manufacturing PMI", 28, 55.2, 54.6, 55.6, "wachstum", -0.6),
+    mk("b", "ISM Services PMI", 26, 53.5, 54.1, 54.0, "wachstum", 0.6),
+    mk("c", "Non-Farm Employment Change", 25, 55, 162, -23, "arbeit", 2.14, "K"),
+    mk("d", "CPI y/y", 18, 3.0, 3.2, 3.1, "inflation", 2, "%"),
+    mk("e", "Core CPI m/m", 18, 0.3, 0.4, 0.3, "inflation", 1, "%"),
+    mk("f", "PPI m/m", 60, 0.2, 0.4, 0.1, "inflation", 2, "%"),
+    mk("g", "Core PCE Price Index m/m", 34, 0.2, 0.3, 0.2, "inflation", 1, "%"),
+    mk("h", "Federal Funds Rate", 13, 4.0, 4.0, 3.75, "notenbank", 0, "%"),
+  ];
+  const u = urteilFuer(null, rel2, heute);
+  check("Urteil ohne Niveau: nur Überraschung zählt", u.teile.zentralbank === null && u.teile.ueberraschung !== null && u.score !== null && u.score > 0, true);
+  check("Kern PMI Industrie", [u.kern.find((k) => k.key === "pmi_industrie")?.wert, u.kern.find((k) => k.key === "pmi_industrie")?.niveau, u.kern.find((k) => k.key === "pmi_industrie")?.trend], ["54.6", "Expansion", "↓"]);
+  check("Kern Jobs klar höher", u.kern.find((k) => k.key === "jobs")?.vergleich, "klar höher als erwartet");
+  check("Kern Leitzins", [u.kern.find((k) => k.key === "leitzins")?.wert, u.kern.find((k) => k.key === "leitzins")?.vergleich], ["4 %", "Schritt wie erwartet"]);
+  check("Nachricht nur 14 Tage, grosse 30 Tage", [u.nachricht?.id ?? null, u.grosse[0]?.id], [null, "c"]);
+  check("Grund Inflation-Serie", u.gruende.some((g) => g.text.startsWith("Inflation 4×")), true);
+  check("Höchstens 5 Gründe", u.gruende.length <= 5, true);
+  check("Urteilswort", [urteilWort(0.5), urteilWort(0.2), urteilWort(0), urteilWort(-0.2), urteilWort(-0.5)],
+    ["bullish", "leicht bullish", "neutral", "leicht bearish", "bearish"]);
+}
 
 console.log(fails === 0 ? "\nAlles gut." : `\n${fails} Fehler.`);
 process.exit(fails === 0 ? 0 : 1);

@@ -1,7 +1,8 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { G8 } from "@/lib/supabase/trading";
-import { istVeraltet, type HandWert } from "@/lib/makro/bewertung";
+import { istVeraltet, type HandWert, type WaehrungsBild } from "@/lib/makro/bewertung";
+import { erwarteterSchritt, urteilFuer, type UrteilBild } from "./urteil";
 import { zuRelease } from "./releases-sync";
 import {
   INDEX_KATEGORIEN, KATEGORIE_LABEL, indexBis, indexVerlauf, fmtWert,
@@ -65,7 +66,23 @@ export interface Terminal {
 }
 
 export async function ladeTerminal(): Promise<Terminal> {
+  return baueTerminal(await ladeReleases({ ab: tageZurueck(400) }));
+}
+
+/**
+ * Übersicht für das Terminal: das Urteil je Währung plus die Rohdaten für
+ * den aufklappbaren Hintergrund — mit EINER Abfrage für beides.
+ */
+export async function ladeUebersicht(zeilen: WaehrungsBild[]): Promise<{ terminal: Terminal; urteile: Record<string, UrteilBild> }> {
   const releases = await ladeReleases({ ab: tageZurueck(400) });
+  const urteile: Record<string, UrteilBild> = {};
+  for (const ccy of G8) {
+    urteile[ccy] = urteilFuer(zeilen.find((z) => z.ccy === ccy) ?? null, releases.filter((r) => r.ccy === ccy));
+  }
+  return { terminal: baueTerminal(releases), urteile };
+}
+
+function baueTerminal(releases: Release[]): Terminal {
   const heute = new Date();
   const grenze45 = Date.now() - 45 * 86_400_000;
 
@@ -112,24 +129,6 @@ export async function ladeTerminal(): Promise<Terminal> {
   };
 }
 
-/**
- * „Erhöhung auf 4.60 % erwartet (29.09)" — aus dem jüngsten Zinsentscheid,
- * der entweder noch kommt (14 Tage) oder schon war, aber noch kein Ist hat.
- */
-export function erwarteterSchritt(eigene: Release[]): string | null {
-  const jetzt = Date.now();
-  const kandidaten = eigene.filter((r) => r.kategorie === "notenbank" && r.erwartung !== null && r.vorwert !== null
-    && ((Date.parse(r.event_time) > jetzt && Date.parse(r.event_time) <= jetzt + 14 * 86_400_000)
-      || (Date.parse(r.event_time) <= jetzt && r.ist === null && Date.parse(r.event_time) >= jetzt - 45 * 86_400_000)));
-  const r = kandidaten[kandidaten.length - 1];
-  if (!r || r.erwartung === null || r.vorwert === null) return null;
-  const wann = tagKurz(r.event_time);
-  const kommt = Date.parse(r.event_time) > jetzt;
-  if (r.erwartung > r.vorwert) return `Erhöhung auf ${fmtWert(r.erwartung, r.einheit)} ${kommt ? "erwartet" : "erwartet, Ist offen"} (${wann})`;
-  if (r.erwartung < r.vorwert) return `Senkung auf ${fmtWert(r.erwartung, r.einheit)} ${kommt ? "erwartet" : "erwartet, Ist offen"} (${wann})`;
-  return `Halten bei ${fmtWert(r.erwartung, r.einheit)} ${kommt ? "erwartet" : "erwartet, Ist offen"} (${wann})`;
-}
-
 /* ------------------------------------------------------------ Währung */
 
 export interface SeriePunkt {
@@ -153,6 +152,7 @@ export interface SerieDaten {
 
 export interface WaehrungsReleases {
   ccy: string;
+  urteil: UrteilBild;
   jetzt: Record<Kategorie | "gesamt", number | null>;
   /** Index gesamt und je Kategorie, wöchentlich, 12 Monate. */
   verlauf: { datum: string; gesamt: number | null; wachstum: number | null; inflation: number | null; arbeit: number | null }[];
@@ -189,7 +189,7 @@ const FELD_LABEL: Record<string, string> = {
 };
 
 export async function ladeWaehrungsReleases(
-  ccy: string, hand: Partial<Record<string, HandWert>>,
+  ccy: string, hand: Partial<Record<string, HandWert>>, zeile: WaehrungsBild | null,
 ): Promise<WaehrungsReleases> {
   const alle = await ladeReleases({ ccy, ab: tageZurueck(800) });
   const heute = new Date();
@@ -269,7 +269,7 @@ export async function ladeWaehrungsReleases(
     if (n === 0) luecken.push(`${KATEGORIE_LABEL[k]}: keine Veröffentlichung mit Erwartung und Ist in 45 Tagen.`);
   }
 
-  return { ccy, jetzt, verlauf, serien, letzte, naechste, entscheide, luecken };
+  return { ccy, urteil: urteilFuer(zeile, alle), jetzt, verlauf, serien, letzte, naechste, entscheide, luecken };
 }
 
 /* ------------------------------------------------------------ Kalender */

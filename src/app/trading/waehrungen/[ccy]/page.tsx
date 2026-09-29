@@ -9,14 +9,18 @@ import {
 import { notenbankSpeichern } from "@/lib/makro-actions";
 import { EbenenVerlauf } from "@/components/makro/ebenen-verlauf";
 import { PflegeFormular, SyncLeiste } from "@/components/makro/pflege";
-import { ScoreBalken, urteilWort } from "@/components/makro/teile";
-import { Badge, Card, CardTitle, Empty, cx } from "@/components/ui";
-import { ladeWaehrungsReleases, erwarteterSchritt } from "@/lib/makro/releases-laden";
-import { KATEGORIE_LABEL, fmtZ, urteilUeberraschung, type Kategorie } from "@/lib/makro/releases";
+import { Card, CardTitle, Empty, cx } from "@/components/ui";
+import { ladeWaehrungsReleases, ladeUebersicht } from "@/lib/makro/releases-laden";
 import {
-  Datenluecken, EntscheidTabelle, NaechsteTermine, ReleasesNachKategorie, zellKlasse,
+  Datenluecken, EntscheidTabelle, NaechsteTermine, ReleasesNachKategorie,
 } from "@/components/makro/ueberraschung-teile";
 import { IndexKategorien, IstGegenErwartung } from "@/components/makro/ueberraschung-grafik";
+import {
+  FeldChip, GrosseUeberraschungen, GruendeListe, KernKarte, UrteilBalken, UrteilMarke,
+} from "@/components/makro/urteil-teile";
+import { Info } from "@/components/makro/info";
+import { ERKLAERUNG } from "@/lib/makro/erklaerungen";
+import { BANK } from "@/lib/makro/urteil";
 
 export const dynamic = "force-dynamic";
 
@@ -35,10 +39,12 @@ const ZYKLUS_TON: Record<Zyklus, "gut" | "schlecht" | "neutral"> = {
  * Die einzige Währungsseite. Die alte Übersicht leitet hierher weiter; das
  * Pflegen der Zahlen und der Datenlauf stehen aufklappbar ganz unten.
  *
- * Seit dem 29.09.2026 mit „Erwartung gegen Ist" direkt unter dem Kopf: die
- * Überraschung je Bereich, die Liniengrafik Ist gegen Erwartung je Reihe,
- * die Zinsentscheide gegen die Erwartung, was als Nächstes kommt und was
- * fehlt. Die Niveau-Ebenen (EbenenVerlauf) folgen darunter unverändert.
+ * Seit dem 29.09.2026 abends (Kerims Rückmeldung: zu viele Daten, zu wenig
+ * Aussage) zuerst das Urteil mit drei bis fünf Begründungen, dann die drei
+ * Ebenen mit je wenigen Kernzahlen (Rohdaten im Pop-up), dann grosse
+ * Überraschungen und was als Nächstes kommt. Alles andere — Grafiken, alle
+ * Reihen, Tabellen, Datenlücken, Niveau-Verlauf, Pflege — steht aufklappbar
+ * unter „Alle Daten".
  */
 export default async function Waehrung({ params }: { params: Promise<{ ccy: string }> }) {
   const ccy = (await params).ccy.toUpperCase();
@@ -48,10 +54,14 @@ export default async function Waehrung({ params }: { params: Promise<{ ccy: stri
   }
 
   const [indikatoren, b] = await Promise.all([ladeVerlauf(ccy), ladeMakro()]);
-  const rel = await ladeWaehrungsReleases(ccy, b.hand[ccy] ?? {});
-  const schrittErwartet = erwarteterSchritt([...rel.entscheide].reverse().concat(rel.naechste));
-  const I = Object.fromEntries(indikatoren.map((i) => [i.key, i])) as Record<string, Indikator>;
   const zeile = b.zeilen.find((z) => z.ccy === ccy) ?? null;
+  const [rel, { urteile }] = await Promise.all([
+    ladeWaehrungsReleases(ccy, b.hand[ccy] ?? {}, zeile),
+    ladeUebersicht(b.zeilen),
+  ]);
+  const u = rel.urteil;
+  const I = Object.fromEntries(indikatoren.map((i) => [i.key, i])) as Record<string, Indikator>;
+  const kern = (key: string) => u.kern.find((k) => k.key === key)!;
   const e1 = zeile?.ebenen.find((e) => e.ebene === 1);
   const e2 = zeile?.ebenen.find((e) => e.ebene === 2);
   const e3 = zeile?.ebenen.find((e) => e.ebene === 3);
@@ -61,6 +71,7 @@ export default async function Waehrung({ params }: { params: Promise<{ ccy: stri
   const zyklus = manuell ?? zyklusAus(schritte);
   const erwartung = e2?.teile.find((t) => t.key === "erwartung");
   const regime = e3?.teile.find((t) => t.key === "regime");
+  const cot = e3?.teile.find((t) => t.key === "cot");
   const ereignisse = b.ereignisse
     .filter((e) => e.profitiert.includes(ccy) || e.leidet.includes(ccy))
     .map((e) => ({ titel: e.titel, datum: e.datum, notiz: e.notiz,
@@ -76,14 +87,14 @@ export default async function Waehrung({ params }: { params: Promise<{ ccy: stri
             {z.ccy}
             <span className={cx("ml-2 text-[11px]",
               z.ccy === ccy ? "text-ink-on/80"
-                : z.gesamt === null ? "text-ink-faint"
-                  : z.gesamt > 0.05 ? "text-good-bright" : z.gesamt < -0.05 ? "text-bad-bright" : "text-ink-faint")}>
-              {z.gesamt === null ? "—" : `${z.gesamt > 0 ? "+" : ""}${z.gesamt.toFixed(2)}`}
+                : urteile[z.ccy]?.ton === "gut" ? "text-good-bright"
+                  : urteile[z.ccy]?.ton === "schlecht" ? "text-bad-bright" : "text-ink-faint")}>
+              {urteile[z.ccy]?.ton === "gut" ? "▲" : urteile[z.ccy]?.ton === "schlecht" ? "▼" : "●"}
             </span>
           </Link>
         ))}
         <Link href="/trading/fundamentals" className="ml-auto text-xs text-accent-soft hover:underline">
-          ← Rangliste
+          ← Terminal
         </Link>
       </div>
 
@@ -91,86 +102,147 @@ export default async function Waehrung({ params }: { params: Promise<{ ccy: stri
         <div className="flex flex-wrap items-center gap-3">
           <span className="font-display text-3xl font-bold text-ink">{ccy}</span>
           <span className="text-sm text-ink-muted">{NAME[ccy]}</span>
-          {zeile && (
-            <Badge tone={zeile.gesamt === null ? "neutral" : zeile.gesamt > 0.15 ? "good" : zeile.gesamt < -0.15 ? "bad" : "neutral"}>
-              {urteilWort(zeile.gesamt)}
-            </Badge>
-          )}
-          <span className="ml-auto"><ScoreBalken score={zeile?.gesamt ?? null} breit={160} /></span>
+          <UrteilMarke wort={u.wort} gross />
+          <Info titel="Das Urteil" breit={320}>
+            <span className="block">{ERKLAERUNG.urteil}</span>
+            <span className="mt-2 block text-ink-faint">{ERKLAERUNG.gewichtung}</span>
+          </Info>
+          <span className="ml-auto"><UrteilBalken score={u.score} breit={160} /></span>
         </div>
-        <p className="mt-2 text-xs text-ink-muted">
-          Urteil = Ebene 1 (Wirtschaft) und Ebene 2 (Zentralbank) je zur Hälfte.
-          Ebene 3 wird angezeigt, aber noch nicht gewertet.
-        </p>
-        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line/50 pt-3">
-          <span className="text-xs text-ink-muted">Überraschung</span>
-          <span className={cx("tabular rounded-lg px-2.5 py-1 font-mono text-sm", zellKlasse(rel.jetzt.gesamt))}>
-            {fmtZ(rel.jetzt.gesamt)}
-          </span>
-          <span className="text-xs text-ink-soft">{urteilUeberraschung(rel.jetzt.gesamt)}</span>
-          {schrittErwartet && <Badge tone="accent">{schrittErwartet}</Badge>}
+        <div className="mt-4">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Warum</p>
+          <GruendeListe gruende={u.gruende} />
+        </div>
+        <div className="mt-4 flex flex-wrap gap-1.5 border-t border-line/50 pt-3">
+          <FeldChip label="Zentralbank" feld={u.felder.zentralbank} info={ERKLAERUNG.zentralbank} />
+          <FeldChip label="Wirtschaft" feld={u.felder.wirtschaft} info={ERKLAERUNG.wirtschaft} />
+          <FeldChip label="Überraschung" feld={u.felder.ueberraschung} info={ERKLAERUNG.ueberraschung} />
         </div>
       </Card>
 
-      <section className="space-y-4">
-        <div className="flex flex-wrap items-baseline gap-2">
-          <h2 className="font-display text-lg font-semibold text-ink">Erwartung gegen Ist</h2>
-          <span className="text-xs text-ink-muted">die Abweichung bewegt den Kurs, nicht die Zahl</span>
-          <Link href={`/trading/fundamentals/kalender?ccy=${ccy}`} className="ml-auto text-xs text-accent-soft hover:underline">
-            Kalender {ccy} →
-          </Link>
-        </div>
-
-        <div className="grid gap-2 sm:grid-cols-3">
-          {(["wachstum", "inflation", "arbeit"] as Kategorie[]).map((k) => (
-            <div key={k} className={cx("rounded-2xl px-4 py-3", zellKlasse(rel.jetzt[k]))}>
-              <p className="text-[11px] uppercase tracking-[0.1em] opacity-80">{KATEGORIE_LABEL[k]}</p>
-              <p className="tabular mt-1 font-mono text-xl">{fmtZ(rel.jetzt[k])}</p>
-              <p className="text-[11px] opacity-90">{urteilUeberraschung(rel.jetzt[k])}</p>
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card>
+          <div className="mb-3 flex items-center gap-2">
+            <CardTitle className="mb-0">1 · Wirtschaft</CardTitle>
+            <Info titel="Ebene 1 · Wirtschaft">{ERKLAERUNG.wirtschaft}</Info>
+          </div>
+          <div className="space-y-2">
+            <KernKarte k={kern("pmi_industrie")} />
+            <KernKarte k={kern("pmi_dienste")} />
+            <KernKarte k={kern("bip")} />
+            <KernKarte k={kern("arbeitslos")} />
+            <KernKarte k={kern("jobs")} />
+          </div>
+        </Card>
+        <Card>
+          <div className="mb-3 flex items-center gap-2">
+            <CardTitle className="mb-0">2 · Zentralbank · {BANK[ccy]}</CardTitle>
+            <Info titel="Ebene 2 · Zentralbank">{ERKLAERUNG.zentralbank}</Info>
+          </div>
+          <div className="space-y-2">
+            <KernKarte k={kern("leitzins")} />
+            {u.schritt && (
+              <p className="rounded-xl bg-trading-bg px-3 py-2 text-xs text-trading-bright">Nächster Schritt: {u.schritt}</p>
+            )}
+            {erwartung && erwartung.score !== null && (
+              <p className="rounded-xl bg-sand/60 px-3 py-2 text-xs text-ink-soft">
+                <span className="text-ink-muted">Markt:</span> {erwartung.text}
+              </p>
+            )}
+            <KernKarte k={kern("cpi")} info={ERKLAERUNG.inflation} />
+            <KernKarte k={kern("kern_cpi")} info={ERKLAERUNG.inflation} />
+          </div>
+        </Card>
+        <Card>
+          <div className="mb-3 flex items-center gap-2">
+            <CardTitle className="mb-0">3 · Stimmung</CardTitle>
+            <span className="text-[11px] text-ink-faint">nur Anzeige</span>
+          </div>
+          <div className="space-y-2 text-sm">
+            <div className="rounded-xl bg-sand/60 px-3 py-2.5">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-ink-muted">Risiko-Regime</span>
+                <Info titel="Risiko-Regime" breit={320}>{ERKLAERUNG.regime}</Info>
+              </div>
+              <p className="mt-1 text-xs text-ink-soft">{regime?.text ?? "Kein Regime."}</p>
             </div>
-          ))}
-        </div>
+            <div className="rounded-xl bg-sand/60 px-3 py-2.5">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-ink-muted">COT</span>
+                <Info titel="COT">{ERKLAERUNG.cot}</Info>
+              </div>
+              <p className="mt-1 text-xs text-ink-soft">{cot?.text ?? "Keine COT-Reihe."}</p>
+            </div>
+            {ROHSTOFF_BEZUG[ccy] && (
+              <div className="rounded-xl bg-sand/60 px-3 py-2.5">
+                <span className="text-[11px] text-ink-muted">Rohstoffe</span>
+                <p className="mt-1 text-xs text-ink-soft">{ROHSTOFF_BEZUG[ccy]}</p>
+              </div>
+            )}
+            {ereignisse.length > 0 && (
+              <div className="rounded-xl bg-sand/60 px-3 py-2.5">
+                <span className="text-[11px] text-ink-muted">Ereignisse</span>
+                {ereignisse.map((x) => (
+                  <p key={x.titel} className={cx("mt-1 text-xs", x.richtung > 0 ? "text-good-bright" : "text-bad-bright")}>
+                    {x.richtung > 0 ? "▲" : "▼"} {x.titel}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+        </Card>
+      </div>
 
-        <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
-          <Card>
-            <CardTitle>Ist gegen Erwartung · Verlauf</CardTitle>
-            <IstGegenErwartung serien={rel.serien} ccy={ccy} />
-          </Card>
-          <div className="space-y-4">
+      <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+        <Card>
+          <div className="mb-3 flex items-center gap-2">
+            <CardTitle className="mb-0">Grosse Überraschungen · 30 Tage</CardTitle>
+            <Info titel="Grosse Überraschungen">{ERKLAERUNG.grosse}</Info>
+          </div>
+          <GrosseUeberraschungen liste={u.grosse} ccy={ccy} />
+        </Card>
+        <Card>
+          <div className="mb-3 flex items-center gap-2">
+            <CardTitle className="mb-0">Als Nächstes</CardTitle>
+            <Link href={`/trading/fundamentals/kalender?ccy=${ccy}`} className="ml-auto text-[11px] text-accent-soft hover:underline">
+              Kalender {ccy} →
+            </Link>
+          </div>
+          <NaechsteTermine termine={rel.naechste.filter((r) => r.impact === "High" || r.kategorie === "notenbank")} />
+        </Card>
+      </div>
+
+      <details className="rounded-2xl border border-line/70 bg-card/60 p-4">
+        <summary className="cursor-pointer text-sm text-ink-soft">
+          Alle Daten · Grafiken, alle Veröffentlichungen, Datenlücken, Niveau-Verlauf
+        </summary>
+        <div className="mt-4 space-y-4">
+          <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
             <Card>
-              <CardTitle>Als Nächstes</CardTitle>
-              <NaechsteTermine termine={rel.naechste} />
+              <CardTitle>Ist gegen Erwartung · Verlauf</CardTitle>
+              <IstGegenErwartung serien={rel.serien} ccy={ccy} />
             </Card>
             <Card>
               <CardTitle>Datenlücken</CardTitle>
               <Datenluecken luecken={rel.luecken} />
             </Card>
           </div>
-        </div>
-
-        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card>
+              <CardTitle>Überraschungsindex {ccy}</CardTitle>
+              <IndexKategorien verlauf={rel.verlauf} />
+            </Card>
+            <Card>
+              <CardTitle>Zinsentscheide gegen die Erwartung</CardTitle>
+              <EntscheidTabelle entscheide={rel.entscheide} />
+            </Card>
+          </div>
           <Card>
-            <CardTitle>Überraschungsindex {ccy}</CardTitle>
-            <IndexKategorien verlauf={rel.verlauf} />
+            <CardTitle>Veröffentlichungen der letzten 45 Tage</CardTitle>
+            <ReleasesNachKategorie releases={rel.letzte} />
           </Card>
-          <Card>
-            <CardTitle>Zinsentscheide gegen die Erwartung</CardTitle>
-            <EntscheidTabelle entscheide={rel.entscheide} />
-            <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
-              Falkenhaft = höher als erwartet, stützt {ccy}. Taubenhaft = tiefer, belastet.
-              Der Zyklus in Ebene 2 unten kommt automatisch aus dem Zinsverlauf; von Hand
-              übersteuern geht dort unter „bearbeiten".
-            </p>
-          </Card>
-        </div>
 
-        <Card>
-          <CardTitle>Veröffentlichungen der letzten 45 Tage</CardTitle>
-          <ReleasesNachKategorie releases={rel.letzte} />
-        </Card>
-      </section>
-
-      <h2 className="font-display text-lg font-semibold text-ink">Niveau nach den drei Ebenen</h2>
+          <h2 className="font-display text-lg font-semibold text-ink">Niveau-Verlauf nach den drei Ebenen</h2>
 
       <EbenenVerlauf
         ccy={ccy}
@@ -217,11 +289,13 @@ export default async function Waehrung({ params }: { params: Promise<{ ccy: stri
         }
       />
 
-      <details className="rounded-2xl border border-line/70 bg-card/60 p-4">
-        <summary className="cursor-pointer text-sm text-ink-soft">Zahlen von Hand pflegen · Datenlauf</summary>
-        <div className="mt-4 space-y-4">
-          <SyncLeiste sync={b.sync} />
-          <PflegeFormular ccy={ccy} hand={b.hand[ccy] ?? {}} stichtag={b.stichtag} />
+          <details className="rounded-2xl border border-line/70 bg-card/60 p-4">
+            <summary className="cursor-pointer text-sm text-ink-soft">Zahlen von Hand pflegen · Datenlauf</summary>
+            <div className="mt-4 space-y-4">
+              <SyncLeiste sync={b.sync} />
+              <PflegeFormular ccy={ccy} hand={b.hand[ccy] ?? {}} stichtag={b.stichtag} />
+            </div>
+          </details>
         </div>
       </details>
     </div>

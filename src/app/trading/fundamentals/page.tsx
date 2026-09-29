@@ -1,46 +1,35 @@
 import Link from "next/link";
 import { tradingConfigured, G8 } from "@/lib/supabase/trading";
 import { ladeMakro } from "@/lib/makro/laden";
-import { paarIdeen, GEWICHT, EBENEN_LABEL, ZYKLUS_LABEL } from "@/lib/makro/bewertung";
+import { paarIdeen, EBENEN_LABEL, ZYKLUS_LABEL } from "@/lib/makro/bewertung";
 import { PAARE } from "@/lib/trading/journal";
 import { ereignisAnlegen, ereignisLoeschen } from "@/lib/makro-actions";
-import { RangTabelle, ScoreBalken, MontyZeichen, urteilWort } from "@/components/makro/teile";
-import { ladeTerminal } from "@/lib/makro/releases-laden";
-import { QUELLE_LABEL, urteilUeberraschung, fmtZ, type IstQuelle } from "@/lib/makro/releases";
+import { RangTabelle, ScoreBalken, MontyZeichen } from "@/components/makro/teile";
+import { ladeUebersicht } from "@/lib/makro/releases-laden";
+import { QUELLE_LABEL, type IstQuelle } from "@/lib/makro/releases";
+import { BANK } from "@/lib/makro/urteil";
+import { ERKLAERUNG } from "@/lib/makro/erklaerungen";
 import { UeberraschungsMatrix } from "@/components/makro/ueberraschung-teile";
-import { IndexAlle } from "@/components/makro/ueberraschung-grafik";
-import { Card, CardTitle, Stat, Badge, Empty, Button, Input, Label } from "@/components/ui";
+import { UrteilMarke, WaehrungsZeile } from "@/components/makro/urteil-teile";
+import { Info } from "@/components/makro/info";
+import { Card, CardTitle, Badge, Empty, Button, Input, Label, cx } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Fundamentals — die Lage aller acht Währungen auf einen Blick.
+ * Makro-Terminal — welche Währung ist bullish, welche bearish, und warum.
  *
- * Ersetzt das Währungs-Ranking als Einstieg (26.09.2026). Grund: Der Q-Score
- * des ML-Modells besteht in der Praxis fast nur aus der Zinslage — die
- * Saisonalität steht bei allen acht auf 0.000 —, und die Zinsen selbst waren
- * nirgends zu sehen. Hier steht jede Zahl, aus der das Urteil entsteht.
- *
- * Aufbau nach Kerims drei Ebenen: Wirtschaft, Zentralbank, Sentiment.
- *
- * Seit dem 26.09.2026 ist das die EINZIGE Stelle, an der Paare vorgeschlagen
- * werden. Vorher gab es dieselbe Empfehlung noch einmal unter Confluence, aus
- * einem anderen Modell und mit teils anderem Ergebnis — wer zwei Listen vor
- * sich hat, entscheidet bei jedem Blick neu, welcher er glaubt. Monty steht
- * jetzt als aufklappbare Gegenprobe darunter: es sagt nicht, was zu handeln
- * ist, sondern nur, ob die Commercials gerade zustimmen.
- *
- * Seit dem 29.09.2026 das Makro-Terminal: oben die Überraschungs-Matrix und
- * der Überraschungsindex (Ist gegen Erwartung, lib/makro/releases.ts), darunter
- * die Niveau-Rangliste wie bisher. Beides steht bewusst NEBENEINANDER und wird
- * nicht verrechnet: das Niveau sagt, wo eine Wirtschaft steht, die
- * Überraschung, wohin der Markt sie gerade umbewertet. Wie man beides
- * gewichtet, soll erst ein Backtest zeigen.
+ * Geschichte in Kürze:
+ *   26.09.2026  ersetzt das ML-Ranking; drei Ebenen nach Kerims Notizen;
+ *               einzige Stelle für Paar-Ideen; Monty als Gegenprobe.
+ *   29.09.2026  Erwartung gegen Ist (lib/makro/releases.ts), Ist aus MT5.
+ *   29.09.2026  abends, nach Kerims Rückmeldung „zu viele Daten, nichts, was
+ *               ich direkt interpretieren kann": oben nur noch das Urteil je
+ *               Währung mit den drei Feldern und dem wichtigsten Grund
+ *               (lib/makro/urteil.ts). Matrix, Niveau-Rangliste, Monty,
+ *               Regime-Details und Ereignisse stehen aufklappbar darunter.
+ *               Die 8-Linien-Grafik ist weg — sie war nicht lesbar.
  */
-
-const BANK: Record<string, string> = {
-  USD: "Fed", EUR: "EZB", GBP: "BoE", JPY: "BoJ", AUD: "RBA", NZD: "RBNZ", CAD: "BoC", CHF: "SNB",
-};
 export default async function FundamentalsSeite() {
   if (!tradingConfigured()) {
     return (
@@ -54,11 +43,17 @@ export default async function FundamentalsSeite() {
     );
   }
 
-  const [b, t] = await Promise.all([ladeMakro(), ladeTerminal()]);
-  const ideen = paarIdeen(b.zeilen, PAARE);
+  const b = await ladeMakro();
+  const { terminal: t, urteile } = await ladeUebersicht(b.zeilen);
 
-  // Zyklus je Währung aus Ebene 2 — dort steht er schon, automatisch aus dem
-  // Zinsverlauf oder von Hand übersteuert.
+  const reihe = G8.map((c) => urteile[c])
+    .sort((x, y) => (y.score ?? -9) - (x.score ?? -9));
+
+  // Paar-Ideen jetzt aus dem Urteil (Zentralbank, Wirtschaft, Überraschung),
+  // nicht mehr nur aus dem Niveau.
+  const ideen = paarIdeen(b.zeilen.map((z) => ({ ...z, gesamt: urteile[z.ccy]?.score ?? null })), PAARE);
+  const montyJeCcy = Object.fromEntries(b.monty.zeilen.map((z) => [z.ccy, z]));
+
   const zyklen = Object.fromEntries(G8.map((ccy) => {
     const teil = b.zeilen.find((z) => z.ccy === ccy)?.ebenen.find((e) => e.ebene === 2)
       ?.teile.find((x) => x.key === "zyklus");
@@ -68,15 +63,15 @@ export default async function FundamentalsSeite() {
       : teil.score > 0 ? "gut" : teil.score < 0 ? "schlecht" : "neutral";
     return [ccy, { bank: BANK[ccy], zyklus: text, ton, hinweis: t.schritt[ccy] }];
   }));
-  const ueberraschung = (ccy: string) => t.matrix[ccy]?.gesamt.wert ?? null;
   const quellenText = Object.entries(t.status.jeQuelle)
     .map(([q, n]) => `${QUELLE_LABEL[q as IstQuelle] ?? q} ${n}`).join(" · ") || "keine";
-  const nurRekonstruiert = !t.status.jeQuelle.jblanked && !t.status.jeQuelle.mt5;
-  const montyJeCcy = Object.fromEntries(b.monty.zeilen.map((z) => [z.ccy, z]));
 
-  const stark = b.zeilen[0];
-  const schwach = [...b.zeilen].reverse().find((z) => z.gesamt !== null) ?? null;
-  const ohneDaten = b.zeilen.filter((z) => z.abdeckung < 0.5).map((z) => z.ccy);
+  const regimeWort = b.regime.lage === "risk-on" ? "Risk-on"
+    : b.regime.lage === "risk-off" ? "Risk-off"
+      : b.regime.lage === "neutral" ? "neutral" : "unbekannt";
+  const regimeFolge = b.regime.lage === "risk-on" ? "stützt AUD, NZD, CAD · belastet JPY, CHF"
+    : b.regime.lage === "risk-off" ? "stützt JPY, CHF (oft USD) · belastet AUD, NZD, CAD"
+      : "kein klarer Rückenwind für eine Seite";
 
   return (
     <div className="space-y-5">
@@ -84,89 +79,60 @@ export default async function FundamentalsSeite() {
         <div>
           <h1 className="font-display text-xl font-bold text-ink">Makro-Terminal</h1>
           <p className="mt-1 max-w-2xl text-sm text-ink-muted">
-            Nicht die Zahl bewegt den Kurs, sondern ihre Abweichung von der
-            Erwartung. Oben die Überraschung, darunter das Niveau nach deinen
-            drei Ebenen. Stand {b.stichtag}.
+            Welche Währung ist bullish, welche bearish — und warum. Antippen für
+            die Begründung. Stand {b.stichtag}.
           </p>
         </div>
-        <div className="flex gap-4">
-          <Link href="/trading/fundamentals/kalender"
-            className="text-xs text-accent-soft transition hover:underline">
-            Kalender →
-          </Link>
-          <Link href="/trading/waehrungen"
-            className="text-xs text-accent-soft transition hover:underline">
-            Währungen →
-          </Link>
-        </div>
+        <Link href="/trading/fundamentals/kalender"
+          className="text-xs text-accent-soft transition hover:underline">
+          Kalender →
+        </Link>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-sand/50 px-4 py-2.5">
+        <span className="text-xs text-ink-muted">Risiko-Regime</span>
+        <span className={cx("rounded-lg px-2 py-0.5 text-xs font-semibold",
+          b.regime.lage === "risk-on" ? "bg-good-tint text-good-bright"
+            : b.regime.lage === "risk-off" ? "bg-bad-tint text-bad-bright" : "bg-sand text-ink-soft")}>
+          {regimeWort}
+        </span>
+        <span className="text-xs text-ink-soft">{regimeFolge}</span>
+        <Info titel="Risiko-Regime" breit={320}>
+          <span className="block">{ERKLAERUNG.regime}</span>
+          {b.regime.teile.length > 0 && (
+            <span className="mt-2 block text-ink-faint">
+              {b.regime.teile.map((x) => `${x.label}: ${x.text}`).join(" · ")}
+            </span>
+          )}
+        </Info>
       </div>
 
       <Card>
-        <div className="mb-3 flex flex-wrap items-baseline gap-2">
-          <CardTitle className="mb-0">Überraschungs-Matrix</CardTitle>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <CardTitle className="mb-0">Die acht Währungen</CardTitle>
+          <Info titel="Wie das Urteil entsteht" breit={320}>
+            <span className="block">{ERKLAERUNG.urteil}</span>
+            <span className="mt-2 block text-ink-faint">{ERKLAERUNG.gewichtung}</span>
+          </Info>
           <span className="ml-auto text-[11px] text-ink-faint">
-            grün = besser als erwartet · stützt &nbsp;·&nbsp; rot = schlechter · belastet &nbsp;·&nbsp; Werte in typischen Schritten (±3)
+            Zentralbank 40 % · Wirtschaft 35 % · Überraschung 25 %
           </span>
         </div>
-        <UeberraschungsMatrix matrix={t.matrix} waehrungen={G8} zyklen={zyklen} />
-        <p className={`mt-3 rounded-xl px-3 py-2.5 text-[11px] leading-relaxed ${nurRekonstruiert ? "bg-warn-tint text-ink-soft" : "bg-sand/60 text-ink-muted"}`}>
-          Letzte 45 Tage: {t.status.termine45} Termine, {t.status.mitErwartung45} mit Erwartung,{" "}
-          {t.status.mitIst45} mit Ist ({quellenText}), {t.status.offenOhneIst} warten noch auf ihr Ist.
-          {nurRekonstruiert && " Das Ist wird nur aus dem Folgetermin rekonstruiert und kommt deshalb verzögert. Mit einem JBLANKED_API_KEY kommt es Minuten nach der Veröffentlichung."}
-        </p>
-      </Card>
-
-      <Card>
-        <div className="mb-3 flex flex-wrap items-baseline gap-2">
-          <CardTitle className="mb-0">Überraschungsindex</CardTitle>
-          <span className="ml-auto text-[11px] text-ink-faint">wer schlägt gerade die Erwartungen?</span>
+        <div className="space-y-1.5">
+          {reihe.map((u, i) => <WaehrungsZeile key={u.ccy} u={u} rang={i + 1} />)}
         </div>
-        <IndexAlle verlauf={t.verlauf} />
       </Card>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Card area="trading">
-          <Stat label="Stärkste" value={stark?.gesamt === null ? "—" : stark?.ccy ?? "—"}
-            tone="good" sub={stark ? urteilWort(stark.gesamt) : ""} />
-        </Card>
-        <Card>
-          <Stat label="Schwächste" value={schwach?.ccy ?? "—"}
-            tone="bad" sub={schwach ? urteilWort(schwach.gesamt) : ""} />
-        </Card>
-        <Card>
-          <Stat label="Risiko-Regime"
-            value={b.regime.lage === "risk-on" ? "Risk-on"
-              : b.regime.lage === "risk-off" ? "Risk-off"
-                : b.regime.lage === "neutral" ? "neutral" : "unbekannt"}
-            sub={b.regime.score === null ? "keine Quelle"
-              : `Score ${b.regime.score.toFixed(2)} · ${b.regime.teile.length} Quellen`} />
-        </Card>
-      </div>
-
       <Card>
-        <div className="mb-3 flex flex-wrap items-baseline gap-2">
-          <CardTitle className="mb-0">Rangliste</CardTitle>
-          <span className="ml-auto text-[11px] text-ink-faint">
-            Gewichte: Wirtschaft {Math.round(GEWICHT[1] * 100)} % ·
-            Zentralbank {Math.round(GEWICHT[2] * 100)} % ·
-            Sentiment {Math.round(GEWICHT[3] * 100)} %
-          </span>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <CardTitle className="mb-0">Stark gegen schwach</CardTitle>
+          <Info titel="Paar-Ideen">
+            Die Regel aus deinen Notizen: eine starke gegen eine schwache Währung.
+            Nur Paare mit mindestens 0.40 Abstand im Urteil — bei zwei
+            mittelmässigen Währungen ist das Urteil keins. Ersetzt keine
+            GVA-Linie, es sagt nur, in welche Richtung du sie suchen solltest.
+          </Info>
         </div>
-        <RangTabelle zeilen={b.zeilen} monty={montyJeCcy} />
-        {ohneDaten.length > 0 && (
-          <p className="mt-3 rounded-xl bg-warn-tint px-3 py-2.5 text-[11px] leading-relaxed text-ink-soft">
-            Dünne Datenlage bei {ohneDaten.join(", ")} — dort fehlen die von Hand
-            gepflegten Zahlen. Bis sie eingetragen sind, trägt das Urteil dieser
-            Währungen fast nur die Zentralbank-Ebene.{" "}
-            <Link href="/trading/waehrungen" className="text-accent-soft hover:underline">
-              Jetzt eintragen
-            </Link>.
-          </p>
-        )}
-      </Card>
-
-      <Card>
-        <CardTitle>Stark gegen schwach</CardTitle>
         {ideen.length === 0 ? (
           <Empty>
             Kein Paar mit deutlichem Abstand. Das ist eine Aussage: heute steht
@@ -174,30 +140,65 @@ export default async function FundamentalsSeite() {
           </Empty>
         ) : (
           <ul className="space-y-1.5">
-            {ideen.map((i) => (
-              <li key={i.paar + i.seite}
-                className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-sand/50 px-3 py-2">
-                <span className="w-[86px] font-display font-bold text-ink">{i.paar}</span>
-                <Badge tone={i.seite === "Long" ? "good" : "bad"}>{i.seite}</Badge>
-                <span className="text-xs text-ink-muted">
-                  {i.stark} stark gegen {i.schwach} schwach
-                </span>
-                <UeberraschungsProbe stark={ueberraschung(i.stark)} schwach={ueberraschung(i.schwach)} />
-                <span className="tabular ml-auto text-xs text-ink-soft">
-                  Abstand {i.abstand.toFixed(2)}
-                </span>
-              </li>
-            ))}
+            {ideen.map((i) => {
+              const s = urteile[i.stark], w = urteile[i.schwach];
+              return (
+                <li key={i.paar + i.seite} className="rounded-xl bg-sand/50 px-3 py-2.5">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className="w-[86px] font-display font-bold text-ink">{i.paar}</span>
+                    <Badge tone={i.seite === "Long" ? "good" : "bad"}>{i.seite}</Badge>
+                    <span className="flex items-center gap-1.5 text-xs text-ink-muted">
+                      {i.stark} <UrteilMarke wort={s.wort} /> gegen {i.schwach} <UrteilMarke wort={w.wort} />
+                    </span>
+                  </div>
+                  <p className="mt-1.5 text-xs text-ink-muted">
+                    <span className="text-good-bright">▲</span> {s.gruende[0]?.text ?? "—"}
+                  </p>
+                  <p className="text-xs text-ink-muted">
+                    <span className="text-bad-bright">▼</span> {w.gruende[0]?.text ?? "—"}
+                  </p>
+                </li>
+              );
+            })}
           </ul>
         )}
-        <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
-          Die Regel aus deinen Notizen: eine starke gegen eine schwache Währung.
-          Gezeigt werden nur Paare mit mindestens 0.40 Abstand — bei zwei
-          mittelmässigen Währungen ist das Urteil keins. Das ersetzt keine
-          GVA-Linie, es sagt nur, in welche Richtung du sie suchen solltest.
-          Die Marke „Überraschung" zeigt, ob die jüngsten Daten dieselbe
-          Richtung stützen (starke Währung überrascht besser als die schwache).
-        </p>
+      </Card>
+
+      <h2 className="pt-2 font-display text-base font-semibold text-ink-soft">Hintergrund</h2>
+
+      <Card>
+        <details>
+          <summary className="cursor-pointer list-none">
+            <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <CardTitle className="mb-0">Überraschungs-Matrix</CardTitle>
+              <span className="text-xs text-ink-muted">je Währung und Bereich, wie die Daten gegen die Erwartung ausfallen</span>
+              <span className="ml-auto text-[11px] text-accent-soft">aufklappen</span>
+            </span>
+          </summary>
+          <div className="mt-4">
+            <UeberraschungsMatrix matrix={t.matrix} waehrungen={G8} zyklen={zyklen} />
+            <p className="mt-3 rounded-xl bg-sand/60 px-3 py-2.5 text-[11px] leading-relaxed text-ink-muted">
+              Letzte 45 Tage: {t.status.termine45} Termine, {t.status.mitErwartung45} mit Erwartung,{" "}
+              {t.status.mitIst45} mit Ist ({quellenText}), {t.status.offenOhneIst} warten noch auf ihr Ist.
+              Werte in typischen Schritten (±3): über 0 = besser als erwartet.
+            </p>
+          </div>
+        </details>
+      </Card>
+
+      <Card>
+        <details>
+          <summary className="cursor-pointer list-none">
+            <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <CardTitle className="mb-0">Niveau-Rangliste</CardTitle>
+              <span className="text-xs text-ink-muted">nur Wirtschaft und Zentralbank, ohne Überraschungen</span>
+              <span className="ml-auto text-[11px] text-accent-soft">aufklappen</span>
+            </span>
+          </summary>
+          <div className="mt-4">
+            <RangTabelle zeilen={b.zeilen} monty={montyJeCcy} />
+          </div>
+        </details>
       </Card>
 
       <Card>
@@ -238,6 +239,16 @@ export default async function FundamentalsSeite() {
         </details>
       </Card>
 
+      <Card>
+        <details>
+          <summary className="cursor-pointer list-none">
+            <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <CardTitle className="mb-0">Ereignisse · Regime im Detail · Methode</CardTitle>
+              <span className="text-xs text-ink-muted">{b.ereignisse.length} Ereignis{b.ereignisse.length === 1 ? "" : "se"} eingetragen</span>
+              <span className="ml-auto text-[11px] text-accent-soft">aufklappen</span>
+            </span>
+          </summary>
+          <div className="mt-4">
       <div className="grid gap-4 lg:grid-cols-2">
         <Card id="ereignisse">
           <CardTitle>Ereignisse (Ebene 3 · nicht gewertet)</CardTitle>
@@ -348,46 +359,32 @@ export default async function FundamentalsSeite() {
             <CardTitle>Wie das Urteil entsteht</CardTitle>
             <ol className="ml-4 list-decimal space-y-1.5 text-sm text-ink-muted">
               <li>
-                <strong className="text-ink-soft">{EBENEN_LABEL[1]}:</strong> PMI Industrie
-                und PMI Dienste (über 50 positiv) und BIP zum Vorjahr — automatisch.
-                Frühindikator, Arbeitslosenquote und Leistungsbilanz stehen nur als Kontext da.
+                <strong className="text-ink-soft">Zentralbank · 40 %:</strong> Zyklus
+                ({Object.values(ZYKLUS_LABEL).join(", ")} — aus den Zinsschritten,
+                von Hand überschreibbar), Zinsrichtung über sechs Monate und die
+                Markterwartung aus der 2-Jahres-Rendite.
               </li>
               <li>
-                <strong className="text-ink-soft">{EBENEN_LABEL[2]}:</strong> Zyklus
-                ({Object.values(ZYKLUS_LABEL).join(", ")} — aus den Zinsschritten
-                abgeleitet, von Hand überschreibbar), Zinsrichtung über sechs Monate
-                und die Markterwartung aus der 2-Jahres-Rendite. Zinsniveau, Realzins
-                und 10J-Rendite sind Kontext.
+                <strong className="text-ink-soft">Wirtschaft · 35 %:</strong> PMI Industrie
+                und Dienste (über 50 positiv) und BIP zum Vorjahr.
+              </li>
+              <li>
+                <strong className="text-ink-soft">Überraschungen · 25 %:</strong> wie
+                Wachstum, Inflation und Arbeitsmarkt gegen die Erwartung ausfallen —
+                jüngere und wichtige Termine zählen mehr.
               </li>
               <li>
                 <strong className="text-ink-soft">{EBENEN_LABEL[3]}:</strong> Risiko-Regime,
-                COT, Ereignisse, Rohstoff-Abhängigkeit — angezeigt, noch nicht gewertet.
+                COT, Ereignisse — angezeigt, nicht gewertet.
               </li>
             </ol>
-            <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
-              Jeder Teil wird auf −1 bis +1 normiert und innerhalb seiner Ebene
-              gemittelt — aber nur über die Teile, die Daten haben. Eine
-              fehlende Zahl verwässert das Urteil damit nicht, sie verkleinert
-              nur die Abdeckung, und die steht in der Tabelle.
-            </p>
+            <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">{ERKLAERUNG.gewichtung}</p>
           </Card>
         </div>
       </div>
+          </div>
+        </details>
+      </Card>
     </div>
   );
-}
-
-/**
- * Stützen die jüngsten Überraschungen das Paar? Ab 0.3 Abstand zählt es,
- * darunter ist es Rauschen.
- */
-function UeberraschungsProbe({ stark, schwach }: { stark: number | null; schwach: number | null }) {
-  if (stark === null || schwach === null) {
-    return <Badge tone="neutral" title="Für mindestens eine der beiden Währungen fehlen Veröffentlichungen mit Erwartung und Ist.">Überraschung ?</Badge>;
-  }
-  const d = stark - schwach;
-  const titel = `stark ${fmtZ(stark)} (${urteilUeberraschung(stark)}) · schwach ${fmtZ(schwach)} (${urteilUeberraschung(schwach)})`;
-  if (d >= 0.3) return <Badge tone="good" title={titel}>Überraschung stützt</Badge>;
-  if (d <= -0.3) return <Badge tone="warn" title={titel}>Überraschung dagegen</Badge>;
-  return <Badge tone="neutral" title={titel}>Überraschung neutral</Badge>;
 }
