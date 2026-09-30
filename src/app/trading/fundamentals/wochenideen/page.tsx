@@ -263,12 +263,15 @@ function RueckrechnungKarte({ rueck }: { rueck: Awaited<ReturnType<typeof ladeRu
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <CardTitle className="mb-0">Rückrechnung ab März 2024</CardTitle>
         <Info titel="Wie zurückgerechnet wird" breit={340}>
-          Für jeden Montag das Urteil, wie es an diesem Tag möglich war — nur mit
-          Veröffentlichungen davor. Vereinfacht gegenüber live: Zentralbank nur aus den
-          Zinsentscheiden (ohne Markterwartung), Wirtschaft nur aus dem PMI (ohne BIP),
-          Überraschung genau wie live. Bis Juni 2026 ist die Erwartung die Prognose von
-          MetaQuotes, danach der Konsens. Überlappende Horizonte (jede Woche eine neue
-          2-Wochen-Messung) machen die echte Streuung grösser als das angezeigte Band.
+          Für jeden Montag genau das Urteil, das das Terminal an diesem Tag gezeigt
+          hätte — dasselbe Modell (Zentralbank 40 %, Wirtschaft 35 %, Überraschung 25 %),
+          aber nur mit Daten, die damals schon veröffentlicht waren: Leitzins, 2J-Rendite,
+          Inflation mit Veröffentlichungsverzug, Zyklus aus den Zinsschritten bis dahin,
+          PMI und Überraschungen aus den Veröffentlichungen davor. BIP, Arbeitslosenquote
+          und Frühindikator sind die heutigen (evtl. revidierten) Werte mit angenommenem
+          Verzug. Nicht enthalten: deine Handeingaben und Ereignisse. Bis Juni 2026 ist
+          die Erwartung die Prognose von MetaQuotes. Überlappende Horizonte machen die
+          echte Streuung grösser als das angezeigte Band.
         </Info>
         <span className="ml-auto text-[11px] text-ink-faint">
           {stand ? `gerechnet ${stand} · wöchentlich neu` : "noch nicht gerechnet"}

@@ -195,7 +195,7 @@ const delta = (h: HandWert) =>
  * schrumpft sie. Fünf Punkte Abstand von der 50 gelten hier als volle
  * Auslenkung — mehr kommt in der Praxis kaum vor.
  */
-function ebeneWirtschaft(e: Eingabe): EbenenBild {
+function ebeneWirtschaft(e: Eingabe, heute = new Date()): EbenenBild {
   const pmiTeil = (feld: string, label: string): Teil => {
     const h = hv(e, feld);
     const d = delta(h);
@@ -261,7 +261,7 @@ function ebeneWirtschaft(e: Eingabe): EbenenBild {
     },
   ];
 
-  return fasse(1, teile.map((t) => markiere(t, t.key, hv(e, t.key))));
+  return fasse(1, teile.map((t) => markiere(t, t.key, hv(e, t.key), heute)));
 }
 
 /**
@@ -329,7 +329,7 @@ export function markiere(t: Teil, feld: string, h: HandWert, heute = new Date())
  * anderen sieben und die Richtung — Geld fliesst zur besseren Rendite, und
  * es fliesst, bevor der Schritt da ist.
  */
-function ebeneZentralbank(e: Eingabe, u: Umfeld): EbenenBild {
+function ebeneZentralbank(e: Eingabe, u: Umfeld, heute = new Date()): EbenenBild {
   const rendite = hv(e, "rendite_10j");
   const nachfrage = hv(e, "anleihe_nachfrage");
 
@@ -369,7 +369,7 @@ function ebeneZentralbank(e: Eingabe, u: Umfeld): EbenenBild {
     },
     (() => {
       // Von Hand gesetzt gewinnt; sonst aus den Zinsschritten abgeleitet.
-      const auto = e.zyklus === null ? zyklusAus(e.zinsSchritte ?? []) : null;
+      const auto = e.zyklus === null ? zyklusAus(e.zinsSchritte ?? [], heute) : null;
       const z = e.zyklus ?? auto;
       const letzter = (e.zinsSchritte ?? []).at(-1);
       const schritt = letzter
@@ -404,7 +404,7 @@ function ebeneZentralbank(e: Eingabe, u: Umfeld): EbenenBild {
   ];
 
   return fasse(2, teile.map((t) =>
-    t.key === "anleihen" ? markiere(t, "rendite_10j", rendite) : t));
+    t.key === "anleihen" ? markiere(t, "rendite_10j", rendite, heute) : t));
 }
 
 /* ---------------------------------------------------------- Ebene 3 */
@@ -469,9 +469,15 @@ function fasse(ebene: Ebene, teile: Teil[]): EbenenBild {
   };
 }
 
-/** Das Bild einer Währung über alle drei Ebenen. */
-export function bewerteWaehrung(e: Eingabe, u: Umfeld): WaehrungsBild {
-  const ebenen = [ebeneWirtschaft(e), ebeneZentralbank(e, u), ebeneSentiment(e, u)];
+/**
+ * Das Bild einer Währung über alle drei Ebenen.
+ *
+ * `heute`: der Stichtag. Live ist es jetzt; die Rückrechnung
+ * (lib/makro/rueckrechnung.ts) setzt einen Montag in der Vergangenheit —
+ * davon hängen „veraltet" und der Zyklus aus den Zinsschritten ab.
+ */
+export function bewerteWaehrung(e: Eingabe, u: Umfeld, heute = new Date()): WaehrungsBild {
+  const ebenen = [ebeneWirtschaft(e, heute), ebeneZentralbank(e, u, heute), ebeneSentiment(e, u)];
 
   // Gewichtet, aber nur über die Ebenen mit Daten — sonst zöge eine leere
   // Ebene das Urteil Richtung null und sähe aus wie „neutral".

@@ -476,3 +476,12 @@ export function kernWert(key: string, releases: Release[], jetzt: number): Relea
   const reihe = reiheFuer(def, releases, jetzt).filter((r) => r.ist !== null);
   return reihe[reihe.length - 1] ?? null;
 }
+
+/** Die Gewichtung 40/35/25 über die vorhandenen Teile — dieselbe Rechnung wie in urteilFuer. */
+export function gesamtScore(zb: number | null, wi: number | null, ue: number | null): number | null {
+  const da = ([[zb, URTEIL_GEWICHT.zentralbank], [wi, URTEIL_GEWICHT.wirtschaft], [ue, URTEIL_GEWICHT.ueberraschung]] as [number | null, number][])
+    .filter(([x]) => x !== null) as [number, number][];
+  if (da.length === 0) return null;
+  const g = da.reduce((s, [, w]) => s + w, 0);
+  return Math.round((da.reduce((s, [x, w]) => s + x * w, 0) / g) * 1000) / 1000;
+}

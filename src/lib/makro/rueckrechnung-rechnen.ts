@@ -1,87 +1,13 @@
 /**
- * Rückrechnung des Urteils ab 2024 — rein, ohne Datenbank (29.09.2026).
+ * Rückrechnung des Urteils ab 2024 — reine Helfer (29.09.2026).
  *
- * Frage: Wären die Paar-Ideen „stark gegen schwach" in der Vergangenheit
- * aufgegangen? Dafür wird für jeden Montag das Urteil so gerechnet, wie es
- * an diesem Tag möglich gewesen wäre — nur mit Veröffentlichungen, die VOR
- * dem Montag lagen (Zeitstempel aus MT5/Forex Factory). Kein Wert von
- * danach, keine revidierten Zahlen aus OECD-Reihen.
- *
- * Deshalb ist es eine vereinfachte Fassung des Live-Urteils:
- *   Zentralbank (40 %)   Zyklus aus den Zinsentscheiden (wie zyklusAus im
- *                        Live-Modell: Schritt in den letzten 182 Tagen =
- *                        Straffung/Lockerung ±1, sonst Pause ±0.3), dazu ein
- *                        in 7 Tagen erwarteter Schritt ±0.3. Ohne
- *                        Markterwartung (2J-Rendite) und Realzins.
- *   Wirtschaft (35 %)    PMI Industrie und Dienste, (PMI − 50) / 5 wie live.
- *                        Ohne BIP und Arbeitslosenquote.
- *   Überraschung (25 %)  genau wie live (indexBis).
- * Vor dem 28.06.2026 ist die Erwartung die Prognose von MetaQuotes, nicht der
- * Forex-Factory-Konsens — die Auswertung trennt beide Zeiträume.
+ * Das Urteil selbst rechnet der Server-Teil (rueckrechnung.ts) mit dem
+ * vollen Live-Modell für jeden Montag. Hier: Ideen aus den Scores bilden,
+ * Montage aufzählen, das Zufallsband.
  */
-import { indexBis, type Release } from "./releases";
-import { kernWert, paarKlasse, URTEIL_GEWICHT, type PaarKlasse } from "./urteil";
+import { paarKlasse, type PaarKlasse } from "./urteil";
 
-const TAG = 86_400_000;
-const klemme = (x: number) => Math.max(-1, Math.min(1, x));
 const rund = (x: number) => Math.round(x * 1000) / 1000;
-
-export interface UrteilAm {
-  score: number | null;
-  zentralbank: number | null;
-  wirtschaft: number | null;
-  ueberraschung: number | null;
-}
-
-export function zentralbankAm(releases: Release[], t: number): number | null {
-  const entscheide = releases
-    .filter((r) => r.kategorie === "notenbank" && r.ist !== null && Date.parse(r.event_time) < t)
-    .sort((a, b) => a.event_time.localeCompare(b.event_time));
-  if (entscheide.length === 0) return null;
-  let zyklus = 0;
-  // Den letzten Schritt suchen: Ist gegen den Wert davor.
-  for (let i = entscheide.length - 1; i >= 0; i--) {
-    const r = entscheide[i];
-    const davor = r.vorwert ?? entscheide[i - 1]?.ist ?? null;
-    if (davor === null || Math.abs(r.ist! - davor) < 1e-6) continue;
-    const alter = (t - Date.parse(r.event_time)) / TAG;
-    const hoch = r.ist! > davor;
-    zyklus = alter <= 182 ? (hoch ? 1 : -1) : (hoch ? 0.3 : -0.3);
-    break;
-  }
-  // Ein Schritt, den der Kalender für die nächsten 7 Tage erwartet.
-  const naechster = releases.find((r) => r.kategorie === "notenbank" && r.erwartung !== null && r.vorwert !== null
-    && Date.parse(r.event_time) >= t && Date.parse(r.event_time) <= t + 7 * TAG);
-  const erwartet = !naechster ? 0 : naechster.erwartung! > naechster.vorwert! ? 0.3 : naechster.erwartung! < naechster.vorwert! ? -0.3 : 0;
-  return rund(klemme(zyklus + erwartet));
-}
-
-export function wirtschaftAm(releases: Release[], t: number): number | null {
-  const werte = ["pmi_industrie", "pmi_dienste"]
-    .map((k) => kernWert(k, releases, t - 1))
-    // Nur, was höchstens 75 Tage alt ist — sonst zählt ein Wert, den es
-    // damals schon nicht mehr als aktuell gab.
-    .filter((r): r is Release => r !== null && t - Date.parse(r.event_time) <= 75 * TAG)
-    .map((r) => klemme((r.ist! - 50) / 5));
-  return werte.length ? rund(werte.reduce((a, b) => a + b, 0) / werte.length) : null;
-}
-
-export function urteilAm(releases: Release[], t: number): UrteilAm {
-  const vorher = releases.filter((r) => Date.parse(r.event_time) < t || r.kategorie === "notenbank");
-  const zb = zentralbankAm(vorher, t);
-  const wi = wirtschaftAm(vorher.filter((r) => Date.parse(r.event_time) < t), t);
-  const idx = indexBis(vorher.filter((r) => Date.parse(r.event_time) < t), new Date(t)).wert;
-  const ue = idx === null ? null : rund(klemme(idx / 1.5));
-  const teile: [number | null, number][] = [
-    [zb, URTEIL_GEWICHT.zentralbank], [wi, URTEIL_GEWICHT.wirtschaft], [ue, URTEIL_GEWICHT.ueberraschung],
-  ];
-  const da = teile.filter(([x]) => x !== null) as [number, number][];
-  const g = da.reduce((s, [, w]) => s + w, 0);
-  return {
-    score: da.length ? rund(da.reduce((s, [x, w]) => s + x * w, 0) / g) : null,
-    zentralbank: zb, wirtschaft: wi, ueberraschung: ue,
-  };
-}
 
 export interface RueckIdee {
   woche: string;
