@@ -42,3 +42,11 @@ export async function rueckrechnungJetzt(): Promise<void> {
   revalidatePath("/trading/fundamentals/rueckrechnung");
   revalidatePath("/trading/fundamentals/wochenideen");
 }
+
+/** Varianten-Vergleich des Makro-Modells neu rechnen (Makro-Backtest). */
+export async function variantenJetzt(): Promise<void> {
+  if (!(await tradingUserId())) return;
+  const { rechneVarianten } = await import("@/lib/makro/varianten");
+  await rechneVarianten();
+  revalidatePath("/trading/fundamentals/rueckrechnung");
+}

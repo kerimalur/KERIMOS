@@ -6,6 +6,7 @@ import { istVeraltet, type HandWert, type WaehrungsBild } from "@/lib/makro/bewe
 import { erwarteterSchritt, urteilFuer, type UrteilBild } from "./urteil";
 import { zuRelease } from "./releases-sync";
 import { mitPruefung, type PruefungZeile } from "./einordnung";
+import { istJahresrate } from "./ziele";
 import {
   INDEX_KATEGORIEN, KATEGORIE_LABEL, indexBis, indexVerlauf, fmtWert, istNotenbankTon,
   type Kategorie, type Release, type IndexPunkt,
@@ -202,6 +203,8 @@ export interface WaehrungsReleases {
   naechste: Release[];
   /** Notenbank-Entscheide, jüngste zuerst. */
   entscheide: Release[];
+  /** Letzte Inflations-Jahresrate aus dem Kalender — für den Vergleich mit dem Zielband. */
+  inflationJahr: { wert: number; serie: string; datum: string } | null;
   luecken: string[];
 }
 
@@ -308,7 +311,10 @@ export async function ladeWaehrungsReleases(
     if (n === 0) luecken.push(`${KATEGORIE_LABEL[k]}: keine Veröffentlichung mit Erwartung und Ist in 45 Tagen.`);
   }
 
-  return { ccy, urteil: urteilFuer(zeile, alle), jetzt, verlauf, serien, letzte, naechste, entscheide, luecken };
+  return {
+    ccy, urteil: urteilFuer(zeile, alle), jetzt, verlauf, serien, letzte, naechste, entscheide, luecken,
+    inflationJahr: letzteInflationJahr(alle, jetztMs),
+  };
 }
 
 /* ------------------------------------------------------------ Kalender */
@@ -318,4 +324,22 @@ export async function ladeKalender(tageZurueckN = 30, tageVor = 14): Promise<Rel
     ab: tageZurueck(tageZurueckN),
     bis: new Date(Date.now() + tageVor * 86_400_000).toISOString(),
   });
+}
+
+/**
+ * Die letzte Inflations-Jahresrate (y/y) — zuerst die Gesamtinflation, nur
+ * wenn keine da ist die Kerninflation. Erzeuger-, Import- und Tokio-Preise
+ * zählen nie: das Ziel der Notenbank gilt der Landes-Verbraucherinflation.
+ */
+function letzteInflationJahr(alle: Release[], jetztMs: number): WaehrungsReleases["inflationJahr"] {
+  const nie = /(PPI|Producer|Erzeuger|Import|Export|Tokyo|Wage|Lohn)/i;
+  const kern = /(Core|Kern|Trimmed|Median)/i;
+  const basis = alle.filter((r) => r.kategorie === "inflation" && r.ist !== null
+    && Date.parse(r.event_time) <= jetztMs && istJahresrate(r.serie) && !nie.test(r.serie));
+  const wahl = [...basis.filter((r) => !kern.test(r.serie)), ...basis.filter((r) => kern.test(r.serie))];
+  if (wahl.length === 0) return null;
+  const gesamt = wahl.filter((r) => !kern.test(r.serie));
+  const pool = gesamt.length ? gesamt : wahl;
+  const r = pool.reduce((a, b) => (a.event_time > b.event_time ? a : b));
+  return { wert: r.ist!, serie: r.serie, datum: r.event_time };
 }

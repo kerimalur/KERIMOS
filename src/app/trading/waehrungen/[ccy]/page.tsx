@@ -10,6 +10,9 @@ import { notenbankSpeichern } from "@/lib/makro-actions";
 import { EbenenVerlauf } from "@/components/makro/ebenen-verlauf";
 import { PflegeFormular, SyncLeiste } from "@/components/makro/pflege";
 import { Card, CardTitle, Empty, cx } from "@/components/ui";
+import { ZielbandZeile } from "@/components/makro/zielband-zeile";
+import { VerlaufPopup } from "@/components/makro/verlauf-popup";
+import { INFLATIONSZIELE } from "@/lib/makro/ziele";
 import { ladeWaehrungsReleases, ladeUebersicht } from "@/lib/makro/releases-laden";
 import {
   Datenluecken, EntscheidTabelle, NaechsteTermine, ReleasesNachKategorie,
@@ -68,6 +71,19 @@ export default async function Waehrung({ params }: { params: Promise<{ ccy: stri
   const e3 = zeile?.ebenen.find((e) => e.ebene === 3);
 
   const schritte = zinsSchritteAus(I.leitzins.punkte);
+  // Für die Pop-ups: höchstens ein Punkt pro Woche, sonst gehen tausende Tageswerte in den Browser.
+  const woechentlich = (pk: { datum: string; wert: number }[] | undefined) => {
+    const out = new Map<string, { datum: string; wert: number }>();
+    for (const p of pk ?? []) {
+      const d = new Date(`${p.datum.slice(0, 10)}T00:00:00Z`);
+      d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+      out.set(d.toISOString().slice(0, 10), { datum: p.datum.slice(0, 10), wert: p.wert });
+    }
+    return [...out.values()];
+  };
+  const letzter = (pk: { wert: number }[] | undefined) => (pk && pk.length ? pk[pk.length - 1].wert : null);
+  const zinsJetzt = letzter(I.leitzins?.punkte), inflJetzt = letzter(I.inflation?.punkte), zweiJetzt = letzter(I.zweijahr?.punkte);
+  const ziel = INFLATIONSZIELE[ccy];
   const manuell = b.zyklen[ccy] ?? null;
   const zyklus = manuell ?? zyklusAus(schritte);
   const erwartung = e2?.teile.find((t) => t.key === "erwartung");
@@ -130,6 +146,16 @@ export default async function Waehrung({ params }: { params: Promise<{ ccy: stri
           <div className="space-y-2">
             <KernKarte k={kern("pmi_industrie")} />
             <KernKarte k={kern("pmi_dienste")} />
+            <div className="-mt-1 text-right">
+              <VerlaufPopup titel={`${ccy} · PMI Industrie und Dienste`} knopf="Verlauf: PMI" einheit=""
+                linien={[
+                  { label: "PMI Industrie", punkte: woechentlich(I.pmi_industrie?.punkte) },
+                  { label: "PMI Dienste", punkte: woechentlich(I.pmi_dienste?.punkte) },
+                ]}
+                referenz={{ wert: 50, text: "50 = Wachstumsschwelle" }}
+                zeilen={["Wichtiger als „über 50“: die Richtung. Fällt der PMI, verliert die Wirtschaft Schwung, auch wenn er noch über 50 liegt.",
+                  "Für den Kurs zählt zusätzlich die Überraschung gegen den Konsens (siehe Kalender)."]} />
+            </div>
             <KernKarte k={kern("bip")} />
             <KernKarte k={kern("arbeitslos")} />
             <KernKarte k={kern("jobs")} />
@@ -142,6 +168,23 @@ export default async function Waehrung({ params }: { params: Promise<{ ccy: stri
           </div>
           <div className="space-y-2">
             <KernKarte k={kern("leitzins")} />
+            <div className="-mt-1 text-right">
+              <VerlaufPopup titel={`${BANK[ccy]} · Leitzins, Inflation und Markterwartung`} knopf="Verlauf: Zins, Inflation, 2J-Rendite"
+                linien={[
+                  { label: "Leitzins", punkte: woechentlich(I.leitzins?.punkte), stufe: true },
+                  { label: "Inflation", punkte: woechentlich(I.inflation?.punkte) },
+                  { label: "2-Jahres-Rendite (Markterwartung)", punkte: woechentlich(I.zweijahr?.punkte) },
+                ]}
+                band={ziel ? { min: ziel.min, max: ziel.max, text: `Inflationsziel ${ziel.text}` } : undefined}
+                zeilen={[
+                  zinsJetzt !== null && inflJetzt !== null
+                    ? `Realzins (Leitzins − Inflation): ${(zinsJetzt - inflJetzt).toFixed(2)} % — ${zinsJetzt - inflJetzt >= 0 ? "Sparer verdienen real" : "Sparer verlieren real Kaufkraft"}.` : "",
+                  zinsJetzt !== null && zweiJetzt !== null
+                    ? `2-Jahres-Rendite minus Leitzins: ${(zweiJetzt - zinsJetzt >= 0 ? "+" : "")}${(zweiJetzt - zinsJetzt).toFixed(2)} % — ${zweiJetzt - zinsJetzt > 0.15 ? "der Markt preist eher Erhöhungen ein" : zweiJetzt - zinsJetzt < -0.15 ? "der Markt preist eher Senkungen ein" : "der Markt erwartet kaum Veränderung"}. Was eingepreist ist, bewegt den Kurs nicht mehr — nur eine Abweichung davon.` : "",
+                  u.schritt ? `Nächster Termin laut Kalender: ${u.schritt}.` : "",
+                  rel.inflationJahr && ziel ? `Inflation ${rel.inflationJahr.wert.toFixed(1)} % gegen Ziel ${ziel.text}.` : "",
+                ].filter(Boolean)} />
+            </div>
             {u.schritt && (
               <p className="rounded-xl bg-trading-bg px-3 py-2 text-xs text-trading-bright">Nächster Schritt: {u.schritt}</p>
             )}
@@ -152,6 +195,7 @@ export default async function Waehrung({ params }: { params: Promise<{ ccy: stri
             )}
             <KernKarte k={kern("cpi")} info={ERKLAERUNG.inflation} />
             <KernKarte k={kern("kern_cpi")} info={ERKLAERUNG.inflation} />
+            <ZielbandZeile ccy={ccy} inflation={rel.inflationJahr} />
           </div>
         </Card>
         <Card>

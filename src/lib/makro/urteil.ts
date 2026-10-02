@@ -201,6 +201,21 @@ function reiheFuer(def: KernDef, releases: Release[], jetzt: number): Release[] 
   return vergangen.filter((r) => r.serie === wahl.serie).sort((a, b) => a.event_time.localeCompare(b.event_time));
 }
 
+/** „Expansion, schwächer" — Niveau UND Richtung in Worten. */
+function pmiNiveau(wert: number, trend: "↑" | "↓" | "→" | null): string {
+  const lage = wert >= 50 ? "Expansion" : "Kontraktion";
+  if (trend === "↑") return `${lage}, ${wert >= 50 ? "stärker" : "weniger stark"}`;
+  if (trend === "↓") return `${lage}, ${wert >= 50 ? "schwächer" : "stärker"}`;
+  return lage;
+}
+
+/** Steigend = grün, fallend = rot; bei gleichem Wert entscheidet die Überraschung. */
+function pmiTon(trend: "↑" | "↓" | "→" | null, zTon: Ton): Ton {
+  if (trend === "↑") return zTon === "schlecht" ? "neutral" : "gut";
+  if (trend === "↓") return zTon === "gut" ? "neutral" : "schlecht";
+  return zTon === "fehlt" ? "neutral" : zTon;
+}
+
 function kernzahl(def: KernDef, releases: Release[], teile: Teil[], jetzt: number): Kernzahl {
   const reihe = reiheFuer(def, releases, jetzt);
   const mitIst = reihe.filter((r) => r.ist !== null);
@@ -217,12 +232,12 @@ function kernzahl(def: KernDef, releases: Release[], teile: Teil[], jetzt: numbe
     const vergleich = letzter.erwartung === null ? "ohne Erwartung"
       : Math.abs(ist - letzter.erwartung) < 1e-9 ? "wie erwartet"
         : `${abweichungWort(letzter.z)} ${ist > letzter.erwartung ? "höher" : "tiefer"} als erwartet`;
-    const niveau = def.pmi ? (ist >= 50 ? "Expansion" : "Kontraktion") : null;
-    // Ton: bei PMI zählt das Niveau mit, sonst allein die Abweichung.
+    const niveau = def.pmi ? pmiNiveau(ist, trend) : null;
+    // Ton: beim PMI zählt die RICHTUNG (02.10.2026, Kerim: 55 → 54 ist
+    // „über 50", aber die Wirtschaft verliert Schwung), danach die
+    // Überraschung. Sonst allein die Abweichung von der Erwartung.
     const zTon = letzter.z === null ? "neutral" as Ton : tonAus(letzter.z, 0.3);
-    const ton: Ton = def.pmi
-      ? (ist >= 50 && zTon !== "schlecht" ? "gut" : ist < 50 && zTon !== "gut" ? "schlecht" : "neutral")
-      : zTon;
+    const ton: Ton = def.pmi ? pmiTon(trend, zTon) : zTon;
     return {
       key: def.key, label: def.label, ebene: def.ebene,
       wert: fmtWert(ist, letzter.einheit), datum: tag(letzter.event_time),
@@ -244,7 +259,8 @@ function kernzahl(def: KernDef, releases: Release[], teile: Teil[], jetzt: numbe
     return {
       key: def.key, label: def.label, ebene: def.ebene,
       wert: `${t.wert.toFixed(1)}${t.einheit === "%" ? " %" : ""}`, datum: t.stand ?? null,
-      vergleich: "ohne Erwartung", ton: tonAus(t.score), niveau: def.pmi ? (t.wert >= 50 ? "Expansion" : "Kontraktion") : null,
+      vergleich: "ohne Erwartung", ton: def.pmi ? pmiTon(trend, "neutral") : tonAus(t.score),
+      niveau: def.pmi ? pmiNiveau(t.wert, trend) : null,
       trend, details: [t.text, t.quelle ? `Quelle: ${t.quelle}` : ""].filter(Boolean), fehlt: null,
     };
   }
@@ -367,7 +383,8 @@ export function urteilFuer(zeile: WaehrungsBild | null, releases: Release[], jet
   const pmi = k("pmi_industrie");
   const felder: UrteilBild["felder"] = {
     wirtschaft: {
-      ton: tonAus(wi),
+      // Farbe nach der PMI-Richtung, nicht nach „über 50" (02.10.2026).
+      ton: pmi.wert ? pmi.ton : tonAus(wi),
       kurz: pmi.wert ? `PMI ${pmi.wert}${pmi.trend && pmi.trend !== "→" ? ` ${pmi.trend}` : ""}` : "PMI fehlt",
       lang: [pmi.wert ? `PMI Industrie ${pmi.wert} (${pmi.niveau ?? ""}${pmi.trend ? `, ${pmi.trend === "↑" ? "steigend" : pmi.trend === "↓" ? "fallend" : "gleich"}` : ""})` : "PMI Industrie fehlt",
         k("pmi_dienste").wert ? `PMI Dienste ${k("pmi_dienste").wert}` : null,
@@ -376,7 +393,15 @@ export function urteilFuer(zeile: WaehrungsBild | null, releases: Release[], jet
     zentralbank: {
       ton: tonAus(zb),
       kurz: `${BANK[ccy] ?? ""} ${zyklusKurz}`.trim(),
-      lang: [zyklus?.text, schritt ? `Nächster Schritt: ${schritt}` : null].filter(Boolean).join(" "),
+      // Die Farbe ist das GESAMTE Zentralbank-Bild, nicht nur der Zyklus —
+      // „Pause unten" kann grün sein, wenn Realzins oder Markterwartung
+      // stützen. Darum hier die Teile einzeln (02.10.2026).
+      lang: [
+        zyklus?.text,
+        schritt ? `Nächster Schritt: ${schritt}` : null,
+        `Farbe = Gesamtbild Zentralbank: ${teile2.filter((t) => t.score !== null && !t.kontext)
+          .map((t) => `${t.label} ${t.score! >= 0.15 ? "▲" : t.score! <= -0.15 ? "▼" : "●"}`).join(" · ")}.`,
+      ].filter(Boolean).join(" "),
     },
     ueberraschung: {
       ton: tonAus(ue),

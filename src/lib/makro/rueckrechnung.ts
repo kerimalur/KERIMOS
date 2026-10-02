@@ -105,15 +105,27 @@ async function kerzenMitWiederholung(paar: string, seit: string) {
   return holeTageskerzen(paar, seit);
 }
 
-export async function rechneZurueck(): Promise<string> {
-  const trading = createTradingClient();
-  const dienst = makroDb();
-  if (!trading || !dienst) return "Datenbank nicht verbunden";
-  const start = Date.now();
-  const heute = new Date().toISOString().slice(0, 10);
+/** Die Bausteine des Urteils je Montag und Währung — Grundlage für Rückrechnung und Varianten. */
+export interface Komponenten {
+  gesamt: number | null;
+  zentralbank: number | null;
+  wirtschaft: number | null;
+  /** Überraschungsindex, auf −1…+1 gestaucht (wie im Urteil). */
+  ueberraschung: number | null;
+  zweiJahr: number | null;
+  pmiIndustrie: HandWert | null;
+  pmiDienste: HandWert | null;
+}
 
+/**
+ * Für jeden Montag ab AB das, was das Terminal an diesem Tag gezeigt hätte —
+ * aufgeteilt in seine Bausteine (02.10.2026, für den Varianten-Vergleich).
+ */
+export async function komponentenProWoche(): Promise<{ wochen: string[]; komponenten: Map<string, Record<string, Komponenten>> }> {
+  const dienst = makroDb();
+  const heute = new Date().toISOString().slice(0, 10);
   const [releases, reihen, markt] = await Promise.all([
-    ladeReleases({ ab: "2023-09-01T00:00:00Z", db: dienst }),
+    ladeReleases({ ab: "2023-09-01T00:00:00Z", db: dienst ?? undefined }),
     ladeReihen(),
     ladeFuerStichtag(heute),
   ]);
@@ -121,7 +133,7 @@ export async function rechneZurueck(): Promise<string> {
   for (const c of G8) jeCcy[c] = releases.filter((r) => r.ccy === c);
 
   const wochen = montage(AB, montagVon(new Date()));
-  const ideen: RueckIdee[] = [];
+  const komponenten = new Map<string, Record<string, Komponenten>>();
   for (const w of wochen) {
     const t = Date.parse(`${w}T00:00:00Z`);
     const tag = new Date(t);
@@ -135,7 +147,7 @@ export async function rechneZurueck(): Promise<string> {
       realSchnitt: mittel(werte.map((x) => x.realzins ?? null)),
       regime: baueRegime(markt.daten, w).score,
     };
-    const scores: Record<string, number | null> = {};
+    const woche: Record<string, Komponenten> = {};
     G8.forEach((ccy, i) => {
       const wv = werte[i];
       const hand: Partial<Record<string, HandWert>> = {};
@@ -162,8 +174,27 @@ export async function rechneZurueck(): Promise<string> {
       const zb = bild.ebenen.find((x) => x.ebene === 2)?.score ?? null;
       const idx = indexBis(jeCcy[ccy], tag).wert;
       const ue = idx === null ? null : Math.max(-1, Math.min(1, idx / 1.5));
-      scores[ccy] = gesamtScore(zb, wi, ue);
+      woche[ccy] = {
+        gesamt: gesamtScore(zb, wi, ue), zentralbank: zb, wirtschaft: wi, ueberraschung: ue,
+        zweiJahr: wv.zweiJahr ?? null, pmiIndustrie: pi, pmiDienste: pd,
+      };
     });
+    komponenten.set(w, woche);
+  }
+  return { wochen, komponenten };
+}
+
+export async function rechneZurueck(): Promise<string> {
+  const trading = createTradingClient();
+  const dienst = makroDb();
+  if (!trading || !dienst) return "Datenbank nicht verbunden";
+  const start = Date.now();
+
+  const { wochen, komponenten } = await komponentenProWoche();
+  const ideen: RueckIdee[] = [];
+  for (const w of wochen) {
+    const scores: Record<string, number | null> = {};
+    for (const ccy of G8) scores[ccy] = komponenten.get(w)?.[ccy]?.gesamt ?? null;
     ideen.push(...ideenAm(w, scores, PAARE));
   }
 

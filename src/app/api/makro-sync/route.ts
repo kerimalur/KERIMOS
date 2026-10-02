@@ -34,6 +34,7 @@ export const maxDuration = 300;
  *     &job=reihen             nur die Monatsreihen
  *     &job=wochenideen        nur die Wochenaussicht (anlegen + nachmessen)
  *     &job=rueckrechnung      Rückrechnung ab 2024 sofort neu rechnen
+ *     &job=varianten          Varianten-Vergleich des Makro-Modells neu rechnen
  * Der volle Lauf rechnet die Rückrechnung einmal pro Woche mit.
  *     &job=jb-test&pfad=...   Probeabruf bei JBlanked (siehe jbTest unten)
  * Ohne &job laufen beide.
@@ -63,6 +64,12 @@ export async function GET(request: NextRequest) {
     const text = await wochenideenLauf();
     await berichtErgaenzen(db, { wochenideen: text });
     return NextResponse.json({ ok: true, wochenideen: text });
+  }
+  if (job === "varianten") {
+    const { rechneVarianten } = await import("@/lib/makro/varianten");
+    const text = await rechneVarianten();
+    await berichtErgaenzen(db, { varianten: text });
+    return NextResponse.json({ ok: !/fehlt|Fehler|Schreiben|Löschen/.test(text), varianten: text });
   }
   if (job === "rueckrechnung") {
     const text = await rechneZurueck();

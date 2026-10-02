@@ -141,7 +141,7 @@ check("Deutsch: BIP", kategorieVon("BIP m/m"), "wachstum");
   ];
   const u = urteilFuer(null, rel2, heute);
   check("Urteil ohne Niveau: nur Überraschung zählt", u.teile.zentralbank === null && u.teile.ueberraschung !== null && u.score !== null && u.score > 0, true);
-  check("Kern PMI Industrie", [u.kern.find((k) => k.key === "pmi_industrie")?.wert, u.kern.find((k) => k.key === "pmi_industrie")?.niveau, u.kern.find((k) => k.key === "pmi_industrie")?.trend], ["54.6", "Expansion", "↓"]);
+  check("Kern PMI Industrie", [u.kern.find((k) => k.key === "pmi_industrie")?.wert, u.kern.find((k) => k.key === "pmi_industrie")?.niveau, u.kern.find((k) => k.key === "pmi_industrie")?.trend], ["54.6", "Expansion, schwächer", "↓"]);
   check("Kern Jobs klar höher", u.kern.find((k) => k.key === "jobs")?.vergleich, "klar höher als erwartet");
   check("Kern Leitzins", [u.kern.find((k) => k.key === "leitzins")?.wert, u.kern.find((k) => k.key === "leitzins")?.vergleich], ["4 %", "Schritt wie erwartet"]);
   check("Nachricht nur 14 Tage, grosse 30 Tage", [u.nachricht?.id ?? null, u.grosse[0]?.id], [null, "c"]);

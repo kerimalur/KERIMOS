@@ -1,9 +1,12 @@
 import Link from "next/link";
 import { tradingConfigured } from "@/lib/supabase/trading";
 import { ladeRueckrechnung } from "@/lib/makro/rueckrechnung";
-import { rueckrechnungJetzt } from "@/lib/wochenideen-actions";
+import { rueckrechnungJetzt, variantenJetzt } from "@/lib/wochenideen-actions";
 import { RueckrechnungKarte } from "@/components/makro/rueckrechnung-teile";
-import { Card, Empty } from "@/components/ui";
+import { VariantenVergleich } from "@/components/makro/varianten-vergleich";
+import { ladeVarianten } from "@/lib/makro/varianten";
+import { variantenBild } from "@/lib/makro/varianten-rechnen";
+import { Card, CardTitle, Empty } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 // „Jetzt neu rechnen" läuft als Server-Aktion dieser Seite und braucht Zeit.
@@ -18,7 +21,7 @@ export default async function RueckrechnungSeite() {
   if (!tradingConfigured()) {
     return <Card><Empty>Trading-Datenbank nicht verbunden.</Empty></Card>;
   }
-  const rueck = await ladeRueckrechnung();
+  const [rueck, varianten] = await Promise.all([ladeRueckrechnung(), ladeVarianten()]);
 
   return (
     <div className="space-y-5">
@@ -40,6 +43,23 @@ export default async function RueckrechnungSeite() {
           <Link href="/trading/fundamentals/wochenideen" className="text-xs text-accent-soft hover:underline">Wochenaussicht →</Link>
         </div>
       </div>
+
+      <Card>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <CardTitle className="mb-0">Varianten-Vergleich · was trägt?</CardTitle>
+          <form action={variantenJetzt} className="ml-auto">
+            <button type="submit" className="rounded-lg bg-sand px-3 py-1 text-xs text-ink-muted hover:text-ink">Varianten neu rechnen</button>
+          </form>
+        </div>
+        {varianten.zeilen.length === 0 ? (
+          <p className="text-sm text-ink-muted">
+            Noch nicht gerechnet. Einmal <code className="text-xs">supabase/trading/09_makro_varianten.sql</code> ausführen,
+            dann „Varianten neu rechnen" drücken (dauert 1–3 Minuten).
+          </p>
+        ) : (
+          <VariantenVergleich bild={variantenBild(varianten.zeilen)} gerechnetAm={varianten.gerechnetAm} />
+        )}
+      </Card>
 
       <RueckrechnungKarte rueck={rueck} />
 
