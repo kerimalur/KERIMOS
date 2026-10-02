@@ -17,6 +17,8 @@
  *   - Inflation und Leitzins: höher = Notenbank straffer = +
  */
 
+import { zielbandFaktor } from "./ziele";
+
 export const KATEGORIEN = ["wachstum", "inflation", "arbeit", "notenbank", "stimmung", "sonstiges"] as const;
 export type Kategorie = (typeof KATEGORIEN)[number];
 
@@ -56,6 +58,22 @@ export interface Release {
   ist_quelle: IstQuelle | null;
   abweichung: number | null;
   z: number | null;
+  /**
+   * Nur bei Notenbank-Entscheiden, nicht in der Tabelle makro_releases
+   * gespeichert, sondern beim Laden aus makro_entscheid_pruefung ergänzt
+   * (einordnung.ts → mitPruefung).
+   */
+  pruefung?: EntscheidPruefung | null;
+}
+
+/** Kerims Prüfung eines Zinsentscheids: bestätigtes Ist, Stimmen, Ton. */
+export interface EntscheidPruefung {
+  /** "bestaetigt" = von Hand mit zweiter Quelle geprüft. "unbestaetigt" = Ist weicht von der Erwartung ab, niemand hat es geprüft. */
+  status: "bestaetigt" | "unbestaetigt";
+  ton: "falkenhaft" | "neutral" | "taubenhaft" | null;
+  stimmen: string | null;
+  notiz: string | null;
+  quelle: string | null;
 }
 
 /* ------------------------------------------------------------ Parsen */
@@ -288,7 +306,9 @@ export function indexBis(
     if (r.z === null || !kategorien.includes(r.kategorie)) continue;
     const alter = (t - Date.parse(r.event_time)) / 86_400_000;
     if (alter < 0 || alter > FENSTER_TAGE) continue;
-    const g = impactGewicht(r.impact) * 0.5 ** (alter / HALBWERT_TAGE);
+    // Inflation im Zielband zählt weniger: die Notenbank muss nicht reagieren (ziele.ts).
+    const g = impactGewicht(r.impact) * 0.5 ** (alter / HALBWERT_TAGE)
+      * zielbandFaktor(r.ccy, r.serie, r.kategorie, r.ist);
     summe += g * r.z;
     gewicht += g;
   }
@@ -382,8 +402,19 @@ export function szenario(r: Release): string {
 export function entscheidUrteil(r: Release): { text: string; ton: "gut" | "schlecht" | "neutral" | "fehlt" } {
   if (r.ist === null) return { text: "Ist fehlt", ton: "fehlt" };
   if (r.erwartung === null) return { text: "keine Erwartung", ton: "neutral" };
+  // Eine Zinsüberraschung ist selten — und ein falsch gelesener Wert
+  // (BoE 17.09.2026: Minderheit 4,00 % statt Beschluss 3,75 %) verdreht
+  // das ganze Urteil. Ohne zweite Quelle wird sie nicht gewertet.
+  if (r.pruefung?.status === "unbestaetigt") {
+    return { text: "Abweichung unbestätigt — zweite Quelle prüfen", ton: "fehlt" };
+  }
   if (Math.abs(r.ist - r.erwartung) < 0.001) {
-    return { text: r.vorwert !== null && Math.abs(r.ist - r.vorwert) >= 0.001 ? "Schritt wie erwartet" : "Halten wie erwartet", ton: "neutral" };
+    const schritt = r.vorwert !== null && Math.abs(r.ist - r.vorwert) >= 0.001;
+    const basis = schritt ? "Schritt wie erwartet" : "Halten wie erwartet";
+    // Auch ein erwarteter Entscheid kann überraschen: Stimmen und Ausblick.
+    if (r.pruefung?.ton === "falkenhaft") return { text: `${basis}, Ton falkenhaft`, ton: "gut" };
+    if (r.pruefung?.ton === "taubenhaft") return { text: `${basis}, Ton taubenhaft`, ton: "schlecht" };
+    return { text: basis, ton: "neutral" };
   }
   return r.ist > r.erwartung
     ? { text: "Überraschung falkenhaft", ton: "gut" }

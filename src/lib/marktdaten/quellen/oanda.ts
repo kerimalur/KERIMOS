@@ -65,3 +65,36 @@ export async function fetchCandles(
       volume: c.volume,
     }));
 }
+
+export interface IntradayKerze {
+  zeit: string; // ISO, Beginn der Kerze (UTC)
+  open: number;
+  close: number;
+  complete: boolean;
+}
+
+/**
+ * Intraday-Kerzen (Mid) ab einem Zeitpunkt — für den Markt-Check nach
+ * Kalenderzahlen (lib/makro/marktcheck.ts, 02.10.2026). Liefert auch die
+ * noch offene letzte Kerze, damit ein Check kurz nach der Zahl schon
+ * etwas zeigt.
+ */
+export async function fetchIntraday(
+  instrument: string,
+  granularity: "M15" | "H1",
+  fromIso: string,
+  count: number,
+): Promise<IntradayKerze[]> {
+  const params = new URLSearchParams({ granularity, price: "M", from: fromIso, count: String(count) });
+  const res = await fetch(`${baseUrl()}/instruments/${instrument}/candles?${params}`, {
+    headers: headers(), cache: "no-store", signal: AbortSignal.timeout(8_000),
+  });
+  if (!res.ok) throw new Error(`OANDA ${instrument} ${granularity}: HTTP ${res.status}`);
+  const json = (await res.json()) as { candles: OandaCandle[] };
+  return json.candles.map((c) => ({
+    zeit: new Date(c.time).toISOString(),
+    open: parseFloat(c.mid.o),
+    close: parseFloat(c.mid.c),
+    complete: c.complete,
+  }));
+}

@@ -1,8 +1,11 @@
 import Link from "next/link";
 import { G8, tradingConfigured } from "@/lib/supabase/trading";
 import { ladeKalender } from "@/lib/makro/releases-laden";
-import { KATEGORIEN, KATEGORIE_LABEL, type Kategorie, type Release } from "@/lib/makro/releases";
+import { KATEGORIEN, KATEGORIE_LABEL, istNotenbankTon, type Kategorie, type Release } from "@/lib/makro/releases";
 import { ReleaseTabelle } from "@/components/makro/ueberraschung-teile";
+import { EinordnungsKarten } from "@/components/makro/einordnung-karten";
+import { einordnung } from "@/lib/makro/einordnung";
+import { ladeMarktChecks, marktcheckVerfuegbar } from "@/lib/makro/marktcheck-laden";
 import { Card, CardTitle, Empty, cx } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -48,6 +51,16 @@ export default async function Kalender({ searchParams }: {
   const istHeute = (r: Release) =>
     new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Zurich" }).format(new Date(r.event_time)) === heute;
   const heuteListe = gefiltert.filter(istHeute);
+  // Einordnung: wichtige Termine der letzten 7 Tage — High, Zinsentscheide, Notenbank-Ton.
+  const grenze7 = jetzt - 7 * 86_400_000;
+  const einzuordnen = vergangen.filter((r) => Date.parse(r.event_time) >= grenze7)
+    .filter((r) => r.impact === "High" || r.kategorie === "notenbank" || istNotenbankTon(r.titel))
+    .filter((r) => r.ist !== null || istNotenbankTon(r.titel))
+    .slice(0, 20);
+  // Markt-Check: hat der Markt so reagiert, wie die Einordnung erwartet? (OANDA, M15)
+  const checks = await ladeMarktChecks(einzuordnen.map((r) => ({
+    id: r.id, ccy: r.ccy, event_time: r.event_time, richtung: einordnung(r, alle).richtung,
+  })));
 
   const url = (neu: Partial<{ ccy: string | null; kat: string | null; impact: Impact }>) => {
     const p = new URLSearchParams();
@@ -104,6 +117,12 @@ export default async function Kalender({ searchParams }: {
           <ReleaseTabelle releases={heuteListe} mitWaehrung leer="" />
         </Card>
       )}
+
+      <Card>
+        <CardTitle>Einordnung · letzte 7 Tage ({einzuordnen.length})</CardTitle>
+        <EinordnungsKarten termine={einzuordnen} umfeld={alle} checks={checks} checkAktiv={marktcheckVerfuegbar()}
+          leer="Kein wichtiger Termin mit Ist in den letzten 7 Tagen für diese Auswahl." />
+      </Card>
 
       <Card>
         <CardTitle>Kommt ({kommend.length})</CardTitle>

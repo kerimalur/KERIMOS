@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { Fragment } from "react";
 import { Badge, cx } from "@/components/ui";
+import { PruefungForm } from "./pruefung-form";
 import {
   KATEGORIE_LABEL, QUELLE_LABEL, entscheidUrteil, fmtAbweichung, fmtWert, fmtZ, szenario,
   urteilUeberraschung, type Kategorie, type Release,
@@ -244,7 +246,8 @@ export function EntscheidTabelle({ entscheide }: { entscheide: Release[] }) {
         {entscheide.map((r) => {
           const u = entscheidUrteil(r);
           return (
-            <tr key={r.id} className="border-t border-line/60">
+            <Fragment key={r.id}>
+            <tr className="border-t border-line/60">
               <td className="tabular py-2 text-xs text-ink-faint">{tagKurz(r.event_time)}</td>
               <td className="tabular py-2 text-right font-mono text-xs text-ink-muted">{fmtWert(r.vorwert, r.einheit)}</td>
               <td className="tabular py-2 text-right font-mono text-xs text-ink-soft">{fmtWert(r.erwartung, r.einheit)}</td>
@@ -253,8 +256,25 @@ export function EntscheidTabelle({ entscheide }: { entscheide: Release[] }) {
                 u.ton === "gut" ? "font-semibold text-good-bright" : u.ton === "schlecht" ? "font-semibold text-bad-bright"
                   : u.ton === "fehlt" ? "text-bad-bright/80" : "text-ink-soft")}>
                 {u.text}
+                {r.pruefung?.status === "bestaetigt" && (
+                  <span className="ml-1.5 rounded bg-good-tint px-1 py-px text-[10px] font-medium uppercase text-good-bright"
+                    title={[r.pruefung.stimmen && `Stimmen ${r.pruefung.stimmen}`, r.pruefung.notiz, r.pruefung.quelle].filter(Boolean).join(" · ")}>
+                    geprüft
+                  </span>
+                )}
               </td>
             </tr>
+            <tr>
+              <td colSpan={5} className="pb-2">
+                <details className="group">
+                  <summary className="cursor-pointer text-[11px] text-ink-faint hover:text-accent-soft">
+                    {r.pruefung?.status === "bestaetigt" ? "Prüfung ansehen / ändern" : "Prüfen: Beschluss, Stimmen, Ton"}
+                  </summary>
+                  <PruefungForm releaseId={r.id} ist={r.ist} pruefung={r.pruefung} />
+                </details>
+              </td>
+            </tr>
+            </Fragment>
           );
         })}
       </tbody>

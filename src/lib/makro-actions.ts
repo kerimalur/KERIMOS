@@ -193,3 +193,37 @@ export async function makroAusBrowser(reihen: {
   neuLaden();
   return { gespeichert, bericht };
 }
+
+/**
+ * Einen Zinsentscheid prüfen (01.10.2026): bestätigtes Ist aus einer zweiten
+ * Quelle, Stimmen und Ton. Ohne Prüfung gilt eine Abweichung von der
+ * Erwartung als unbestätigt (lib/makro/einordnung.ts → mitPruefung).
+ * Ton "" und Ist leer zusammen = Prüfung löschen.
+ */
+export async function entscheidPruefen(fd: FormData) {
+  const { supabase, userId } = await zugang();
+  const releaseId = txt(fd, "release_id").slice(0, 200);
+  if (!releaseId) return;
+  const ist = num(fd, "ist");
+  const tonRoh = txt(fd, "ton");
+  const ton = ["falkenhaft", "neutral", "taubenhaft"].includes(tonRoh) ? tonRoh : null;
+
+  if (ist === null && ton === null && !txt(fd, "stimmen") && !txt(fd, "notiz")) {
+    await supabase.from("makro_entscheid_pruefung").delete()
+      .eq("user_id", userId).eq("release_id", releaseId);
+  } else {
+    const { error } = await supabase.from("makro_entscheid_pruefung").upsert({
+      user_id: userId,
+      release_id: releaseId,
+      ist,
+      ton,
+      stimmen: txt(fd, "stimmen").slice(0, 120) || null,
+      notiz: txt(fd, "notiz").slice(0, 1000) || null,
+      quelle: txt(fd, "quelle").slice(0, 500) || null,
+      geprueft_am: new Date().toISOString(),
+    }, { onConflict: "user_id,release_id" });
+    if (error) throw new Error(`Prüfung speichern: ${error.message}`);
+  }
+  neuLaden();
+  revalidatePath("/trading/fundamentals/kalender");
+}

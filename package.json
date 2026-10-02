@@ -35,7 +35,8 @@
     "check:routinen": "npx -y tsx tools/checks/routinen.mts",
     "check:makro-quellen": "npx -y tsx tools/checks/makro-quellen.mts",
     "check:ersatz": "npx -y tsx tools/checks/ersatz.mts",
-    "check:releases": "npx -y tsx tools/checks/releases.mts"
+    "check:releases": "npx -y tsx tools/checks/releases.mts",
+    "check:einordnung": "npx -y tsx tools/checks/einordnung.mts"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.1.0",

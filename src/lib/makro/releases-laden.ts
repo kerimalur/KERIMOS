@@ -5,6 +5,7 @@ import { G8 } from "@/lib/supabase/trading";
 import { istVeraltet, type HandWert, type WaehrungsBild } from "@/lib/makro/bewertung";
 import { erwarteterSchritt, urteilFuer, type UrteilBild } from "./urteil";
 import { zuRelease } from "./releases-sync";
+import { mitPruefung, type PruefungZeile } from "./einordnung";
 import {
   INDEX_KATEGORIEN, KATEGORIE_LABEL, indexBis, indexVerlauf, fmtWert, istNotenbankTon,
   type Kategorie, type Release, type IndexPunkt,
@@ -39,7 +40,26 @@ export async function ladeReleases(
     out.push(...(data as Record<string, unknown>[]).map(zuRelease));
     if (data.length < SEITE) break;
   }
-  return out;
+  return mitPruefung(out, await ladePruefungen(supabase));
+}
+
+/**
+ * Kerims geprüfte Zinsentscheide (Migration 36). Fehlt die Tabelle noch,
+ * bleibt die Liste leer — dann gelten Abweichungen bei Zinsentscheiden als
+ * unbestätigt, und nichts bricht.
+ */
+async function ladePruefungen(supabase: SupabaseClient): Promise<PruefungZeile[]> {
+  const { data, error } = await supabase.from("makro_entscheid_pruefung")
+    .select("release_id, ist, stimmen, ton, notiz, quelle");
+  if (error || !data) return [];
+  return (data as Record<string, unknown>[]).map((r) => ({
+    release_id: String(r.release_id),
+    ist: r.ist === null || r.ist === undefined ? null : Number(r.ist),
+    stimmen: (r.stimmen as string | null) ?? null,
+    ton: (r.ton as PruefungZeile["ton"]) ?? null,
+    notiz: (r.notiz as string | null) ?? null,
+    quelle: (r.quelle as string | null) ?? null,
+  }));
 }
 
 const tageZurueck = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
