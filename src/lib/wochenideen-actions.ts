@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createTradingClient } from "@/lib/supabase/trading";
 import { tradingUserId } from "@/lib/trading/journal";
 import { erstelleWochenideen, werteWochenideenAus } from "@/lib/makro/wochenideen";
+import { rechneZurueck } from "@/lib/makro/rueckrechnung";
 
 /**
  * Schreibzugriffe der Wochenaussicht (29.09.2026): Kerims Einschätzung zu
@@ -31,5 +32,13 @@ export async function wochenideenJetzt(): Promise<void> {
   if (!(await tradingUserId())) return;
   await erstelleWochenideen();
   await werteWochenideenAus();
+  revalidatePath("/trading/fundamentals/wochenideen");
+}
+
+/** Rückrechnung (Backtest des Makro-Modells) sofort neu rechnen — dauert bis zu einige Minuten. */
+export async function rueckrechnungJetzt(): Promise<void> {
+  if (!(await tradingUserId())) return;
+  await rechneZurueck();
+  revalidatePath("/trading/fundamentals/rueckrechnung");
   revalidatePath("/trading/fundamentals/wochenideen");
 }

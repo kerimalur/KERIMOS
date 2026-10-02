@@ -2,7 +2,7 @@
 // Aufruf:  npx -y tsx tools/checks/einordnung.mts
 //
 // Die Fälle stammen aus Kerims Makro-Lernen Modul 0 (01.10.2026).
-import { mitAbweichung, entscheidUrteil, indexBis, type Release } from "../../src/lib/makro/releases";
+import { mitAbweichung, entscheidUrteil, indexBis, mitStimmenGegenprobe, type Release, type Mt5Zeile } from "../../src/lib/makro/releases";
 import { mitPruefung, einordnung, stufeVon, andereSeite } from "../../src/lib/makro/einordnung";
 import { marktCheck, paareFuer, reaktion } from "../../src/lib/makro/marktcheck";
 import { zielLage, zielbandFaktor, istJahresrate, ZIELBAND_DAEMPFUNG } from "../../src/lib/makro/ziele";
@@ -81,6 +81,22 @@ const fed = rel({ id: "f", ccy: "USD", titel: "Federal Funds Rate", kategorie: "
 const weit = rel({ id: "w", ccy: "EUR", titel: "CPI y/y", kategorie: "inflation", event_time: "2026-09-10T09:00:00.000Z" });
 check("Andere Seite", andereSeite(boe, [boe, fed, weit]).map((x) => x.id), ["f"]);
 check("Warnung andere Seite", einordnung(mit, [mit, fed]).warnungen.some((w) => w.includes("USD Federal Funds Rate")), true);
+
+/* Gegenprobe Zinsentscheid gegen Stimmen (echte MT5-Zeilen BoE 17.09.2026) */
+const m5 = (value_id: number, name: string, actual: number, previous: number): Mt5Zeile => ({
+  value_id, event_id: value_id, ccy: "GBP", name, importance: "CALENDAR_IMPORTANCE_HIGH",
+  event_time: "2026-09-17T11:00:00.000Z", actual, forecast: null, previous, multiplier: null, unit: null,
+});
+const boeMt5 = [
+  m5(1, "Bank von England (BoE), Zinsentscheid", 4.0, 3.75),
+  m5(2, "Geldpolitisches Komitee der BoE Stimmen für Zinssenkung", 0, 0),
+  m5(3, "BoE, Abstimmung des geldpolitisches Komitees über Zinserhöhung", 3, 3),
+  m5(4, "Geldpolitisches Komitee der Bank von England (BoE), Stimmen für unverändert", 6, 6),
+];
+const gp = mitStimmenGegenprobe([boe], boeMt5);
+check("Stimmen: BoE auf 3.75 korrigiert", gp.releases[0].ist, 3.75);
+check("Stimmen: 1 korrigiert", gp.korrigiert, 1);
+check("Stimmen: ohne Stimmen unverändert", mitStimmenGegenprobe([boe], [boeMt5[0]]).releases[0].ist, 4.0);
 
 /* Markt-Check */
 check("GBP hat 7 Paare", paareFuer("GBP").length, 7);

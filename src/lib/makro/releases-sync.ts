@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createTradingClient, G8 } from "@/lib/supabase/trading";
 import {
-  kategorieVon, mitAbweichung, mitMt5, parseWert, releasesAusKalender, serieVon,
+  kategorieVon, mitAbweichung, mitMt5, mitStimmenGegenprobe, parseWert, releasesAusKalender, serieVon,
   type KalenderZeile, type Mt5Bericht, type Mt5Zeile, type Release,
 } from "./releases";
 
@@ -40,6 +40,8 @@ interface JbEvent {
 export interface ReleasesBericht {
   kalenderZeilen: number;
   mt5: Mt5Bericht | string;
+  /** Zinsentscheide, deren MT5-Ist per Abstimmung korrigiert wurde. */
+  stimmenKorrektur: number;
   releases: number;
   mitErwartung: number;
   mitIst: number;
@@ -230,11 +232,15 @@ export async function syncReleases(db: SupabaseClient, opt: { voll?: boolean } =
   }
 
   // 3. MT5: Ist setzen und Historie ergänzen.
+  let stimmenKorrektur = 0;
   let mt5Bericht: Mt5Bericht | string = "keine Zeilen in trading.mt5_kalender (MT5-Dienst oder Brücke läuft nicht?)";
   if (mt5Daten.zeilen.length > 0) {
     const { releases: mitM, bericht } = mitMt5([...nachId.values()], mt5Daten.zeilen);
+    // Gegenprobe: Zinsentscheid gegen die Abstimmung (BoE 17.09.2026, MT5 lieferte 4.0 statt 3.75).
+    const { releases: geprueft, korrigiert } = mitStimmenGegenprobe(mitM, mt5Daten.zeilen);
+    stimmenKorrektur = korrigiert;
     nachId.clear();
-    for (const r of mitM) nachId.set(r.id, r);
+    for (const r of geprueft) nachId.set(r.id, r);
     mt5Bericht = bericht;
   }
 
@@ -327,6 +333,7 @@ export async function syncReleases(db: SupabaseClient, opt: { voll?: boolean } =
   return {
     kalenderZeilen: zeilen.length,
     mt5: mt5Bericht,
+    stimmenKorrektur,
     releases: alle.length,
     mitErwartung: alle.filter((r) => r.erwartung !== null).length,
     mitIst: alle.filter((r) => r.ist !== null).length,

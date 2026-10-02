@@ -633,3 +633,42 @@ export function mitMt5(releases: Release[], mt5: Mt5Zeile[], jetzt = Date.now())
     bericht: { zeilen: mt5.length, zugeordnet: mVergeben.size, istGesetzt, historie, ohneZuordnung },
   };
 }
+
+/* --------------------------------------------- Zinsentscheid aus Stimmen */
+
+const RE_STIMME = /(Stimmen|Abstimmung|Vote)/i;
+const RE_HALTEN = /(unverändert|unchanged|hold)/i;
+const RE_HOCH = /(Erhöhung|hike|raise)/i;
+const RE_RUNTER = /(Senkung|cut)/i;
+
+/**
+ * Gegenprobe Zinsentscheid gegen die Abstimmung (02.10.2026).
+ *
+ * MT5 lieferte für die BoE am 17.09.2026 „Zinsentscheid 4.0" — die BoE hat
+ * aber bei 3,75 % gehalten, 6 Stimmen für unverändert, 3 für eine Erhöhung.
+ * Wo MT5 die Stimmen mitliefert (BoE), entscheidet die Mehrheit: stimmt die
+ * Mehrheit für unverändert, ist das Ist der Vorwert — egal was im Feld
+ * „Zinsentscheid" steht.
+ */
+export function mitStimmenGegenprobe(releases: Release[], mt5: Mt5Zeile[]): { releases: Release[]; korrigiert: number } {
+  let korrigiert = 0;
+  const out = releases.map((r) => {
+    if (r.kategorie !== "notenbank" || r.ist === null || r.vorwert === null) return r;
+    if (Math.abs(r.ist - r.vorwert) < 0.001) return r;
+    const t = Date.parse(r.event_time);
+    let halten = 0, hoch = 0, runter = 0;
+    for (const m of mt5) {
+      if (m.ccy !== r.ccy || m.actual === null || !RE_STIMME.test(m.name)) continue;
+      if (Math.abs(Date.parse(m.event_time) - t) > TOLERANZ_MS) continue;
+      if (RE_HALTEN.test(m.name)) halten += m.actual;
+      else if (RE_HOCH.test(m.name)) hoch += m.actual;
+      else if (RE_RUNTER.test(m.name)) runter += m.actual;
+    }
+    if (halten > 0 && halten > hoch + runter) {
+      korrigiert++;
+      return { ...r, ist: r.vorwert };
+    }
+    return r;
+  });
+  return { releases: out, korrigiert };
+}

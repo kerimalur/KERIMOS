@@ -69,6 +69,7 @@ const FUNDAMENTALS: NavConfig = {
     { href: "/trading/waehrungen", label: "Währungen" },
     { href: "/trading/fundamentals/kalender", label: "Kalender" },
     { href: "/trading/fundamentals/wochenideen", label: "Wochenaussicht" },
+    { href: "/trading/fundamentals/rueckrechnung", label: "Makro-Backtest" },
   ],
   secondary: [],
 };
