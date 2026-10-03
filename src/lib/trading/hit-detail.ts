@@ -4,7 +4,7 @@ import { ladeMakro } from "@/lib/makro/laden";
 import { paarUrteil, type PaarUrteil } from "@/lib/makro/bewertung";
 import { ladeUrteile } from "@/lib/makro/releases-laden";
 import { makroDb } from "@/lib/makro/speichern";
-import { kurzform, paarKlasse, URTEIL_GEWICHT, type PaarKlasse, type UrteilKurz } from "@/lib/makro/urteil";
+import { GEWICHT_TEXT, kurzform, paarKlasse, type PaarKlasse, type UrteilKurz } from "@/lib/makro/urteil";
 import { ladeFuerStichtag, ladeKurse } from "@/lib/confluence/daten";
 import { cotBildFuer, type CotBild } from "@/lib/confluence/cot-divergenz";
 import { saisonZum, MONATS_KURZ, type MonatsBild } from "@/lib/confluence/saison";
@@ -242,7 +242,7 @@ export async function baueHitLage(
     ladeKurse(sauber),
   ]);
 
-  // Das Urteil (40/35/25) je Währung; die Paar-Rechnung läuft mit diesen
+  // Das Urteil (Gewichtung siehe urteil.ts) je Währung; die Paar-Rechnung läuft mit diesen
   // Scores statt mit dem reinen Niveau.
   let urteilNeu: HitLage["urteilNeu"];
   let zeilenFuerPaar = makroE.status === "fulfilled" ? makroE.value.zeilen : [];
@@ -254,7 +254,7 @@ export async function baueHitLage(
       if (b && q) {
         const [stark, schwach] = (b.score ?? 0) >= (q.score ?? 0) ? [b, q] : [q, b];
         urteilNeu = {
-          gewichtung: `Zentralbank ${URTEIL_GEWICHT.zentralbank * 100} % · Wirtschaft ${URTEIL_GEWICHT.wirtschaft * 100} % · Überraschungen ${URTEIL_GEWICHT.ueberraschung * 100} %`,
+          gewichtung: GEWICHT_TEXT,
           basis: kurzform(b), quote: kurzform(q),
           klasse: paarKlasse(stark.score, schwach.score),
         };

@@ -31,7 +31,8 @@ export interface VariantenDef {
 }
 
 export const VARIANTEN: VariantenDef[] = [
-  { key: "modell", label: "Live-Modell (Niveau)", text: "Das heutige Urteil: Zentralbank 40 %, Wirtschaft 35 %, Überraschung 25 %." },
+  { key: "modell", label: "Live-Modell (Niveau)", text: "Das heutige Urteil: seit 03.10.2026 nur Wirtschaft (gleich wie „Nur Wirtschaft“)." },
+  { key: "modell_alt", label: "Altes Modell 40/35/25", text: "Das Urteil bis 02.10.2026: Zentralbank 40 %, Wirtschaft 35 %, Überraschung 25 %." },
   { key: "kontra", label: "Live-Modell umgekehrt", text: "Gegenprobe: Ist das Modell systematisch zu spät, müsste das Umgekehrte treffen." },
   { key: "modell_d4", label: "Modell · Veränderung 4 W", text: "Urteil heute minus Urteil vor 4 Wochen: wer wird stärker, nicht wer ist stark." },
   { key: "zentralbank", label: "Nur Zentralbank", text: "Ebene 2 allein (Zins, Zyklus, Realzins, Markterwartung)." },
@@ -77,6 +78,12 @@ export function variantenScores(
     const je = (f: (c: string) => number | null) => Object.fromEntries(G8.map((c) => [c, f(c)]));
     const s = {
       modell: je((c) => jetzt[c]?.gesamt ?? null),
+      modell_alt: je((c) => {
+        const xs = ([[jetzt[c]?.zentralbank, 0.4], [jetzt[c]?.wirtschaft, 0.35], [jetzt[c]?.ueberraschung, 0.25]] as [number | null | undefined, number][])
+          .filter(([x]) => x !== null && x !== undefined) as [number, number][];
+        const g = xs.reduce((s, [, w]) => s + w, 0);
+        return g === 0 ? null : xs.reduce((s, [x, w]) => s + x * w, 0) / g;
+      }),
       kontra: je((c) => (jetzt[c]?.gesamt === null || jetzt[c]?.gesamt === undefined ? null : -jetzt[c]!.gesamt!)),
       modell_d4: je((c) => diff(jetzt[c]?.gesamt, vor4[c]?.gesamt)),
       zentralbank: je((c) => jetzt[c]?.zentralbank ?? null),

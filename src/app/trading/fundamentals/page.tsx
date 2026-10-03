@@ -118,7 +118,7 @@ export default async function FundamentalsSeite() {
             <span className="mt-2 block text-ink-faint">{ERKLAERUNG.gewichtung}</span>
           </Info>
           <span className="ml-auto text-[11px] text-ink-faint">
-            Zentralbank 40 % · Wirtschaft 35 % · Überraschung 25 %
+            Wirtschaft 100 % · Zentralbank und Überraschung nur Anzeige
           </span>
         </div>
         <div className="space-y-1.5">
@@ -356,17 +356,17 @@ export default async function FundamentalsSeite() {
             <CardTitle>Wie das Urteil entsteht</CardTitle>
             <ol className="ml-4 list-decimal space-y-1.5 text-sm text-ink-muted">
               <li>
-                <strong className="text-ink-soft">Zentralbank · 40 %:</strong> Zyklus
+                <strong className="text-ink-soft">Zentralbank · nur Anzeige:</strong> Zyklus
                 ({Object.values(ZYKLUS_LABEL).join(", ")} — aus den Zinsschritten,
                 von Hand überschreibbar), Zinsrichtung über sechs Monate und die
                 Markterwartung aus der 2-Jahres-Rendite.
               </li>
               <li>
-                <strong className="text-ink-soft">Wirtschaft · 35 %:</strong> PMI Industrie
+                <strong className="text-ink-soft">Wirtschaft · 100 %:</strong> PMI Industrie
                 und Dienste (über 50 positiv) und BIP zum Vorjahr.
               </li>
               <li>
-                <strong className="text-ink-soft">Überraschungen · 25 %:</strong> wie
+                <strong className="text-ink-soft">Überraschungen · nur Anzeige:</strong> wie
                 Wachstum, Inflation und Arbeitsmarkt gegen die Erwartung ausfallen —
                 jüngere und wichtige Termine zählen mehr.
               </li>

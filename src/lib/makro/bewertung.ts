@@ -73,8 +73,12 @@ export interface WaehrungsBild {
   abdeckung: number;
 }
 
-/** Gewichte der Ebenen im Gesamturteil. Sichtbar auf der Seite. */
-export const GEWICHT: Record<Ebene, number> = { 1: 0.5, 2: 0.5, 3: 0 };
+/**
+ * Gewichte der Ebenen im Gesamturteil. Seit 03.10.2026 nur die Wirtschaft —
+ * gleich wie das Urteil in urteil.ts (Varianten-Test im Makro-Backtest).
+ * Die Zentralbank-Ebene wird weiter gerechnet und angezeigt.
+ */
+export const GEWICHT: Record<Ebene, number> = { 1: 1, 2: 0, 3: 0 };
 
 export const EBENEN_LABEL: Record<Ebene, string> = {
   1: "Wirtschaft",

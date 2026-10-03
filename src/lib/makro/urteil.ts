@@ -19,6 +19,14 @@
  * Das ist eine begründete Setzung, kein gemessenes Optimum. Ob sie trägt,
  * soll das Journal zeigen (Urteil zum Einstieg gegen Ergebnis).
  *
+ * Umstellung 03.10.2026 (Kerims Entscheid nach dem Varianten-Test): Das
+ * Urteil rechnet nur noch mit der Wirtschaft (Ebene 1). Zentralbank und
+ * Überraschungen werden weiter angezeigt, zählen aber nicht mehr. Im
+ * Backtest März 2024 – Sept. 2026 traf das alte 40/35/25-Modell nach zwei
+ * Wochen 46,8 %, die Zentralbank allein 43,9 %, die Wirtschaft allein
+ * 56,8 %. Die alte Gewichtung bleibt als URTEIL_GEWICHT_ALT für den
+ * Vergleich; ab MODELL_SEIT messen die Wochenideen das neue Modell vorwärts.
+ *
  * Rein, ohne Datenbank — Seiten und Selbsttest rechnen damit.
  */
 import type { WaehrungsBild, Teil } from "./bewertung";
@@ -26,7 +34,15 @@ import {
   entscheidUrteil, fmtWert, indexBis, type Kategorie, type Release,
 } from "./releases";
 
-export const URTEIL_GEWICHT = { zentralbank: 0.4, wirtschaft: 0.35, ueberraschung: 0.25 } as const;
+export interface Gewichte { zentralbank: number; wirtschaft: number; ueberraschung: number }
+/** Seit 03.10.2026: nur die Wirtschaft zählt. */
+export const URTEIL_GEWICHT: Gewichte = { zentralbank: 0, wirtschaft: 1, ueberraschung: 0 };
+/** Die Gewichtung bis 02.10.2026 — nur noch für den Vergleich im Makro-Backtest. */
+export const URTEIL_GEWICHT_ALT: Gewichte = { zentralbank: 0.4, wirtschaft: 0.35, ueberraschung: 0.25 };
+/** Erster Montag, dessen Wochenideen mit dem neuen Modell entstehen. */
+export const MODELL_SEIT = "2026-10-05";
+/** So steht die Gewichtung auf den Seiten und im Trade-Schnappschuss. */
+export const GEWICHT_TEXT = "Wirtschaft 100 % · Zentralbank und Überraschungen nur Anzeige";
 
 export type Ton = "gut" | "schlecht" | "neutral" | "fehlt";
 export type UrteilWort = "bullish" | "leicht bullish" | "neutral" | "leicht bearish" | "bearish" | "keine Daten";
@@ -358,9 +374,9 @@ export function urteilFuer(zeile: WaehrungsBild | null, releases: Release[], jet
   const anteile: [number | null, number][] = [
     [zb, URTEIL_GEWICHT.zentralbank], [wi, URTEIL_GEWICHT.wirtschaft], [ue, URTEIL_GEWICHT.ueberraschung],
   ];
-  const da = anteile.filter(([x]) => x !== null) as [number, number][];
+  const da = anteile.filter(([x, g]) => x !== null && g > 0) as [number, number][];
   const gewicht = da.reduce((s, [, g]) => s + g, 0);
-  const score = da.length === 0 ? null
+  const score = da.length === 0 || gewicht === 0 ? null
     : Math.round((da.reduce((s, [x, g]) => s + x * g, 0) / gewicht) * 1000) / 1000;
   const wort = urteilWort(score);
 
@@ -401,13 +417,14 @@ export function urteilFuer(zeile: WaehrungsBild | null, releases: Release[], jet
         schritt ? `Nächster Schritt: ${schritt}` : null,
         `Farbe = Gesamtbild Zentralbank: ${teile2.filter((t) => t.score !== null && !t.kontext)
           .map((t) => `${t.label} ${t.score! >= 0.15 ? "▲" : t.score! <= -0.15 ? "▼" : "●"}`).join(" · ")}.`,
+        "Nur Anzeige — zählt seit 03.10.2026 nicht ins Urteil.",
       ].filter(Boolean).join(" "),
     },
     ueberraschung: {
       ton: tonAus(ue),
       kurz: ue === null ? "keine Daten" : ue >= 0.2 ? "besser als erwartet" : ue <= -0.2 ? "schlechter als erwartet" : "im Rahmen",
       lang: ue === null ? "Keine Veröffentlichung mit Erwartung und Ist."
-        : "Gewichteter Schnitt der Abweichungen von der Erwartung (Wachstum, Inflation, Arbeitsmarkt), jüngere und wichtige Termine zählen mehr.",
+        : "Gewichteter Schnitt der Abweichungen von der Erwartung (Wachstum, Inflation, Arbeitsmarkt), jüngere und wichtige Termine zählen mehr. Nur Anzeige — zählt seit 03.10.2026 nicht ins Urteil.",
     },
   };
 
@@ -415,15 +432,15 @@ export function urteilFuer(zeile: WaehrungsBild | null, releases: Release[], jet
   const gruende: Grund[] = [];
   if (zyklus && zyklus.score !== null) {
     gruende.push({
-      ton: tonAus(zyklus.score), gewicht: 1,
-      text: `${BANK[ccy] ?? "Notenbank"}: ${zyklusKurz}${schritt ? ` — ${schritt}` : ""}.`,
+      ton: tonAus(zyklus.score), gewicht: 0.7,
+      text: `${BANK[ccy] ?? "Notenbank"}: ${zyklusKurz}${schritt ? ` — ${schritt}` : ""} (nur Anzeige).`,
     });
   } else if (schritt) {
-    gruende.push({ ton: "neutral", gewicht: 0.9, text: `${BANK[ccy] ?? "Notenbank"}: ${schritt}.` });
+    gruende.push({ ton: "neutral", gewicht: 0.65, text: `${BANK[ccy] ?? "Notenbank"}: ${schritt} (nur Anzeige).` });
   }
   const markt = teile2.find((t) => t.key === "erwartung");
   if (markt && markt.score !== null && Math.abs(markt.score) >= 0.4) {
-    gruende.push({ ton: tonAus(markt.score), gewicht: 0.6 + 0.2 * Math.abs(markt.score), text: `Markt: ${markt.text}` });
+    gruende.push({ ton: tonAus(markt.score), gewicht: 0.5 + 0.1 * Math.abs(markt.score), text: `Markt: ${markt.text} (nur Anzeige)` });
   }
   const pmiD = k("pmi_dienste");
   if (pmi.wert || pmiD.wert) {
@@ -431,7 +448,7 @@ export function urteilFuer(zeile: WaehrungsBild | null, releases: Release[], jet
       pmi.wert ? `PMI Industrie ${pmi.wert} (${pmi.niveau}${pmi.trend === "↑" ? ", steigend" : pmi.trend === "↓" ? ", fallend" : ""})` : null,
       pmiD.wert ? `Dienste ${pmiD.wert} (${pmiD.niveau}${pmiD.trend === "↑" ? ", steigend" : pmiD.trend === "↓" ? ", fallend" : ""})` : null,
     ].filter(Boolean).join(" · ");
-    gruende.push({ ton: tonAus(wi), gewicht: 0.9, text: `${teileText}.` });
+    gruende.push({ ton: tonAus(wi), gewicht: 1, text: `${teileText}.` });
   }
   if (nachricht) {
     gruende.push({ ton: (nachricht.z ?? 0) > 0 ? "gut" : "schlecht", gewicht: 0.8, text: nachrichtSatz(nachricht) });
@@ -449,15 +466,15 @@ export function urteilFuer(zeile: WaehrungsBild | null, releases: Release[], jet
       text: `Arbeitslosenquote ${arbeitslos.wert}, ${arbeitslos.trend === "↑" ? "steigend — belastet" : "fallend — stützt"}.`,
     });
   }
-  // Die Reihenfolge der Einfügung ist schon die Wichtigkeit (Zentralbank,
-  // Markt, Wirtschaft, Nachricht, Serien); gekappt wird nach Gewicht.
-  const behalten = new Set([...gruende].sort((a, b) => b.gewicht - a.gewicht).slice(0, 5));
+  // Seit 03.10.2026 zählt nur die Wirtschaft: die Gründe stehen nach Gewicht,
+  // damit oben steht, was das Urteil trägt (PMI), und nicht die Notenbank.
+  const oben = [...gruende].sort((a, b) => b.gewicht - a.gewicht).slice(0, 5);
 
   return {
     ccy, score, wort, ton: tonAus(score, 0.12),
     teile: { zentralbank: zb, wirtschaft: wi, ueberraschung: ue },
     felder,
-    gruende: gruende.filter((g) => behalten.has(g)),
+    gruende: oben,
     kern, nachricht, grosse, schritt,
   };
 }
@@ -502,10 +519,12 @@ export function kernWert(key: string, releases: Release[], jetzt: number): Relea
   return reihe[reihe.length - 1] ?? null;
 }
 
-/** Die Gewichtung 40/35/25 über die vorhandenen Teile — dieselbe Rechnung wie in urteilFuer. */
-export function gesamtScore(zb: number | null, wi: number | null, ue: number | null): number | null {
-  const da = ([[zb, URTEIL_GEWICHT.zentralbank], [wi, URTEIL_GEWICHT.wirtschaft], [ue, URTEIL_GEWICHT.ueberraschung]] as [number | null, number][])
-    .filter(([x]) => x !== null) as [number, number][];
+/** Das Urteil aus den drei Teilen — dieselbe Rechnung wie in urteilFuer. Teile mit Gewicht 0 zählen nicht. */
+export function gesamtScore(
+  zb: number | null, wi: number | null, ue: number | null, w: Gewichte = URTEIL_GEWICHT,
+): number | null {
+  const da = ([[zb, w.zentralbank], [wi, w.wirtschaft], [ue, w.ueberraschung]] as [number | null, number][])
+    .filter(([x, g]) => x !== null && g > 0) as [number, number][];
   if (da.length === 0) return null;
   const g = da.reduce((s, [, w]) => s + w, 0);
   return Math.round((da.reduce((s, [x, w]) => s + x * w, 0) / g) * 1000) / 1000;

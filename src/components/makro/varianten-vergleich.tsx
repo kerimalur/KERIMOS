@@ -16,7 +16,7 @@ import { zufallsBand } from "@/lib/makro/rueckrechnung-rechnen";
 const FARBEN = ["#3987e5", "#d95926", "#199e70", "#c98500"];
 const GITTER = "#2E2519";
 const ACHSE = "#7A6E5C";
-const STANDARD = ["modell", "modell_d4", "rendite_d4", "kombi"];
+const STANDARD = ["modell", "modell_alt", "pmi_niveau", "zentralbank"];
 
 function Zelle({ s }: { s: VariantenStat }) {
   if (s.n === 0 || s.treffer === null) return <td className="py-1.5 text-right text-xs text-ink-faint">—</td>;

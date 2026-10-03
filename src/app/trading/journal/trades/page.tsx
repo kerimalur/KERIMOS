@@ -16,6 +16,7 @@ import {
   werteFragenAus, frageFuer, labelFuer, LEARNING_KEY, MIN_JE_ANTWORT,
 } from "@/lib/trading/journal-fragen";
 import { URTEIL_LABEL } from "@/lib/trading/lage-snapshot";
+import { GEWICHT_TEXT } from "@/lib/makro/urteil";
 import { Card, CardTitle, Stat, Badge, Empty, cx } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -486,12 +487,13 @@ export default async function TradesSeite({
  * Laufen Trades mit dem Urteil besser als dagegen? (29.09.2026)
  *
  * Zählt nur geschlossene Trades, deren Schnappschuss das Urteil mit der
- * Gewichtung 40/35/25 trägt (`urteilNeu`) — ältere Schnappschüsse rechnen
- * mit einem anderen Modell und würden den Vergleich verwässern. Unter etwa
+ * heutigen Gewichtung trägt (seit 03.10.2026 nur Wirtschaft, `GEWICHT_TEXT`)
+ * — ältere Schnappschüsse rechnen mit einem anderen Modell und würden den
+ * Vergleich verwässern. Unter etwa
  * 30 Trades je Gruppe ist jede Differenz Zufall; die Karte sagt das dazu.
  */
 function UrteilAuswertung({ trades }: { trades: Trade[] }) {
-  const mit = trades.filter((t) => t.status !== "open" && t.fundamentalSnapshot?.urteilNeu);
+  const mit = trades.filter((t) => t.status !== "open" && t.fundamentalSnapshot?.urteilNeu?.gewichtung === GEWICHT_TEXT);
   const gruppen = (["bestaetigt", "neutral", "dagegen"] as const).map((u) => {
     const liste = mit.filter((t) => t.fundamentalSnapshot?.fundamental?.urteil === u);
     const rs = liste.map((t) => signiertesR(t));
@@ -510,7 +512,7 @@ function UrteilAuswertung({ trades }: { trades: Trade[] }) {
       {mit.length === 0 ? (
         <p className="text-sm text-ink-muted">
           Sammelt ab jetzt: Jeder neue Trade bekommt beim Import das Urteil beider
-          Währungen (Zentralbank 40 %, Wirtschaft 35 %, Überraschungen 25 %). Sobald
+          Währungen (seit 03.10.2026 nur Wirtschaft; Trades mit dem alten Modell zählen hier nicht). Sobald
           die ersten Trades geschlossen sind, steht hier, ob Trades mit dem Urteil
           besser laufen als dagegen.
         </p>

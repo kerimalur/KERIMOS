@@ -84,7 +84,7 @@ export function RueckrechnungKarte({ rueck }: { rueck: Awaited<ReturnType<typeof
         <CardTitle className="mb-0">Rückrechnung ab März 2024</CardTitle>
         <Info titel="Wie zurückgerechnet wird" breit={340}>
           Für jeden Montag genau das Urteil, das das Terminal an diesem Tag gezeigt
-          hätte — dasselbe Modell (Zentralbank 40 %, Wirtschaft 35 %, Überraschung 25 %),
+          hätte — dasselbe Modell wie live (seit 03.10.2026 nur Wirtschaft; davor Zentralbank 40 %, Wirtschaft 35 %, Überraschung 25 %),
           aber nur mit Daten, die damals schon veröffentlicht waren: Leitzins, 2J-Rendite,
           Inflation mit Veröffentlichungsverzug, Zyklus aus den Zinsschritten bis dahin,
           PMI und Überraschungen aus den Veröffentlichungen davor. BIP, Arbeitslosenquote

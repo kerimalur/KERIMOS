@@ -2,6 +2,7 @@ import Link from "next/link";
 import { tradingConfigured } from "@/lib/supabase/trading";
 import { ladeWochenideen, type WochenIdee } from "@/lib/makro/wochenideen";
 import { montagVon } from "@/lib/makro/wochenideen-rechnen";
+import { MODELL_SEIT } from "@/lib/makro/urteil";
 import { ladeRueckrechnung } from "@/lib/makro/rueckrechnung";
 import { wochenideenJetzt } from "@/lib/wochenideen-actions";
 import { EinschaetzungForm } from "@/components/makro/einschaetzung-form";
@@ -72,7 +73,9 @@ export default async function WochenideenSeite() {
 
   const nachKlasse = [gruppe("Klasse A · stark gegen schwach", alle.filter((i) => i.klasse === "A")),
     gruppe("Klasse B · stark gegen neutral", alle.filter((i) => i.klasse === "B")),
-    gruppe("Alle Ideen", alle)];
+    gruppe("Alle Ideen", alle),
+    gruppe("Neues Modell · ab 05.10.26, nur Wirtschaft", alle.filter((i) => i.woche >= MODELL_SEIT)),
+    gruppe("Altes Modell · 40/35/25", alle.filter((i) => i.woche < MODELL_SEIT))];
   const nachEinschaetzung = [gruppe("Du: stimme zu", alle.filter((i) => i.einschaetzung === "zustimmen")),
     gruppe("Du: Zweifel", alle.filter((i) => i.einschaetzung === "zweifel")),
     gruppe("Du: dagegen", alle.filter((i) => i.einschaetzung === "dagegen"))];

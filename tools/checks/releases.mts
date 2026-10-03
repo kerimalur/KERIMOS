@@ -13,7 +13,7 @@ import { ersatzAusMt5 } from "../../src/lib/makro/pmi";
 import { messe, montagVon } from "../../src/lib/makro/wochenideen-rechnen";
 import { paarKlasse } from "../../src/lib/makro/urteil";
 import { ideenAm, montage, zufallsBand } from "../../src/lib/makro/rueckrechnung-rechnen";
-import { gesamtScore } from "../../src/lib/makro/urteil";
+import { gesamtScore, URTEIL_GEWICHT_ALT } from "../../src/lib/makro/urteil";
 
 let fails = 0;
 function check(name: string, actual: unknown, expected: unknown) {
@@ -140,7 +140,7 @@ check("Deutsch: BIP", kategorieVon("BIP m/m"), "wachstum");
     mk("h", "Federal Funds Rate", 13, 4.0, 4.0, 3.75, "notenbank", 0, "%"),
   ];
   const u = urteilFuer(null, rel2, heute);
-  check("Urteil ohne Niveau: nur Überraschung zählt", u.teile.zentralbank === null && u.teile.ueberraschung !== null && u.score !== null && u.score > 0, true);
+  check("Urteil ohne Wirtschaft: kein Urteil, Überraschung nur Anzeige", u.teile.zentralbank === null && u.teile.ueberraschung !== null && u.score === null, true);
   check("Kern PMI Industrie", [u.kern.find((k) => k.key === "pmi_industrie")?.wert, u.kern.find((k) => k.key === "pmi_industrie")?.niveau, u.kern.find((k) => k.key === "pmi_industrie")?.trend], ["54.6", "Expansion, schwächer", "↓"]);
   check("Kern Jobs klar höher", u.kern.find((k) => k.key === "jobs")?.vergleich, "klar höher als erwartet");
   check("Kern Leitzins", [u.kern.find((k) => k.key === "leitzins")?.wert, u.kern.find((k) => k.key === "leitzins")?.vergleich], ["4 %", "Schritt wie erwartet"]);
@@ -192,8 +192,10 @@ check("Keine Idee unter 0.40", paarKlasse(0.3, 0), null);
 
 /* Rückrechnung */
 {
-  check("Gesamt 40/35/25", gesamtScore(1, -1, 0), 0.05);
-  check("Gesamt ohne Überraschung", gesamtScore(1, 0, null), 0.533);
+  check("Gesamt neu = Wirtschaft", gesamtScore(1, -1, 0), -1);
+  check("Gesamt neu ohne Wirtschaft → null", gesamtScore(1, null, 0.5), null);
+  check("Gesamt alt 40/35/25", gesamtScore(1, -1, 0, URTEIL_GEWICHT_ALT), 0.05);
+  check("Gesamt alt ohne Überraschung", gesamtScore(1, 0, null, URTEIL_GEWICHT_ALT), 0.533);
   check("Montage", montage("2024-03-01", "2024-03-20"), ["2024-03-04", "2024-03-11", "2024-03-18"]);
   const ideen = ideenAm("2024-03-04", { NZD: 0.5, CAD: -0.3, GBP: 0.05, USD: 0 }, ["NZDCAD", "GBPNZD", "NZDUSD", "USDCAD", "GBPCAD"]);
   check("Rück-Ideen", ideen.map((i) => `${i.paar} ${i.seite} ${i.klasse}`), ["NZDCAD long A", "NZDUSD long B", "GBPNZD short B"]);

@@ -4,13 +4,15 @@
  */
 export const ERKLAERUNG = {
   urteil:
-    "Das Urteil fasst drei Teile zusammen: Zentralbank (40 %), Wirtschaft (35 %) und Überraschungen (25 %). "
+    "Das Urteil rechnet seit 03.10.2026 nur mit der Wirtschaft (PMI, BIP, Arbeitsmarkt). Zentralbank und Überraschungen "
+    + "stehen daneben, zählen aber nicht. "
     + "Bullish heisst: die Daten sprechen dafür, dass die Währung gegen die anderen steigt. "
     + "Es ersetzt keine GVA-Linie — es sagt, in welche Richtung du sie suchen solltest.",
   gewichtung:
-    "Zentralbank am stärksten, weil auf deinem Zeitrahmen der Zinspfad die Richtung bestimmt. Wirtschaft danach, weil sie die "
-    + "Zentralbank treibt (PMI läuft voraus). Überraschungen am schwächsten, weil eine einzelne Abweichung nur kurz wirkt — "
-    + "sie zählen, wenn sie sich wiederholen. Eine begründete Setzung, noch nicht am Journal geprüft.",
+    "Warum so: Im Makro-Backtest (März 2024 – Sept. 2026, 2 Wochen) traf die Wirtschaft allein 57 %, das alte Modell "
+    + "(Zentralbank 40 %, Wirtschaft 35 %, Überraschungen 25 %) 47 %, die Zentralbank allein 44 %. Die Zentralbank-Ebene misst "
+    + "den Zustand (Zyklus, Zinsniveau) — den hat der Markt längst eingepreist. Ein Kandidat, kein Beweis: ab dem 05.10.2026 "
+    + "messen die Wochenideen das neue Modell vorwärts.",
   wirtschaft:
     "Ebene 1: läuft die Wirtschaft? Kern ist der PMI — über 50 wächst die Wirtschaft, darunter schrumpft sie. "
     + "Dazu BIP und Arbeitsmarkt. Eine starke Wirtschaft erlaubt der Notenbank hohe Zinsen und stützt die Währung.",

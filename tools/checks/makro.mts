@@ -96,22 +96,26 @@ const teil = (b: ReturnType<typeof bewerteWaehrung>, n: 1 | 2 | 3, key: string) 
 /* ------------------------------------------------------ Das Gesamturteil */
 
 {
-  // Nur Ebene 2 hat Daten: das Urteil ist ihres, nicht die Hälfte davon.
-  // Seit 26.09.2026 zählt dort die Richtung, nicht mehr das Zinsniveau.
+  // Seit 03.10.2026 zählt nur die Wirtschaft. Nur Zentralbank-Daten → kein
+  // Urteil (unbekannt), nicht „neutral".
   const b = bewerteWaehrung(basis({ leitzins: 3.5, leitzins6M: 0.5 }), umfeld);
-  check("eine Ebene mit Daten trägt das Urteil allein", b.gesamt, 1);
+  check("nur Zentralbank-Daten → kein Urteil", b.gesamt, null);
+  check("Zentralbank-Ebene wird trotzdem gerechnet", ebene(b, 2).score !== null, true);
+  check("Wirtschaft allein trägt das Urteil",
+    bewerteWaehrung(basis({ hand: { pmi_industrie: hand(55) } }), umfeld).gesamt, 1);
   check("Abdeckung zeigt die Lücke (1 von 6 gewerteten Teilen)", Math.round(b.abdeckung * 100), 17);
   check("Zinsniveau allein zählt nicht mehr",
     bewerteWaehrung(basis({ leitzins: 0 }), umfeld).gesamt, null);
 }
 {
-  // Gewichtet 50/50: Wirtschaft +1, Zentralbank −1 → 0
+  // Seit 03.10.2026: Wirtschaft 100 %, Zentralbank nur Anzeige.
   const b = bewerteWaehrung(basis({
     hand: { pmi_industrie: hand(60), pmi_dienste: hand(60), bip_yoy: hand(3),
             arbeitslos: hand(4, 4.5), handelsbilanz: hand(8) },
     leitzins: 0.5, leitzins6M: -0.5, erwartung: -0.5, realzins: -1, zyklus: "lockerung",
   }), umfeld);
-  check("starke Wirtschaft, lockernde Notenbank → neutral", b.gesamt, 0);
+  check("starke Wirtschaft, lockernde Notenbank → Wirtschaft entscheidet",
+    [b.gesamt, (b.gesamt ?? 0) > 0.5], [ebene(b, 1).score, true]);
   check("Sentiment zählt nicht", ebene(b, 3).score, null);
 }
 
@@ -133,9 +137,9 @@ const teil = (b: ReturnType<typeof bewerteWaehrung>, n: 1 | 2 | 3, key: string) 
 
 {
   const zeilen = rangliste([
-    bewerteWaehrung(basis({ ccy: "USD", leitzins6M: 0.5 }), umfeld),
-    bewerteWaehrung(basis({ ccy: "JPY", leitzins6M: -0.475 }), umfeld),
-    bewerteWaehrung(basis({ ccy: "EUR", leitzins6M: 0.0 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "USD", hand: { pmi_industrie: hand(55) } }), umfeld),
+    bewerteWaehrung(basis({ ccy: "JPY", hand: { pmi_industrie: hand(45.25) } }), umfeld),
+    bewerteWaehrung(basis({ ccy: "EUR", hand: { pmi_industrie: hand(50) } }), umfeld),
   ]);
   check("Rangfolge", zeilen.map((z) => z.ccy), ["USD", "EUR", "JPY"]);
 
@@ -148,8 +152,8 @@ const teil = (b: ReturnType<typeof bewerteWaehrung>, n: 1 | 2 | 3, key: string) 
 {
   // Zwei mittelmässige Währungen ergeben keine Idee.
   const zeilen = rangliste([
-    bewerteWaehrung(basis({ ccy: "USD", leitzins6M: 0.025 }), umfeld),
-    bewerteWaehrung(basis({ ccy: "EUR", leitzins6M: 0.0 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "USD", hand: { pmi_industrie: hand(50.125) } }), umfeld),
+    bewerteWaehrung(basis({ ccy: "EUR", hand: { pmi_industrie: hand(50) } }), umfeld),
   ]);
   check("kein Abstand, keine Idee", paarIdeen(zeilen, ["EURUSD"]).length, 0);
 }
@@ -159,9 +163,9 @@ const teil = (b: ReturnType<typeof bewerteWaehrung>, n: 1 | 2 | 3, key: string) 
 {
   // Dieselbe Rangliste wie oben: USD stark, JPY schwach, EUR dazwischen.
   const zeilen = rangliste([
-    bewerteWaehrung(basis({ ccy: "USD", leitzins6M: 0.5 }), umfeld),
-    bewerteWaehrung(basis({ ccy: "JPY", leitzins6M: -0.475 }), umfeld),
-    bewerteWaehrung(basis({ ccy: "EUR", leitzins6M: 0.0 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "USD", hand: { pmi_industrie: hand(55) } }), umfeld),
+    bewerteWaehrung(basis({ ccy: "JPY", hand: { pmi_industrie: hand(45.25) } }), umfeld),
+    bewerteWaehrung(basis({ ccy: "EUR", hand: { pmi_industrie: hand(50) } }), umfeld),
   ]);
 
   check("USDJPY long wird bestätigt", paarUrteil(zeilen, "USDJPY", "long").urteil, "bestaetigt");
@@ -176,8 +180,8 @@ const teil = (b: ReturnType<typeof bewerteWaehrung>, n: 1 | 2 | 3, key: string) 
   // Der wichtigste Fall: unter der Schwelle ist es KEIN Gegenwind, sondern
   // schlicht keine Aussage. „dagegen" wäre hier ein erfundener Widerspruch.
   const eng = rangliste([
-    bewerteWaehrung(basis({ ccy: "USD", leitzins6M: 0.025 }), umfeld),
-    bewerteWaehrung(basis({ ccy: "EUR", leitzins6M: 0.0 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "USD", hand: { pmi_industrie: hand(50.125) } }), umfeld),
+    bewerteWaehrung(basis({ ccy: "EUR", hand: { pmi_industrie: hand(50) } }), umfeld),
   ]);
   check("zu enger Abstand → neutral", paarUrteil(eng, "EURUSD", "long").urteil, "neutral");
   check("und die Ebenen legen nichts nahe", paarUrteil(eng, "EURUSD", "long").ebenenSeite, "neutral");
@@ -192,9 +196,9 @@ const teil = (b: ReturnType<typeof bewerteWaehrung>, n: 1 | 2 | 3, key: string) 
 
 {
   const zeilen = rangliste([
-    bewerteWaehrung(basis({ ccy: "USD", leitzins6M: 0.5 }), umfeld),
-    bewerteWaehrung(basis({ ccy: "JPY", leitzins6M: -0.475 }), umfeld),
-    bewerteWaehrung(basis({ ccy: "EUR", leitzins6M: 0.0 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "USD", hand: { pmi_industrie: hand(55) } }), umfeld),
+    bewerteWaehrung(basis({ ccy: "JPY", hand: { pmi_industrie: hand(45.25) } }), umfeld),
+    bewerteWaehrung(basis({ ccy: "EUR", hand: { pmi_industrie: hand(50) } }), umfeld),
   ]);
   const cot = (ccy: string, divergenz: -1 | 0 | 1, komm = 80, retail = 20) =>
     ({ ccy, kommRang: komm, retailRang: retail, divergenz });
@@ -219,7 +223,7 @@ const teil = (b: ReturnType<typeof bewerteWaehrung>, n: 1 | 2 | 3, key: string) 
   // Eine Währung im Mittelfeld kann Monty weder stützen noch widersprechen.
   const eng = rangliste([
     bewerteWaehrung(basis({ ccy: "USD", leitzins6M: 0.012 }), umfeld),
-    bewerteWaehrung(basis({ ccy: "EUR", leitzins6M: 0.0 }), umfeld),
+    bewerteWaehrung(basis({ ccy: "EUR", hand: { pmi_industrie: hand(50) } }), umfeld),
   ]);
   const c = montyAbgleich(eng, [cot("USD", 1), cot("EUR", -1, 20, 80)]);
   check("Mittelfeld → still, egal was COT sagt",
