@@ -1,109 +1,122 @@
 import type { Config } from "tailwindcss";
 
+/**
+ * Design D „Fokus mit Brett“ (07.10.2026).
+ *
+ * Alle Farben stehen als RGB-Kanäle in CSS-Variablen (globals.css), je einmal
+ * für hell (:root) und dunkel (.dark). So schaltet ein Klassenwechsel auf
+ * <html> die ganze App um, und `bg-card/80` & Co. funktionieren weiter.
+ * Die Namen sind dieselben wie vorher — keine Seite musste umbenannt werden.
+ */
+const v = (name: string) => `rgb(var(--c-${name}) / <alpha-value>)`;
+
 export default {
   content: ["./src/**/*.{ts,tsx}"],
+  darkMode: "class",
   theme: {
     extend: {
       colors: {
-        // ── Tactile: warmes Dunkel. Nichts ist reines Schwarz oder Weiss;
-        // der Grund hat einen Braunstich, damit die Farben darauf leuchten.
-        paper: "#17130F",       // Seitengrund
-        card: "#1E1811",        // Karte, eine Stufe heller
-        sand: "#271F16",        // Fläche in der Karte (Chips, Zeilen)
-        field: "#221B14",       // Eingabefelder
-        line: "#2E2519",        // Kante, nur angedeutet
-        "line-strong": "#3E3222",
+        paper: v("paper"),        // Seitengrund
+        card: v("card"),          // Karte
+        sand: v("sand"),          // Fläche in der Karte (Chips, Zeilen)
+        field: v("field"),        // Eingabefelder
+        line: v("line"),
+        "line-strong": v("line-strong"),
         ink: {
-          DEFAULT: "#F5EFE3",   // Haupttext
-          soft: "#CBC0AC",
-          muted: "#9A8C74",
-          faint: "#7A6E5C",
-          // Text auf farbig gefüllten Flächen (Buttons, aktive Chips)
-          on: "#17130F",
+          DEFAULT: v("ink"),
+          soft: v("ink-soft"),
+          muted: v("ink-muted"),
+          faint: v("ink-faint"),
+          on: v("ink-on"),        // Text auf gefüllten Akzentflächen
         },
         accent: {
-          DEFAULT: "#E7A96B",   // Bernstein — die Hausfarbe
-          soft: "#F0BC85",
-          deep: "#B4813F",
-          tint: "#3A2A20",
+          DEFAULT: v("accent"),   // Kobalt — die Hausfarbe von D
+          soft: v("accent-soft"),
+          deep: v("accent-deep"),
+          tint: v("accent-tint"),
         },
-        good: "#5FC2A6",
-        warn: "#E7A96B",
-        bad: "#E28B72",
-        "good-tint": "#1C2B23",
-        "warn-tint": "#3A2A20",
-        "bad-tint": "#2E1C1A",
-        // hellere Varianten für grosse Zahlen auf dunklem Grund
-        "good-bright": "#7EE0C6",
-        "bad-bright": "#F0A08A",
-
-        // ── Bereichsfarben. Jeder Bereich hat einen Ton und einen Grund —
-        // so sind Geld, Zeit, Gym, Essen und Trading auf einen Blick
-        // auseinanderzuhalten.
-        geld: { DEFAULT: "#5FC2A6", bg: "#1C2B23", bright: "#7EE0C6" },
-        zeit: { DEFAULT: "#6FA3D8", bg: "#1E2E3A", bright: "#A7CBEC" },
-        gym: { DEFAULT: "#E28B72", bg: "#3A2A20", bright: "#F0A08A" },
-        essen: { DEFAULT: "#ACB56E", bg: "#2C301E", bright: "#C8D394" },
-        trading: { DEFAULT: "#A38EDD", bg: "#2A2438", bright: "#C4B4EE" },
+        good: v("good"),
+        warn: v("warn"),
+        bad: v("bad"),
+        "good-tint": v("good-tint"),
+        "warn-tint": v("warn-tint"),
+        "bad-tint": v("bad-tint"),
+        "good-bright": v("good-bright"),
+        "bad-bright": v("bad-bright"),
+        // Bereichsfarben, unverändert in der Bedeutung
+        geld: { DEFAULT: v("geld"), bg: v("geld-bg"), bright: v("geld-bright") },
+        zeit: { DEFAULT: v("zeit"), bg: v("zeit-bg"), bright: v("zeit-bright") },
+        gym: { DEFAULT: v("gym"), bg: v("gym-bg"), bright: v("gym-bright") },
+        essen: { DEFAULT: v("essen"), bg: v("essen-bg"), bright: v("essen-bright") },
+        trading: { DEFAULT: v("trading"), bg: v("trading-bg"), bright: v("trading-bright") },
+        // Die Fotoflächen (Empfang, Titelbilder) sind in beiden Modi dunkel.
+        photo: "#F5F4F1",
       },
       fontFamily: {
-        sans: ["var(--font-manrope)", "ui-sans-serif", "system-ui", "sans-serif"],
-        display: ["var(--font-sora)", "var(--font-manrope)", "ui-sans-serif", "sans-serif"],
+        sans: ["var(--font-hanken)", "ui-sans-serif", "system-ui", "sans-serif"],
+        display: ["var(--font-bricolage)", "var(--font-hanken)", "ui-sans-serif", "sans-serif"],
         mono: ["var(--font-plex-mono)", "ui-monospace", "monospace"],
       },
       borderRadius: {
-        // Tactile ist runder als vorher: Karten 22px, Chips 14px
         xl: "0.875rem",
         "2xl": "1.375rem",
         "3xl": "1.5rem",
       },
       boxShadow: {
-        // Kein harter Schlagschatten, sondern ein tiefer, weicher Sockel
-        tile: "0 14px 28px -18px rgba(0,0,0,.75)",
-        card: "0 16px 32px -20px rgba(0,0,0,.6)",
-        "glow-accent": "0 14px 28px -18px rgba(231,169,107,.35)",
-        "glow-geld": "0 14px 28px -18px rgba(95,194,166,.32)",
-        "glow-zeit": "0 14px 28px -18px rgba(111,163,216,.32)",
-        "glow-gym": "0 14px 28px -18px rgba(226,139,114,.32)",
-        "glow-essen": "0 14px 28px -18px rgba(172,181,110,.32)",
-        "glow-trading": "0 14px 28px -18px rgba(163,142,221,.32)",
+        tile: "0 10px 24px -16px rgb(var(--c-shadow) / .45)",
+        card: "0 1px 2px rgb(var(--c-shadow) / .04), 0 12px 30px -18px rgb(var(--c-shadow) / .30)",
+        float: "0 10px 30px -12px rgb(var(--c-shadow) / .35)",
+        // Die alten Leuchtschatten bleiben als Namen, sind in D aber leise.
+        "glow-accent": "0 12px 26px -18px rgb(var(--c-accent) / .45)",
+        "glow-geld": "0 12px 26px -18px rgb(var(--c-geld) / .40)",
+        "glow-zeit": "0 12px 26px -18px rgb(var(--c-zeit) / .40)",
+        "glow-gym": "0 12px 26px -18px rgb(var(--c-gym) / .40)",
+        "glow-essen": "0 12px 26px -18px rgb(var(--c-essen) / .40)",
+        "glow-trading": "0 12px 26px -18px rgb(var(--c-trading) / .40)",
       },
       keyframes: {
         popIn: {
-          from: { opacity: "0", transform: "scale(.94) translateY(6px)" },
+          from: { opacity: "0", transform: "scale(.97) translateY(6px)" },
           to: { opacity: "1", transform: "scale(1) translateY(0)" },
         },
         revealW: { from: { width: "0%" }, to: { width: "var(--w, 100%)" } },
         revealH: { from: { height: "0%" }, to: { height: "var(--h, 100%)" } },
         drawLine: { to: { strokeDashoffset: "0" } },
-        driftA: {
-          "0%": { transform: "translate(-8%,-6%) scale(1)" },
-          "50%": { transform: "translate(14%,8%) scale(1.18)" },
-          "100%": { transform: "translate(-4%,14%) scale(.92)" },
+        // D: Brett setzt sich zusammen, Zeilen steigen auf, das Bild atmet.
+        assemble: {
+          from: { opacity: "0", clipPath: "inset(100% 0 0 0)" },
+          to: { opacity: "1", clipPath: "inset(0 0 0 0)" },
         },
-        driftB: {
-          "0%": { transform: "translate(10%,14%) scale(1.1)" },
-          "50%": { transform: "translate(-14%,-6%) scale(.88)" },
-          "100%": { transform: "translate(6%,-14%) scale(1.05)" },
+        lineup: { from: { transform: "translateY(105%)" }, to: { transform: "none" } },
+        rise: {
+          from: { opacity: "0", transform: "translateY(14px)" },
+          to: { opacity: "1", transform: "none" },
         },
-        driftC: {
-          "0%": { transform: "translate(0,0) scale(1)" },
-          "50%": { transform: "translate(-12%,9%) scale(1.22)" },
-          "100%": { transform: "translate(10%,-9%) scale(.9)" },
+        kenburns: {
+          from: { transform: "scale(1.12) translate3d(-1.2%,-1%,0)" },
+          to: { transform: "scale(1.02) translate3d(1.2%,1%,0)" },
+        },
+        bannerIn: {
+          from: { opacity: ".35", transform: "scale(1.08)" },
+          to: { opacity: "1", transform: "none" },
         },
       },
       animation: {
-        pop: "popIn .38s cubic-bezier(.34,1.56,.64,1) both",
-        "pop-fast": "popIn .32s cubic-bezier(.34,1.56,.64,1) both",
-        revealW: "revealW .55s cubic-bezier(.34,1.56,.64,1) both",
-        revealH: "revealH .5s cubic-bezier(.34,1.56,.64,1) both",
+        pop: "popIn .4s cubic-bezier(.16,1,.3,1) both",
+        "pop-fast": "popIn .3s cubic-bezier(.16,1,.3,1) both",
+        revealW: "revealW .6s cubic-bezier(.16,1,.3,1) both",
+        revealH: "revealH .55s cubic-bezier(.16,1,.3,1) both",
         drawLine: "drawLine 1.1s .15s cubic-bezier(.16,1,.3,1) forwards",
-        driftA: "driftA 32s ease-in-out infinite alternate",
-        driftB: "driftB 40s ease-in-out infinite alternate",
-        driftC: "driftC 46s ease-in-out infinite alternate",
+        assemble: "assemble .9s cubic-bezier(.16,1,.3,1) both",
+        lineup: "lineup 1s cubic-bezier(.16,1,.3,1) both",
+        rise: "rise .8s cubic-bezier(.16,1,.3,1) both",
+        kenburns: "kenburns 28s ease-in-out infinite alternate",
+        bannerIn: "bannerIn 1.4s cubic-bezier(.16,1,.3,1) both",
       },
       transitionTimingFunction: {
-        tactile: "cubic-bezier(.34,1.56,.64,1)",
+        // Name bleibt (wird in vielen Komponenten benutzt), die Kurve ist
+        // in D ruhiger: weich auslaufend statt federnd.
+        tactile: "cubic-bezier(.16,1,.3,1)",
       },
     },
   },

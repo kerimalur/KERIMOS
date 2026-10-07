@@ -27,7 +27,7 @@ export function BacktestEquity({ punkte }: { punkte: EquityPunkt[] }) {
   const flaeche = `${pfad} L${x(punkte.length - 1).toFixed(1)},${y(0).toFixed(1)} L${x(0).toFixed(1)},${y(0).toFixed(1)} Z`;
   const letzte = punkte[punkte.length - 1].kumR;
   const positiv = letzte >= 0;
-  const farbe = positiv ? "#5FC2A6" : "#E28B72";
+  const farbe = positiv ? "rgb(var(--c-good))" : "rgb(var(--c-bad))";
 
   return (
     <div>

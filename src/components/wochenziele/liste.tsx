@@ -59,8 +59,8 @@ function StatusKreis({ status, klein }: { status: ZielStatus; klein?: boolean })
   if (status === "fertig") {
     return (
       <svg width={g} height={g} viewBox="0 0 18 18" aria-hidden>
-        <circle cx="9" cy="9" r="8" fill="#5FC2A6" />
-        <path d="M5 9.4l2.6 2.5L13 6.5" stroke="#17130F" strokeWidth="1.8" fill="none"
+        <circle cx="9" cy="9" r="8" fill="rgb(var(--c-good))" />
+        <path d="M5 9.4l2.6 2.5L13 6.5" stroke="rgb(var(--c-ink-on))" strokeWidth="1.8" fill="none"
           strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     );
@@ -68,14 +68,14 @@ function StatusKreis({ status, klein }: { status: ZielStatus; klein?: boolean })
   if (status === "angefangen") {
     return (
       <svg width={g} height={g} viewBox="0 0 18 18" aria-hidden>
-        <circle cx="9" cy="9" r="7.5" stroke="#E7A96B" strokeWidth="1.5" fill="none" />
-        <path d="M9 1.5 A7.5 7.5 0 0 1 9 16.5 Z" fill="#E7A96B" />
+        <circle cx="9" cy="9" r="7.5" stroke="rgb(var(--c-accent))" strokeWidth="1.5" fill="none" />
+        <path d="M9 1.5 A7.5 7.5 0 0 1 9 16.5 Z" fill="rgb(var(--c-accent))" />
       </svg>
     );
   }
   return (
     <svg width={g} height={g} viewBox="0 0 18 18" aria-hidden>
-      <circle cx="9" cy="9" r="7.5" stroke="#9A8C74" strokeWidth="1.5" fill="none" />
+      <circle cx="9" cy="9" r="7.5" stroke="rgb(var(--c-ink-muted))" strokeWidth="1.5" fill="none" />
     </svg>
   );
 }

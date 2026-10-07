@@ -20,9 +20,9 @@ const TON_FLAECHE: Record<Ton, string> = {
 const TON_ZEICHEN: Record<Ton, string> = { gut: "▲", schlecht: "▼", neutral: "●", fehlt: "○" };
 
 export function UrteilMarke({ wort, gross = false }: { wort: UrteilWort; gross?: boolean }) {
-  const stil = wort === "bullish" ? "bg-[#2F6B5B] text-ink"
+  const stil = wort === "bullish" ? "bg-good text-ink-on"
     : wort === "leicht bullish" ? "bg-good-tint text-good-bright"
-      : wort === "bearish" ? "bg-[#7A3B2E] text-ink"
+      : wort === "bearish" ? "bg-bad text-ink-on"
         : wort === "leicht bearish" ? "bg-bad-tint text-bad-bright"
           : "bg-sand text-ink-soft";
   return (

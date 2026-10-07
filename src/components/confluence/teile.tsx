@@ -64,7 +64,7 @@ export function FaktorZeile({ f }: { f: FaktorUrteil }) {
         {f.dir !== 0 && (
           <span className="w-16">
             <Bar pct={f.staerke * 100}
-              color={f.dir > 0 ? "var(--good, #6BBF8A)" : "var(--bad, #D97070)"} />
+              color={f.dir > 0 ? "rgb(var(--c-good))" : "rgb(var(--c-bad))"} />
           </span>
         )}
         <span className="ml-auto"><FrischeChip frische={f.frische} /></span>

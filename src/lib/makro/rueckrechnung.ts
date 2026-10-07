@@ -120,19 +120,21 @@ export interface Komponenten {
 /**
  * Für jeden Montag ab AB das, was das Terminal an diesem Tag gezeigt hätte —
  * aufgeteilt in seine Bausteine (02.10.2026, für den Varianten-Vergleich).
+ * `ab` (05.10.2026): früherer Start für den Zusatztest 2022–2023 — braucht
+ * die MT5-Kalenderhistorie ab 2021 (Dienst KerimosKalender, AbDatum).
  */
-export async function komponentenProWoche(): Promise<{ wochen: string[]; komponenten: Map<string, Record<string, Komponenten>> }> {
+export async function komponentenProWoche(ab: string = AB): Promise<{ wochen: string[]; komponenten: Map<string, Record<string, Komponenten>> }> {
   const dienst = makroDb();
   const heute = new Date().toISOString().slice(0, 10);
   const [releases, reihen, markt] = await Promise.all([
-    ladeReleases({ ab: "2023-09-01T00:00:00Z", db: dienst ?? undefined }),
+    ladeReleases({ ab: new Date(Date.parse(`${ab}T00:00:00Z`) - 185 * 86_400_000).toISOString(), db: dienst ?? undefined }),
     ladeReihen(),
     ladeFuerStichtag(heute),
   ]);
   const jeCcy: Record<string, Release[]> = {};
   for (const c of G8) jeCcy[c] = releases.filter((r) => r.ccy === c);
 
-  const wochen = montage(AB, montagVon(new Date()));
+  const wochen = montage(ab, montagVon(new Date()));
   const komponenten = new Map<string, Record<string, Komponenten>>();
   for (const w of wochen) {
     const t = Date.parse(`${w}T00:00:00Z`);

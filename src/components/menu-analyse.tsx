@@ -173,19 +173,19 @@ function Verlauf({
   return (
     <ResponsiveContainer width="100%" height={180}>
       <LineChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: -20 }}>
-        <CartesianGrid stroke="#2E2519" vertical={false} />
-        <XAxis dataKey="woche" stroke="#9A8C74" fontSize={11} tickLine={false} axisLine={false} />
-        <YAxis stroke="#9A8C74" fontSize={11} tickLine={false} axisLine={false} />
+        <CartesianGrid stroke="rgb(var(--c-line))" vertical={false} />
+        <XAxis dataKey="woche" stroke="rgb(var(--c-ink-muted))" fontSize={11} tickLine={false} axisLine={false} />
+        <YAxis stroke="rgb(var(--c-ink-muted))" fontSize={11} tickLine={false} axisLine={false} />
         <Tooltip
           formatter={(v: number) => (format ? format(v) : Math.round(v))}
           contentStyle={{
-            background: "#1E1811", border: "1px solid #2E2519", borderRadius: 8, fontSize: 12,
+            background: "rgb(var(--c-card))", border: "1px solid rgb(var(--c-line))", borderRadius: 8, fontSize: 12,
           }}
         />
-        <Line type="monotone" dataKey="wert" stroke="#5FC2A6" strokeWidth={2}
-          dot={{ r: 3, fill: "#5FC2A6" }} />
+        <Line type="monotone" dataKey="wert" stroke="rgb(var(--c-good))" strokeWidth={2}
+          dot={{ r: 3, fill: "rgb(var(--c-good))" }} />
         {goal !== undefined && (
-          <ReferenceLine y={goal} stroke="#E28B72" strokeDasharray="4 4" strokeWidth={1} />
+          <ReferenceLine y={goal} stroke="rgb(var(--c-bad))" strokeDasharray="4 4" strokeWidth={1} />
         )}
       </LineChart>
     </ResponsiveContainer>

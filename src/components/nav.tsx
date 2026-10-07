@@ -2,234 +2,224 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cx } from "./ui";
-import { Logo } from "./logo";
-
-// Essen fehlt hier bewusst: der Bereich bringt seine eigene Tab-Leiste mit
-// (siehe components/essen-tabs.tsx). Zwei Navigationen übereinander
-// verwirren mehr, als sie helfen.
+import { ThemaSchalter } from "./thema-schalter";
 
 /**
- * Zwei Bereiche statt einem (26.09.2026).
+ * Navigation nach Design D „Fokus mit Brett“ (07.10.2026).
  *
- * **Analyse** ist alles VOR dem Trade: Marktlage, Fundamentals, Alarme.
- * **Journal** ist alles DANACH: eigene Trades, Backtest, Konten. Kerims
- * Ansage: das sind zwei verschiedene Arbeiten zu verschiedenen Zeiten, und
- * ein gemeinsamer Kopf mit sechs Einträgen zwingt bei jedem Klick zur
- * Entscheidung, in welchem Modus man gerade ist.
+ * Fünf feste Ziele, immer am gleichen Ort — unten in einer schwebenden
+ * Leiste, wo der Daumen liegt, auch am Computer:
  *
- * Die Adressen bleiben vorerst unter /trading/…: ein Umbenennen bräche
- * Lesezeichen, den PWA-Shortcut und die Links in alten Push-Meldungen, ohne
- * dass sich an der Bedienung etwas ändert.
- */
-type Section = "gva" | "fundamentals" | "journal" | null;
-
-/**
- * Drei Bereiche statt zwei (26.09.2026, zweiter Schnitt am selben Tag).
+ *   Heute    die Startseite mit Empfang und Brett
+ *   Markt    GVA: Übersicht, Cockpit, Alarme
+ *   Makro    Fundamentals, Währungen, Kalender, Wochenaussicht, Makro-Backtest
+ *   Journal  Journal, Backtest
+ *   Leben    Wochenziele, Routinen, Essen
  *
- * Kerims Aufteilung auf der Startseite: eine Kachel für die GVA (Übersicht,
- * Cockpit, Alarme), eine für die fundamentale Analyse (Fundamentals,
- * Währungen) und eine fürs Journal (Journal, Backtest). Die Kopfzeile folgt
- * derselben Aufteilung — wer über die GVA-Kachel reinkommt, sieht oben nur
- * die GVA-Seiten.
+ * Oben steht je Bereich ein Titelbild — ein Ausschnitt aus der Collage — mit
+ * den Seiten des Bereichs als Pillen darauf. Die Adressen unter /trading sind
+ * dieselben wie vorher; nur die Navigation ist neu geordnet.
+ *
+ * Ersetzt die drei Trading-Köpfe (GVA / Fundamentals / Journal) vom
+ * 26.09.2026 und die Rücklinks „← Startseite“.
  */
 
-/**
- * Ein Eintrag der Hauptnavigation.
- *
- * `auch` gibt es, seit ein Bereich aus zwei getrennten Adressen besteht:
- * „Alarme" führt auf /trading/einstellungen, deckt aber auch /trading/alarme
- * ab. Ohne die Liste leuchtet dort gar kein Punkt, und man weiss beim Blick
- * nach oben nicht mehr, wo man ist.
- */
-interface NavLink {
-  href: string;
+type Bereich = "heute" | "markt" | "makro" | "journal" | "leben";
+
+interface Seite { href: string; label: string; auch?: string[] }
+
+interface BereichDef {
+  key: Bereich;
   label: string;
-  /** Weitere Pfade, die zu diesem Eintrag gehören. */
-  auch?: string[];
+  href: string;
+  pfade: string[];
+  kicker: string;
+  seiten: Seite[];
+  /** Ausschnitt der Collage: Brennpunkt in Prozent und Zoom. */
+  bild: { x: number; y: number; zoom: number };
+  icon: string;
 }
 
-interface NavConfig {
-  home: NavLink;
-  primary: NavLink[];
-  secondary: NavLink[];
-}
+const BEREICHE: BereichDef[] = [
+  {
+    key: "heute", label: "Heute", href: "/", pfade: [], kicker: "", seiten: [],
+    bild: { x: 50, y: 40, zoom: 1 },
+    icon: "M12 3v2M12 19v2M5 12H3M21 12h-2M6.3 6.3l1.4 1.4M16.3 16.3l1.4 1.4M6.3 17.7l1.4-1.4M16.3 7.7l1.4-1.4M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8z",
+  },
+  {
+    key: "markt", label: "Markt", href: "/trading", pfade: ["/trading"],
+    kicker: "GVA: Hits, Cockpit, Alarme",
+    seiten: [
+      { href: "/trading", label: "Übersicht" },
+      { href: "/trading/cockpit", label: "Cockpit" },
+      { href: "/trading/einstellungen", label: "Alarme", auch: ["/trading/alarme"] },
+    ],
+    bild: { x: 46.5, y: 35, zoom: 1.7 },
+    icon: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8zM12 1v4M12 19v4M1 12h4M19 12h4",
+  },
+  {
+    key: "makro", label: "Makro", href: "/trading/fundamentals",
+    pfade: ["/trading/fundamentals", "/trading/waehrungen", "/trading/confluence"],
+    kicker: "Urteil, Währungen, Kalender",
+    seiten: [
+      { href: "/trading/fundamentals", label: "Fundamentals", auch: ["/trading/confluence"] },
+      { href: "/trading/waehrungen", label: "Währungen" },
+      { href: "/trading/fundamentals/kalender", label: "Kalender" },
+      { href: "/trading/fundamentals/wochenideen", label: "Wochenaussicht" },
+      { href: "/trading/fundamentals/rueckrechnung", label: "Makro-Backtest" },
+    ],
+    bild: { x: 69, y: 40, zoom: 1.7 },
+    icon: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9s1.3-6.4 3.8-9z",
+  },
+  {
+    key: "journal", label: "Journal", href: "/trading/journal",
+    pfade: ["/trading/journal", "/trading/backtest"],
+    kicker: "Trades und Backtest",
+    seiten: [
+      { href: "/trading/journal", label: "Journal" },
+      { href: "/trading/backtest", label: "Backtest" },
+    ],
+    bild: { x: 46.5, y: 82, zoom: 1.05 },
+    icon: "M4 19V5M4 19h16M7 15l4-4 3 3 5-6",
+  },
+  {
+    key: "leben", label: "Leben", href: "/wochenziele",
+    pfade: ["/wochenziele", "/routinen", "/m"],
+    kicker: "Ziele, Routinen, Essen",
+    seiten: [
+      { href: "/wochenziele", label: "Wochenziele" },
+      { href: "/routinen", label: "Routinen" },
+      { href: "/m/Essen", label: "Essen" },
+    ],
+    bild: { x: 92, y: 20, zoom: 1.25 },
+    icon: "M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z",
+  },
+];
 
-const GVA: NavConfig = {
-  home: { href: "/trading", label: "Übersicht" },
-  primary: [
-    { href: "/trading/cockpit", label: "Cockpit" },
-    { href: "/trading/einstellungen", label: "Alarme", auch: ["/trading/alarme"] },
-  ],
-  secondary: [],
-};
+const passt = (path: string, p: string) => path === p || path.startsWith(p + "/");
 
-const FUNDAMENTALS: NavConfig = {
-  home: { href: "/trading/fundamentals", label: "Fundamentals", auch: ["/trading/confluence"] },
-  primary: [
-    { href: "/trading/waehrungen", label: "Währungen" },
-    { href: "/trading/fundamentals/kalender", label: "Kalender" },
-    { href: "/trading/fundamentals/wochenideen", label: "Wochenaussicht" },
-    { href: "/trading/fundamentals/rueckrechnung", label: "Makro-Backtest" },
-  ],
-  secondary: [],
-};
-
-const JOURNAL: NavConfig = {
-  home: { href: "/trading/journal", label: "Journal" },
-  primary: [
-    { href: "/trading/backtest", label: "Backtest" },
-  ],
-  secondary: [],
-};
-
-const CONFIG: Record<Exclude<Section, null>, NavConfig> = {
-  gva: GVA, fundamentals: FUNDAMENTALS, journal: JOURNAL,
-};
-
-// Reihenfolge der Prüfung: die spezifischen Pfade zuerst — alles liegt unter
-// /trading und würde sonst von der GVA eingefangen.
-const JOURNAL_PATHS = ["/trading/journal", "/trading/backtest"];
-const FUNDAMENTALS_PATHS = ["/trading/fundamentals", "/trading/waehrungen", "/trading/confluence"];
-const GVA_PATHS = ["/trading"];
-
-const SECTION_LABEL: Record<Exclude<Section, null>, string> = {
-  gva: "GVA",
-  fundamentals: "Fundamentals",
-  journal: "Journal",
-};
-
-/** Der Einstieg in den jeweils anderen Bereich — ein Klick, kein Umweg. */
-const SECTION_HOME: Record<Exclude<Section, null>, string> = {
-  gva: "/trading",
-  fundamentals: "/trading/fundamentals",
-  journal: "/trading/journal",
-};
-
-function sectionOf(path: string): Section {
-  const in_ = (liste: string[]) => liste.some((p) => path === p || path.startsWith(p + "/"));
-  if (in_(JOURNAL_PATHS)) return "journal";
-  if (in_(FUNDAMENTALS_PATHS)) return "fundamentals";
-  if (in_(GVA_PATHS)) return "gva";
+/** Spezifische Bereiche zuerst — alles Trading liegt unter /trading. */
+function bereichVon(path: string): BereichDef | null {
+  if (path === "/") return BEREICHE[0];
+  for (const key of ["makro", "journal", "leben", "markt"] as const) {
+    const b = BEREICHE.find((x) => x.key === key)!;
+    if (b.pfade.some((p) => passt(path, p))) return b;
+  }
   return null;
+}
+
+/**
+ * Aktiv ist der längste passende Eintrag, nicht jeder passende — sonst
+ * leuchten auf /trading/fundamentals/kalender zwei Pillen.
+ */
+function aktiveSeite(path: string, seiten: Seite[]): string | null {
+  const treffer = seiten
+    .flatMap((s) => [s.href, ...(s.auch ?? [])].map((h) => ({ s: s.href, h })))
+    .filter((x) => passt(path, x.h))
+    .sort((a, b) => b.h.length - a.h.length)[0];
+  return treffer?.s ?? null;
 }
 
 export function Nav({ email }: { email?: string }) {
   const path = usePathname();
-  const section = sectionOf(path);
-  const config = section ? CONFIG[section] : GVA;
+  const bereich = bereichVon(path);
+  const start = bereich?.key === "heute";
+  const index = bereich ? BEREICHE.indexOf(bereich) : -1;
 
-  /**
-   * Aktiv ist der längste passende Eintrag, nicht jeder passende.
-   * Sonst leuchten auf /trading/backtest/auswertung gleich drei Punkte
-   * ("Übersicht", "Backtest", "Auswertung"), weil alle Präfixe passen.
-   */
-  const passt = (h: string) => path === h || path.startsWith(h + "/");
-
-  const treffer = [config.home, ...config.primary, ...config.secondary]
-    .flatMap((l) => [l.href, ...(l.auch ?? [])])
-    .filter((h) => !h.startsWith("http"))
-    .filter(passt)
-    .sort((a, b) => b.length - a.length)[0];
-
-  const isActive = (href: string) => {
-    const l = [config.home, ...config.primary, ...config.secondary]
-      .find((x) => x.href === href);
-    return href === treffer || (l?.auch ?? []).includes(treffer);
-  };
-
-  if (!section) {
-    return (
-      <header className="border-b border-line/70">
-        <div className="mx-auto flex max-w-6xl items-center justify-end px-5 py-3">
-          {path !== "/" && (
-            <Link href="/" className="mr-auto flex items-center gap-2 text-xs text-ink-muted
-                                      transition hover:text-ink-soft" title="Zur Startseite">
-              <Logo inverted className="h-6 w-6 rounded-md" />
-              Startseite
-            </Link>
-          )}
-          {email && <span className="mr-4 text-xs text-ink-faint">{email}</span>}
+  return (
+    <>
+      <header className={cx(
+        "z-30 mx-auto flex max-w-6xl items-center gap-3 px-4 pt-4",
+        start ? "absolute inset-x-0 top-0 text-photo" : "relative text-ink")}>
+        <Link href="/" className="font-display text-[19px] font-bold tracking-tight"
+          title="Zur Startseite">
+          Kerim<span className={start ? "text-[#AFC0FF]" : "text-accent"}>OS</span>
+        </Link>
+        <div className="ml-auto flex items-center gap-2">
+          {email && <span className={cx("hidden text-xs md:inline", start ? "text-photo/60" : "text-ink-faint")}>{email}</span>}
+          <ThemaSchalter aufFoto={start} />
           <form action="/auth/signout" method="post">
-            <button className="text-xs text-ink-muted transition hover:text-ink-soft">
+            <button className={cx("min-h-[44px] px-2 text-xs transition",
+              start ? "text-photo/70 hover:text-photo" : "text-ink-muted hover:text-ink-soft")}>
               Abmelden
             </button>
           </form>
         </div>
       </header>
-    );
-  }
 
-  return (
-    <header className="sticky top-0 z-20 border-b border-line/70 bg-card/80 backdrop-blur-xl">
-      <div className="mx-auto max-w-6xl px-5">
-        <div className="flex flex-wrap items-center gap-x-1 gap-y-2 pt-4">
-          <Link href="/" className="mr-3 flex items-center transition duration-150 ease-tactile active:scale-95"
-            title="Zurück zur Startseite">
-            <Logo inverted className="h-7 w-7 rounded-lg" />
-          </Link>
+      {bereich && !start && <Titelbild bereich={bereich} aktiv={aktiveSeite(path, bereich.seiten)} />}
 
-          {/* Bereichswechsel: GVA, Fundamentals, Journal — wie die Kacheln der Startseite. */}
-          <div className="mr-4 flex items-center gap-1 rounded-xl bg-sand p-1">
-            {(["gva", "fundamentals", "journal"] as const).map((s) => (
-              <Link key={s} href={SECTION_HOME[s]}
-                className={cx(
-                  "rounded-lg px-3 py-1 font-display text-sm font-bold transition duration-150",
-                  section === s ? "bg-card text-ink shadow-card" : "text-ink-muted hover:text-ink-soft")}>
-                {SECTION_LABEL[s]}
-              </Link>
-            ))}
-          </div>
-
-          <nav className="flex flex-wrap items-center gap-1">
-            {[config.home, ...config.primary].map((l) => (
-              <Link key={l.href} href={l.href}
-                className={cx(
-                  "rounded-xl px-3 py-1.5 text-sm transition duration-150 ease-tactile active:scale-95",
-                  isActive(l.href)
-                    ? "bg-accent font-medium text-ink-on shadow-glow-accent"
-                    : "text-ink-muted hover:bg-sand hover:text-ink-soft")}>
-                {l.label}
-              </Link>
-            ))}
-          </nav>
-
-          <div className="ml-auto flex items-center gap-4">
-            <Link href="/"
-              className="text-xs text-accent-soft transition hover:underline">
-              Zurück zum Dashboard
-            </Link>
-            <form action="/auth/signout" method="post">
-              <button className="text-xs text-ink-muted transition hover:text-ink-soft">
-                Abmelden
-              </button>
-            </form>
-          </div>
-        </div>
-
-        {/* Zweite Zeile nur, wenn der Bereich sie ueberhaupt hat. Trading hat
-            seit dem Umbau keine mehr - dann darf hier auch kein leerer
-            Streifen Platz wegnehmen. */}
-        {config.secondary.length > 0 && (
-        <nav className="flex flex-wrap items-center gap-x-5 gap-y-1 pb-3 pt-2.5">
-          {config.secondary.map((l) =>
-            l.href.startsWith("http") ? (
-              // Externe Ziele in neuem Tab, sonst verlässt man KerimOS unbemerkt
-              <a key={l.href} href={l.href} target="_blank" rel="noopener noreferrer"
-                className="text-xs text-ink-faint transition hover:text-ink-muted">
-                {l.label}
-              </a>
-            ) : (
-              <Link key={l.href} href={l.href}
-                className={cx("text-xs transition",
-                  isActive(l.href) ? "font-medium text-accent" : "text-ink-faint hover:text-ink-muted")}>
-                {l.label}
-              </Link>
-            )
-          )}
-        </nav>
+      {/* Die schwebende Leiste. Breite je Knopf als Variable, damit die
+          Markierung auf Handy (64 px) und Computer (76 px) gleich gleitet. */}
+      <nav aria-label="Bereiche"
+        className="fixed left-1/2 z-40 flex -translate-x-1/2 rounded-full border border-line bg-card/95 p-1.5
+                   shadow-float backdrop-blur [--tab:64px] sm:[--tab:76px] print:hidden"
+        style={{ bottom: "calc(14px + env(safe-area-inset-bottom))" }}>
+        {index >= 0 && (
+          <span aria-hidden
+            className="absolute left-1.5 top-1.5 h-14 w-[var(--tab)] rounded-full bg-ink
+                       transition-transform duration-[420ms] [transition-timing-function:cubic-bezier(.32,.72,0,1)]"
+            style={{ transform: `translateX(calc(${index} * var(--tab)))` }} />
         )}
-        {config.secondary.length === 0 && <div className="pb-3" />}
+        {BEREICHE.map((b) => {
+          const an = bereich?.key === b.key;
+          return (
+            <Link key={b.key} href={b.href} aria-current={an ? "page" : undefined}
+              className={cx(
+                "relative z-[1] flex h-14 w-[var(--tab)] flex-col items-center justify-center gap-0.5 rounded-full",
+                "text-xs font-semibold transition-colors duration-300",
+                an ? "text-paper" : "text-ink-muted hover:text-ink")}>
+              <svg viewBox="0 0 24 24" className="h-[19px] w-[19px]" fill="none" stroke="currentColor"
+                strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d={b.icon} />
+              </svg>
+              {b.label}
+            </Link>
+          );
+        })}
+      </nav>
+    </>
+  );
+}
+
+/**
+ * Titelbild eines Bereichs: ein Ausschnitt der Collage, darauf der Name
+ * und die Seiten als Pillen. Gezoomt wird um den Brennpunkt, damit derselbe
+ * Ausschnitt auf Handy und Computer im Bild bleibt.
+ */
+function Titelbild({ bereich, aktiv }: { bereich: BereichDef; aktiv: string | null }) {
+  const { x, y, zoom } = bereich.bild;
+  return (
+    <div className="mx-auto max-w-6xl px-4 pt-4 print:hidden">
+      <div className="relative isolate h-[170px] overflow-hidden rounded-[22px] bg-[#0B0C0F] text-photo sm:h-[210px]">
+        <div aria-hidden key={bereich.key} className="absolute inset-0 -z-20 animate-bannerIn">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/kompass-board.jpg" alt="" className="h-full w-full object-cover"
+            style={{ objectPosition: `${x}% ${y}%`, transform: `scale(${zoom})`, transformOrigin: `${x}% ${y}%` }} />
+        </div>
+        <div aria-hidden className="absolute inset-0 -z-10 bg-gradient-to-r from-[#090A0C]/90 via-[#090A0C]/50 to-[#090A0C]/15" />
+        <div className="absolute inset-x-5 bottom-4 flex flex-wrap items-end justify-between gap-3 sm:inset-x-7 sm:bottom-6">
+          <div>
+            <div className="text-sm text-photo/75">{bereich.kicker}</div>
+            <h2 className="mt-0.5 font-display text-[40px] font-bold leading-none tracking-tight sm:text-[52px]">
+              {bereich.label}
+            </h2>
+          </div>
+          {bereich.seiten.length > 1 && (
+            <nav aria-label={`Seiten in ${bereich.label}`}
+              className="-mx-1 flex max-w-full gap-1.5 overflow-x-auto px-1 pb-0.5">
+              {bereich.seiten.map((s) => (
+                <Link key={s.href} href={s.href} aria-current={aktiv === s.href ? "page" : undefined}
+                  className={cx(
+                    "shrink-0 rounded-full px-3.5 py-2 text-sm font-semibold transition duration-200 active:scale-[0.97]",
+                    aktiv === s.href ? "bg-photo text-[#111214]" : "kt-glas text-photo hover:bg-white/20")}>
+                  {s.label}
+                </Link>
+              ))}
+            </nav>
+          )}
+        </div>
       </div>
-    </header>
+    </div>
   );
 }

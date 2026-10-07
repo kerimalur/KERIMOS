@@ -32,8 +32,8 @@ import type { ZinsSchritt } from "@/lib/makro/bewertung";
  */
 
 const FARBE = ["#3987e5", "#d95926", "#199e70"] as const;
-const GITTER = "#2E2519";
-const ACHSE = "#7A6E5C";
+const GITTER = "rgb(var(--c-line))";
+const ACHSE = "rgb(var(--c-ink-faint))";
 
 const ZEITRAEUME = [
   { key: "6m", label: "6 Monate", monate: 6 },
@@ -221,13 +221,13 @@ function EbeneWirtschaft({ d, ab }: { d: EbenenDaten; ab: string }) {
                 axisLine={false} tickLine={false} minTickGap={40} />
               <YAxis orientation="right" width={36} tick={{ fill: ACHSE, fontSize: 10 }} axisLine={false} tickLine={false}
                 tickFormatter={(v: number) => `${v > 0 ? "+" : ""}${v.toFixed(0)}`} />
-              <ReferenceLine y={0} stroke="#9A8C74" strokeWidth={1.5}
+              <ReferenceLine y={0} stroke="rgb(var(--c-ink-muted))" strokeWidth={1.5}
                 label={{ value: "Schwelle (PMI 50 · BIP 0 %)", position: "insideBottomLeft", fill: ACHSE, fontSize: 10 }} />
-              <Tooltip cursor={{ stroke: "#9A8C74" }} content={({ active, payload, label }) => {
+              <Tooltip cursor={{ stroke: "rgb(var(--c-ink-muted))" }} content={({ active, payload, label }) => {
                 if (!active || !payload?.length) return null;
                 const z = payload[0].payload as Zeile;
                 return (
-                  <div className="rounded-lg border border-line-strong bg-[#17130F] px-3 py-2 text-xs shadow-card">
+                  <div className="rounded-lg border border-line-strong bg-paper px-3 py-2 text-xs shadow-card">
                     <p className="mb-1 text-ink-faint">{tagLang(String(label))}</p>
                     {serien.map((s, i) => z[`${s.key}_roh`] !== undefined && (
                       <p key={s.key} className="flex items-center gap-2 text-ink-soft">
@@ -243,8 +243,8 @@ function EbeneWirtschaft({ d, ab }: { d: EbenenDaten; ab: string }) {
                 formatter={(v: string) => <span className="text-xs text-ink-soft">{v}</span>} />
               {serien.map((s, i) => (
                 <Line key={s.key} name={s.name} dataKey={s.key} stroke={FARBE[i]} strokeWidth={2}
-                  dot={s.key === "bip" ? { r: 4, fill: FARBE[i], stroke: "#1E1811", strokeWidth: 2 } : false}
-                  activeDot={{ r: 5, stroke: "#1E1811", strokeWidth: 2 }}
+                  dot={s.key === "bip" ? { r: 4, fill: FARBE[i], stroke: "rgb(var(--c-card))", strokeWidth: 2 } : false}
+                  activeDot={{ r: 5, stroke: "rgb(var(--c-card))", strokeWidth: 2 }}
                   connectNulls type="monotone" isAnimationActive={false} />
               ))}
             </LineChart>
@@ -334,13 +334,13 @@ function EbeneZentralbank({ d, ab }: { d: EbenenDaten; ab: string }) {
                 axisLine={false} tickLine={false} minTickGap={40} />
               <YAxis orientation="right" width={36} tick={{ fill: ACHSE, fontSize: 10 }} axisLine={false} tickLine={false}
                 tickFormatter={(v: number) => `${v.toFixed(1)}`} />
-              <ReferenceLine y={2} stroke="#9A8C74" strokeDasharray="4 4"
+              <ReferenceLine y={2} stroke="rgb(var(--c-ink-muted))" strokeDasharray="4 4"
                 label={{ value: "2 % Inflationsziel", position: "insideTopLeft", fill: ACHSE, fontSize: 10 }} />
-              <Tooltip cursor={{ stroke: "#9A8C74" }} content={({ active, payload, label }) => {
+              <Tooltip cursor={{ stroke: "rgb(var(--c-ink-muted))" }} content={({ active, payload, label }) => {
                 if (!active || !payload?.length) return null;
                 const z = payload[0].payload as Zeile;
                 return (
-                  <div className="rounded-lg border border-line-strong bg-[#17130F] px-3 py-2 text-xs shadow-card">
+                  <div className="rounded-lg border border-line-strong bg-paper px-3 py-2 text-xs shadow-card">
                     <p className="mb-1 text-ink-faint">{tagLang(String(label))}</p>
                     {serien.map((s, i) => z[s.key] !== undefined && (
                       <p key={s.key} className="flex items-center gap-2 text-ink-soft">
@@ -355,13 +355,13 @@ function EbeneZentralbank({ d, ab }: { d: EbenenDaten; ab: string }) {
                 formatter={(v: string) => <span className="text-xs text-ink-soft">{v}</span>} />
               {serien.map((s, i) => (
                 <Line key={s.key} name={s.name} dataKey={s.key} stroke={FARBE[i]} strokeWidth={2}
-                  dot={false} activeDot={{ r: 5, stroke: "#1E1811", strokeWidth: 2 }}
+                  dot={false} activeDot={{ r: 5, stroke: "rgb(var(--c-card))", strokeWidth: 2 }}
                   connectNulls type={s.stufe ? "stepAfter" : "monotone"} isAnimationActive={false} />
               ))}
               {/* Jeder Zinsschritt als Punkt auf der Leitzins-Treppe: grün erhöht, rot gesenkt. */}
               {imFenster.map((s) => (
                 <ReferenceDot key={s.datum} x={daten.find((z) => z.datum >= s.datum)?.datum ?? s.datum} y={s.neu}
-                  r={5} fill={s.bps > 0 ? "#5FC2A6" : "#E28B72"} stroke="#1E1811" strokeWidth={2} />
+                  r={5} fill={s.bps > 0 ? "rgb(var(--c-good))" : "rgb(var(--c-bad))"} stroke="rgb(var(--c-card))" strokeWidth={2} />
               ))}
             </LineChart>
           </ResponsiveContainer>
@@ -455,12 +455,12 @@ function EbeneSentiment({ d, ab }: { d: EbenenDaten; ab: string }) {
                     axisLine={false} tickLine={false} minTickGap={40} />
                   <YAxis orientation="right" width={36} tick={{ fill: ACHSE, fontSize: 10 }} axisLine={false} tickLine={false}
                     tickFormatter={(v: number) => `${v.toFixed(0)}`} />
-                  <ReferenceLine y={0} stroke="#9A8C74" strokeWidth={1.5} />
-                  <Tooltip cursor={{ stroke: "#9A8C74" }} content={({ active, payload, label }) => {
+                  <ReferenceLine y={0} stroke="rgb(var(--c-ink-muted))" strokeWidth={1.5} />
+                  <Tooltip cursor={{ stroke: "rgb(var(--c-ink-muted))" }} content={({ active, payload, label }) => {
                     if (!active || !payload?.length) return null;
                     const z = payload[0].payload as Zeile;
                     return (
-                      <div className="rounded-lg border border-line-strong bg-[#17130F] px-3 py-2 text-xs shadow-card">
+                      <div className="rounded-lg border border-line-strong bg-paper px-3 py-2 text-xs shadow-card">
                         <p className="mb-1 text-ink-faint">{tagLang(String(label))}</p>
                         {serien.map((s, i) => z[s.key] !== undefined && (
                           <p key={s.key} className="flex items-center gap-2 text-ink-soft">
@@ -534,7 +534,7 @@ function KontextListe({ titel, liste, ccy, ab }: { titel: string; liste: Indikat
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={p}>
                       <YAxis hide domain={["dataMin", "dataMax"]} />
-                      <Line dataKey="wert" stroke={i.status === "veraltet" ? "#7A6E5C" : "#E7A96B"} strokeWidth={1.5}
+                      <Line dataKey="wert" stroke={i.status === "veraltet" ? "rgb(var(--c-ink-faint))" : "rgb(var(--c-accent))"} strokeWidth={1.5}
                         dot={false} isAnimationActive={false} type={i.stufe ? "stepAfter" : "monotone"} />
                     </LineChart>
                   </ResponsiveContainer>

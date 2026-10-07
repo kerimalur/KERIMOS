@@ -16,11 +16,10 @@ import type { ChartBild } from "@/lib/trading/hit-detail";
  */
 
 /**
- * Farben als Literale und nicht als CSS-Variablen: die Palette steht in
- * tailwind.config.ts, nicht in :root — `var(--good)` wäre in SVG schlicht
- * leer und die Kerzen unsichtbar.
+ * Farben aus den Variablen in globals.css (seit Design D, 07.10.2026, stehen
+ * sie in :root und .dark) — so passen die Kerzen zu hell und dunkel.
  */
-const FARBE = { good: "#5FC2A6", bad: "#E28B72", accent: "#E7A96B" } as const;
+const FARBE = { good: "rgb(var(--c-good))", bad: "rgb(var(--c-bad))", accent: "rgb(var(--c-accent))" } as const;
 
 const B = 520;   // viewBox-Breite
 const H = 260;   // viewBox-Höhe

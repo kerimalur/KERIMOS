@@ -37,7 +37,8 @@
     "check:ersatz": "npx -y tsx tools/checks/ersatz.mts",
     "check:releases": "npx -y tsx tools/checks/releases.mts",
     "check:einordnung": "npx -y tsx tools/checks/einordnung.mts",
-    "check:varianten": "npx -y tsx tools/checks/varianten.mts"
+    "check:varianten": "npx -y tsx tools/checks/varianten.mts",
+    "check:zweijahr": "npx -y tsx tools/checks/zweijahr.mts"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.1.0",

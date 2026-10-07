@@ -40,22 +40,30 @@ export function Brett() {
         style={{ width: "min(100%, 110vh)", aspectRatio: BRETT_VERHAELTNIS }}
       >
         {KACHELN.map((k) => (
-          <div key={k.id} className="absolute p-[3px]"
-            style={{ left: `${k.x}%`, top: `${k.y}%`, width: `${k.w}%`, height: `${k.h}%` }}>
+          // Design D: das Brett setzt sich beim Laden Spalte für Spalte
+          // zusammen — die Fläche wird von unten aufgedeckt.
+          <div key={k.id} className="absolute animate-assemble p-[3px]"
+            style={{ left: `${k.x}%`, top: `${k.y}%`, width: `${k.w}%`, height: `${k.h}%`,
+              animationDelay: `${spalte(k) * 90 + (k.y > 0 ? 60 : 0)}ms` }}>
             <Feld k={k} bild={ausschnitt(k)} />
           </div>
         ))}
       </div>
 
       <div className="grid grid-cols-2 gap-2.5 md:hidden">
-        {KACHELN.filter((k) => k.art !== "frei").map((k) => (
-          <div key={k.id} className="aspect-[4/3]">
+        {KACHELN.filter((k) => k.art !== "frei").map((k, i) => (
+          <div key={k.id} className="aspect-[4/3] animate-assemble" style={{ animationDelay: `${i * 45}ms` }}>
             <Feld k={k} bild={ausschnittMobil(k)} />
           </div>
         ))}
       </div>
     </>
   );
+}
+
+/** Spalte 0–4 nach den Nähten der Collage (17 / 35.5 / 58 / 80.8). */
+function spalte(k: Kachel): number {
+  return k.x < 17 ? 0 : k.x < 35.5 ? 1 : k.x < 58 ? 2 : k.x < 80.8 ? 3 : 4;
 }
 
 /* ------------------------------------------------------------- Ein Feld */
@@ -87,8 +95,8 @@ function Inneres({ k, bild }: { k: Kachel; bild: React.CSSProperties }) {
     <>
       <div
         aria-hidden
-        className="absolute inset-0 transition-transform duration-[450ms] ease-tactile
-                   group-hover:scale-[1.06]"
+        className="absolute inset-0 transition-transform duration-700 ease-tactile
+                   group-hover:scale-[1.07]"
         style={bild}
       />
       {/* Ohne diesen Verlauf ist die Schrift auf hellen Ausschnitten (Rolex,
@@ -101,8 +109,12 @@ function Inneres({ k, bild }: { k: Kachel; bild: React.CSSProperties }) {
                          drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)] sm:text-[15px]">
           {k.name}
         </span>
+        {/* Mit Maus erscheint die Unterzeile erst beim Überfahren — ruhigeres
+            Brett. Auf Touch-Geräten steht sie immer da. */}
         <span className="mt-0.5 block text-[10px] leading-tight text-white/70
-                         drop-shadow-[0_2px_6px_rgba(0,0,0,0.9)] sm:text-[11px]">
+                         drop-shadow-[0_2px_6px_rgba(0,0,0,0.9)] transition duration-300 ease-tactile sm:text-[11px]
+                         [@media(hover:hover)]:translate-y-1 [@media(hover:hover)]:opacity-0
+                         [@media(hover:hover)]:group-hover:translate-y-0 [@media(hover:hover)]:group-hover:opacity-100">
           {k.unterzeile}
         </span>
       </div>

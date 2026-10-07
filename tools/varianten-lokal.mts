@@ -22,7 +22,9 @@ const { PAARE } = await import("../src/lib/trading/journal");
 const V = await import("../src/lib/makro/varianten-rechnen");
 
 const t0 = Date.now();
-const { wochen, komponenten } = await komponentenProWoche();
+// --ab=YYYY-MM-DD (05.10.2026): früherer Start, z.B. --ab=2022-01-03 für den Zusatztest.
+const abArg = process.argv.find((a) => a.startsWith("--ab="))?.slice(5);
+const { wochen, komponenten } = await komponentenProWoche(abArg);
 console.error(`Komponenten: ${wochen.length} Wochen in ${Math.round((Date.now() - t0) / 1000)} s`);
 const letzte = komponenten.get(wochen[wochen.length - 1]) ?? {};
 console.error(`Kontrolle letzte Woche, 2J-Rendite: ${G8.map((c) => `${c} ${letzte[c]?.zweiJahr ?? "—"}`).join(" · ")}`);
@@ -54,7 +56,7 @@ const kerzen = new Map<string, { zeit: string; open: number; close: number }[]>(
 for (const p of fx) {
   const inst = `${p.slice(0, 3)}_${p.slice(3)}`;
   const { data, error } = await db.from("price_daily").select("date, open, close")
-    .eq("instrument", inst).gte("date", "2024-02-01").order("date", { ascending: true }).limit(5000);
+    .eq("instrument", inst).gte("date", abArg ? new Date(Date.parse(`${abArg}T00:00:00Z`) - 30 * 86_400_000).toISOString().slice(0, 10) : "2024-02-01").order("date", { ascending: true }).limit(5000);
   if (error) throw new Error(`${inst}: ${error.message}`);
   // OANDA-Tageskerzen sind nach ihrem Beginn datiert (Sonntag 22:00 UTC = Montagskerze).
   kerzen.set(p, (data ?? []).map((r: Record<string, unknown>) => ({
@@ -74,7 +76,7 @@ for (const v of V.VARIANTEN) {
   }
 }
 const bild = V.variantenBild(zeilen);
-const ausgabe = process.argv[2];
+const ausgabe = process.argv.slice(2).find((a) => !a.startsWith("--"));
 if (ausgabe) fs.writeFileSync(ausgabe, JSON.stringify({ bild, zeilen: zeilen.length }, null, 1));
 
 for (const f of ["alle", "extrem"] as const) {

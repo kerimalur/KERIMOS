@@ -168,9 +168,9 @@ export function VerteilungKarte({ verteilung, gesamt }: {
             <span className="w-40 shrink-0 text-xs text-ink-muted">{URTEIL_LABEL[a.urteil]}</span>
             <span className="flex-1">
               <Bar pct={a.anteil * 100}
-                color={TON[a.urteil] === "good" ? "var(--good, #6BBF8A)"
-                  : TON[a.urteil] === "bad" ? "var(--bad, #D97070)"
-                    : "var(--accent, #E7A96B)"} />
+                color={TON[a.urteil] === "good" ? "rgb(var(--c-good))"
+                  : TON[a.urteil] === "bad" ? "rgb(var(--c-bad))"
+                    : "rgb(var(--c-accent))"} />
             </span>
             <span className="num w-20 shrink-0 text-right text-xs text-ink-faint">
               {a.n} · {(a.anteil * 100).toFixed(0)} %

@@ -1,17 +1,18 @@
 import type { Metadata, Viewport } from "next";
-import { Sora, Manrope, IBM_Plex_Mono } from "next/font/google";
+import { Bricolage_Grotesque, Hanken_Grotesk, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { Nav } from "@/components/nav";
-import { AmbientBg } from "@/components/ambient-bg";
+import { THEMA_SKRIPT } from "@/components/thema-schalter";
 import { createClient } from "@/lib/supabase/server";
 
-// Sora für Überschriften und grosse Zahlen, Manrope für Fliesstext,
-// Plex Mono überall dort, wo Ziffern untereinander stehen sollen.
-const sora = Sora({
-  subsets: ["latin"], weight: ["600", "700"], variable: "--font-sora", display: "swap",
+// Design D (07.10.2026): Bricolage Grotesque für Überschriften und grosse
+// Zahlen, Hanken Grotesk für Fliesstext, Plex Mono wo Ziffern untereinander
+// stehen sollen.
+const bricolage = Bricolage_Grotesque({
+  subsets: ["latin"], weight: ["500", "600", "700", "800"], variable: "--font-bricolage", display: "swap",
 });
-const manrope = Manrope({
-  subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-manrope", display: "swap",
+const hanken = Hanken_Grotesk({
+  subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-hanken", display: "swap",
 });
 const plexMono = IBM_Plex_Mono({
   subsets: ["latin"], weight: ["400", "500"], variable: "--font-plex-mono", display: "swap",
@@ -29,7 +30,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#17130F",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#F3F3F0" },
+    { media: "(prefers-color-scheme: dark)", color: "#101114" },
+  ],
   // Ohne das sitzt die installierte App unter der Android-Statusleiste.
   viewportFit: "cover",
 };
@@ -39,14 +43,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const { data: { user } } = await supabase.auth.getUser();
 
   return (
-    <html lang="de-CH"
-      className={`${sora.variable} ${manrope.variable} ${plexMono.variable}`}>
+    // suppressHydrationWarning: die Klasse `dark` setzt das Skript im Kopf
+    // vor React — sonst meldet React einen Unterschied, den es selbst nicht hat.
+    <html lang="de-CH" suppressHydrationWarning
+      className={`${bricolage.variable} ${hanken.variable} ${plexMono.variable}`}>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEMA_SKRIPT }} />
+      </head>
       <body className="min-h-screen font-sans">
-        <AmbientBg />
-        <div className="kt-content">
-          {user && <Nav email={user.email ?? undefined} />}
-          <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
-        </div>
+        {user && <Nav email={user.email ?? undefined} />}
+        {/* Unten Platz für die schwebende Leiste. */}
+        <main className="mx-auto max-w-6xl px-4 pb-32 pt-6">{children}</main>
       </body>
     </html>
   );

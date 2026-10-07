@@ -24,9 +24,9 @@ import {
  */
 
 const FARBE: Record<Lage, { bahn: string; strich: string; text: string }> = {
-  offen: { bahn: "#3A2A20", strich: "#E7A96B", text: "text-ink" },
-  gut: { bahn: "#1C2B23", strich: "#5FC2A6", text: "text-good-bright" },
-  drueber: { bahn: "#2E1C1A", strich: "#E28B72", text: "text-bad-bright" },
+  offen: { bahn: "rgb(var(--c-warn-tint))", strich: "rgb(var(--c-accent))", text: "text-ink" },
+  gut: { bahn: "rgb(var(--c-good-tint))", strich: "rgb(var(--c-good))", text: "text-good-bright" },
+  drueber: { bahn: "rgb(var(--c-bad-tint))", strich: "rgb(var(--c-bad))", text: "text-bad-bright" },
 };
 
 const zahl = (n: number) => Math.round(n).toLocaleString("de-CH");

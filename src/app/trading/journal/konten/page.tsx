@@ -142,7 +142,7 @@ function KontoKarte({ k, konto }: { k: KontoVerlauf; konto: Konto }) {
             </div>
             <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-soft">
               <input type="checkbox" name="isActive" defaultChecked={konto.isActive}
-                className="accent-[#E7A96B]" />
+                className="accent-accent" />
               aktiv
             </label>
             <div className="flex items-center gap-2">
@@ -252,7 +252,7 @@ export default async function KontenSeite() {
             </div>
           </div>
           <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-soft">
-            <input type="checkbox" name="isActive" defaultChecked className="accent-[#E7A96B]" />
+            <input type="checkbox" name="isActive" defaultChecked className="accent-accent" />
             aktiv
           </label>
           <Button type="submit">Konto anlegen</Button>

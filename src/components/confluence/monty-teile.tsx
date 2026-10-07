@@ -167,8 +167,8 @@ export function SaisonZeile({ bild }: { bild: SaisonBild }) {
  * seine Schwellen 0,4 (neutral endet) und 1,0 (stark beginnt); der Punkt am
  * Balkenende erscheint, wenn zusätzlich die 90/10-Streckung greift.
  */
-const LANG = "#5FC2A6";
-const KURZ = "#E28B72";
+const LANG = "rgb(var(--c-good))";
+const KURZ = "rgb(var(--c-bad))";
 
 /** Bias −2…+2 auf die halbe Breite abbilden. */
 const anteil = (v: number) => Math.min(50, Math.abs(v) / 2 * 50);
@@ -197,7 +197,7 @@ export function SynthPaarGrafik({ bilder }: { bilder: SynthBild[] }) {
           const bias = b.bias as number;
           const links = bias < 0;
           const farbe = Math.abs(bias) < SYNTH.neutral
-            ? "#7A6E5C" : links ? KURZ : LANG;
+            ? "rgb(var(--c-ink-faint))" : links ? KURZ : LANG;
           const breite = anteil(bias);
 
           return (

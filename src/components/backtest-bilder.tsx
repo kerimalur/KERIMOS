@@ -63,10 +63,10 @@ export function DrawdownFlaeche({ punkte }: { punkte: DrawdownPunkt[] }) {
   return (
     <svg viewBox={`0 0 ${B} ${H}`} className="h-28 w-full" preserveAspectRatio="none"
       role="img" aria-label="Rückschlag gegenüber dem bisherigen Höchststand in R">
-      <path d={flaeche} fill="#E28B72" opacity="0.18" />
-      <path d={pfad} fill="none" stroke="#E28B72" strokeWidth="1.5"
+      <path d={flaeche} fill="rgb(var(--c-bad))" opacity="0.18" />
+      <path d={pfad} fill="none" stroke="rgb(var(--c-bad))" strokeWidth="1.5"
         strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
-      <line x1={PAD} x2={B - PAD} y1={y(0)} y2={y(0)} stroke="#2E2519" strokeWidth="1"
+      <line x1={PAD} x2={B - PAD} y1={y(0)} y2={y(0)} stroke="rgb(var(--c-line))" strokeWidth="1"
         vectorEffect="non-scaling-stroke" />
     </svg>
   );

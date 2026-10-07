@@ -60,7 +60,7 @@ export function EquityChart({ punkte }: { punkte: EquityPunkt[] }) {
   }
 
   const positiv = punkte[punkte.length - 1].kumuliert >= 0;
-  const farbe = positiv ? "#5FC2A6" : "#E28B72";
+  const farbe = positiv ? "rgb(var(--c-good))" : "rgb(var(--c-bad))";
 
   return (
     <div className="h-[300px] w-full">
@@ -72,14 +72,14 @@ export function EquityChart({ punkte }: { punkte: EquityPunkt[] }) {
               <stop offset="100%" stopColor={farbe} stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid stroke="#2E2519" strokeDasharray="3 3" vertical={false} />
-          <XAxis dataKey="nr" tick={{ fill: "#7A6E5C", fontSize: 11 }}
-            axisLine={{ stroke: "#2E2519" }} tickLine={false} />
-          <YAxis tick={{ fill: "#7A6E5C", fontSize: 11 }}
+          <CartesianGrid stroke="rgb(var(--c-line))" strokeDasharray="3 3" vertical={false} />
+          <XAxis dataKey="nr" tick={{ fill: "rgb(var(--c-ink-faint))", fontSize: 11 }}
+            axisLine={{ stroke: "rgb(var(--c-line))" }} tickLine={false} />
+          <YAxis tick={{ fill: "rgb(var(--c-ink-faint))", fontSize: 11 }}
             axisLine={false} tickLine={false} width={46}
             tickFormatter={(v: number) => `${v} R`} />
-          <ReferenceLine y={0} stroke="#3E3222" strokeWidth={1.5} />
-          <Tooltip content={<Hinweis />} cursor={{ stroke: "#3E3222" }} />
+          <ReferenceLine y={0} stroke="rgb(var(--c-line-strong))" strokeWidth={1.5} />
+          <Tooltip content={<Hinweis />} cursor={{ stroke: "rgb(var(--c-line-strong))" }} />
           <Area type="monotone" dataKey="kumuliert" stroke={farbe} strokeWidth={2}
             fill="url(#equityFill)" dot={false} />
         </AreaChart>

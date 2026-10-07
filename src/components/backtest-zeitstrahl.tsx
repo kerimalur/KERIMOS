@@ -35,11 +35,11 @@ const PAD_L = 38, PAD_R = 10, PAD_Y = 12;
 const H_GROSS = 156, H_FACETTE = 62, H_RASTER = 190, PAD_B = 20;
 
 /** Zone, in der die Spur für Long spricht — bewusst nicht grün: „für Long" ist nicht „gut". */
-const FARBE_LONG = "#6FA3D8";
-const FARBE_SHORT = "#E7A96B";
-const FARBE_LINIE = "#C4B4EE";
-const FARBE_GEGEN = "#9A8C74";
-const FARBE_GITTER = "#3E3222";
+const FARBE_LONG = "rgb(var(--c-zeit))";
+const FARBE_SHORT = "rgb(var(--c-accent))";
+const FARBE_LINIE = "rgb(var(--c-trading-bright))";
+const FARBE_GEGEN = "rgb(var(--c-ink-muted))";
+const FARBE_GITTER = "rgb(var(--c-line-strong))";
 
 const MONAT_KURZ = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun",
   "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
@@ -144,7 +144,7 @@ function Marke({
     : `M${x},${y + 5.2} L${x - 4.6},${y - 3.4} L${x + 4.6},${y - 3.4} Z`;
 
   return (
-    <path {...gemeinsam} d={d} fill={farbe} stroke="#17130F" strokeWidth={0.9}>
+    <path {...gemeinsam} d={d} fill={farbe} stroke="rgb(var(--c-paper))" strokeWidth={0.9}>
       <title>
         {`${datumDE(trade.datum)} · ${trade.richtung > 0 ? "Long" : "Short"} · `
           + `${RESULT_LABEL[trade.ergebnis]}`}
@@ -221,23 +221,23 @@ function SpurFlaeche({
               opacity={g.jahr ? 0.55 : 0.22} />
             {achse && g.label && (
               <text x={x(g.t) + 3} y={PAD_Y - 3} fontSize={9}
-                fill="#7A6E5C" className="tabular">{g.label}</text>
+                fill="rgb(var(--c-ink-faint))" className="tabular">{g.label}</text>
             )}
           </g>
         ))}
 
         {/* Mittelachse. */}
         <line x1={PAD_L} y1={y(spur.mitte)} x2={B - PAD_R} y2={y(spur.mitte)}
-          stroke="#3E3222" strokeWidth={1} strokeDasharray="3 3" />
+          stroke="rgb(var(--c-line-strong))" strokeWidth={1} strokeDasharray="3 3" />
 
         {achse && (
           <>
             <text x={PAD_L - 5} y={y(spur.max) + 3} fontSize={9} textAnchor="end"
-              fill="#7A6E5C" className="tabular">{spur.max.toFixed(spur.max >= 10 ? 0 : 1)}</text>
+              fill="rgb(var(--c-ink-faint))" className="tabular">{spur.max.toFixed(spur.max >= 10 ? 0 : 1)}</text>
             <text x={PAD_L - 5} y={y(spur.mitte) + 3} fontSize={9} textAnchor="end"
-              fill="#7A6E5C" className="tabular">{spur.mitte.toFixed(spur.mitte >= 10 ? 0 : 1)}</text>
+              fill="rgb(var(--c-ink-faint))" className="tabular">{spur.mitte.toFixed(spur.mitte >= 10 ? 0 : 1)}</text>
             <text x={PAD_L - 5} y={y(spur.min) + 3} fontSize={9} textAnchor="end"
-              fill="#7A6E5C" className="tabular">{spur.min.toFixed(spur.min <= -10 || spur.min >= 10 ? 0 : 1)}</text>
+              fill="rgb(var(--c-ink-faint))" className="tabular">{spur.min.toFixed(spur.min <= -10 || spur.min >= 10 ? 0 : 1)}</text>
           </>
         )}
 
@@ -330,7 +330,7 @@ function MonatsRaster({
     <svg viewBox={`0 0 ${B} ${hoehe}`} className="block w-full select-none" role="img"
       aria-label={`${spur.titel}, alle Jahre in zwölf Monatsspalten`}>
       <line x1={PAD_L} y1={y(spur.mitte)} x2={B - PAD_R} y2={y(spur.mitte)}
-        stroke="#3E3222" strokeWidth={1} strokeDasharray="3 3" />
+        stroke="rgb(var(--c-line-strong))" strokeWidth={1} strokeDasharray="3 3" />
 
       {Array.from({ length: 12 }, (_, i) => {
         const x0 = PAD_L + i * spalte;
@@ -341,7 +341,7 @@ function MonatsRaster({
           <g key={i}>
             {i % 2 === 0 && (
               <rect x={x0} y={PAD_Y} width={spalte} height={hoehe - PAD_Y - PAD_B}
-                fill="#271F16" opacity={0.45} />
+                fill="rgb(var(--c-sand))" opacity={0.45} />
             )}
             <line x1={x0} y1={PAD_Y} x2={x0} y2={hoehe - PAD_B}
               stroke={FARBE_GITTER} strokeWidth={0.6} opacity={0.6} />
@@ -367,12 +367,12 @@ function MonatsRaster({
             })}
 
             <text x={x0 + spalte / 2} y={hoehe - 8} fontSize={9} textAnchor="middle"
-              fill={liste.length === 0 ? "#7A6E5C" : summeR < 0 ? "#F0A08A" : "#CBC0AC"}>
+              fill={liste.length === 0 ? "rgb(var(--c-ink-faint))" : summeR < 0 ? "rgb(var(--c-bad-bright))" : "rgb(var(--c-ink-soft))"}>
               {MONAT_KURZ[i]}
             </text>
             {liste.length > 0 && (
               <text x={x0 + spalte / 2} y={hoehe - 0.5} fontSize={8} textAnchor="middle"
-                fill="#7A6E5C" className="tabular">
+                fill="rgb(var(--c-ink-faint))" className="tabular">
                 {liste.length}· {summeR > 0 ? "+" : ""}{summeR.toFixed(1)}R
               </text>
             )}
@@ -383,19 +383,19 @@ function MonatsRaster({
       <line x1={B - PAD_R} y1={PAD_Y} x2={B - PAD_R} y2={hoehe - PAD_B}
         stroke={FARBE_GITTER} strokeWidth={0.6} opacity={0.6} />
       <text x={PAD_L - 5} y={y(spur.max) + 3} fontSize={9} textAnchor="end"
-        fill="#7A6E5C" className="tabular">{spur.max.toFixed(spur.max >= 10 ? 0 : 1)}</text>
+        fill="rgb(var(--c-ink-faint))" className="tabular">{spur.max.toFixed(spur.max >= 10 ? 0 : 1)}</text>
       <text x={PAD_L - 5} y={y(spur.mitte) + 3} fontSize={9} textAnchor="end"
-        fill="#7A6E5C" className="tabular">{spur.mitte.toFixed(spur.mitte >= 10 ? 0 : 1)}</text>
+        fill="rgb(var(--c-ink-faint))" className="tabular">{spur.mitte.toFixed(spur.mitte >= 10 ? 0 : 1)}</text>
       <text id={id} x={PAD_L - 5} y={y(spur.min) + 3} fontSize={9} textAnchor="end"
-        fill="#7A6E5C" className="tabular">{spur.min.toFixed(Math.abs(spur.min) >= 10 ? 0 : 1)}</text>
+        fill="rgb(var(--c-ink-faint))" className="tabular">{spur.min.toFixed(Math.abs(spur.min) >= 10 ? 0 : 1)}</text>
     </svg>
   );
 }
 
 /* --------------------------------------------------- Zwei Equity-Kurven */
 
-const FARBE_DAFUER = "#7EE0C6";
-const FARBE_DAGEGEN = "#F0A08A";
+const FARBE_DAFUER = "rgb(var(--c-good-bright))";
+const FARBE_DAGEGEN = "rgb(var(--c-bad-bright))";
 
 /** Ab so vielen Trades je Seite lohnt der Vergleich überhaupt hinzusehen. */
 const MIN_KURVE = 5;
@@ -476,15 +476,15 @@ function SpurEquity({ spur, trades }: { spur: Spur; trades: ZeitstrahlTrade[] })
       <svg viewBox={`0 0 ${B} ${H}`} className="block w-full" role="img"
         aria-label={`R-Kurven mit und gegen ${spur.titel}`}>
         <line x1={PAD_L} y1={y(0)} x2={B - PAD_R} y2={y(0)}
-          stroke="#3E3222" strokeWidth={1} strokeDasharray="3 3" />
+          stroke="rgb(var(--c-line-strong))" strokeWidth={1} strokeDasharray="3 3" />
         <path d={pfad(b)} fill="none" stroke={FARBE_DAGEGEN} strokeWidth={1.8}
           strokeLinecap="round" strokeLinejoin="round" />
         <path d={pfad(a)} fill="none" stroke={FARBE_DAFUER} strokeWidth={1.8}
           strokeLinecap="round" strokeLinejoin="round" />
         <text x={PAD_L - 5} y={y(max) + 3} fontSize={9} textAnchor="end"
-          fill="#7A6E5C" className="tabular">{max.toFixed(0)}</text>
+          fill="rgb(var(--c-ink-faint))" className="tabular">{max.toFixed(0)}</text>
         <text x={PAD_L - 5} y={y(min) + 3} fontSize={9} textAnchor="end"
-          fill="#7A6E5C" className="tabular">{min.toFixed(0)}</text>
+          fill="rgb(var(--c-ink-faint))" className="tabular">{min.toFixed(0)}</text>
       </svg>
       <div className="mt-2 space-y-1">
         {zeile("dafür", dafuer, FARBE_DAFUER)}
@@ -885,7 +885,7 @@ export function BacktestZeitstrahl({
                   : "cursor-not-allowed text-ink-faint/60")}>
                 <input type="checkbox" checked={getrennt} disabled={filter !== "alle"}
                   onChange={(e) => setGetrennt(e.target.checked)}
-                  className="h-3 w-3 accent-[#E7A96B]" />
+                  className="h-3 w-3 accent-accent" />
                 TP und SL getrennt
               </label>
             )}
@@ -893,7 +893,7 @@ export function BacktestZeitstrahl({
               <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-ink-muted">
                 <input type="checkbox" checked={gegen}
                   onChange={(e) => setGegen(e.target.checked)}
-                  className="h-3 w-3 accent-[#E7A96B]" />
+                  className="h-3 w-3 accent-accent" />
                 Retail-Linie
               </label>
             )}
@@ -903,13 +903,13 @@ export function BacktestZeitstrahl({
         <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2 text-[10px] text-ink-faint">
           <span className="flex items-center gap-1.5">
             <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden>
-              <path d="M6,1.5 L10.5,9.5 L1.5,9.5 Z" fill="#CBC0AC" />
+              <path d="M6,1.5 L10.5,9.5 L1.5,9.5 Z" fill="rgb(var(--c-ink-soft))" />
             </svg>
             Long
           </span>
           <span className="flex items-center gap-1.5">
             <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden>
-              <path d="M6,10.5 L1.5,2.5 L10.5,2.5 Z" fill="#CBC0AC" />
+              <path d="M6,10.5 L1.5,2.5 L10.5,2.5 Z" fill="rgb(var(--c-ink-soft))" />
             </svg>
             Short
           </span>

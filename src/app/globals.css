@@ -2,27 +2,108 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: dark; }
+/* ─────────────────────────────────────────────────────────────── Farben
+   Design D „Fokus mit Brett“ (07.10.2026). Jede Farbe als RGB-Kanäle, damit
+   Tailwind die Deckkraft anhängen kann (`bg-card/80`). Hell ist der Grund-
+   zustand, `.dark` auf <html> schaltet um. Welcher Modus gilt, entscheidet
+   das kleine Skript im <head> (layout.tsx) noch vor dem ersten Bild —
+   gespeicherte Wahl, sonst das System. */
+:root {
+  color-scheme: light;
+  --c-paper: 243 243 240;
+  --c-card: 255 255 255;
+  --c-sand: 236 236 231;
+  --c-field: 255 255 255;
+  --c-line: 222 222 216;
+  --c-line-strong: 201 201 194;
+  --c-ink: 20 21 24;
+  --c-ink-soft: 71 74 82;
+  --c-ink-muted: 96 100 109;
+  --c-ink-faint: 122 126 135;
+  --c-ink-on: 255 255 255;
+  --c-accent: 33 64 224;
+  --c-accent-soft: 43 73 214;
+  --c-accent-deep: 24 48 176;
+  --c-accent-tint: 228 232 251;
+  --c-good: 30 127 85;
+  --c-warn: 160 100 12;
+  --c-bad: 179 60 40;
+  --c-good-tint: 223 240 231;
+  --c-warn-tint: 248 236 218;
+  --c-bad-tint: 249 229 224;
+  --c-good-bright: 24 112 74;
+  --c-bad-bright: 163 52 34;
+  --c-geld: 30 127 85;   --c-geld-bg: 223 240 231;   --c-geld-bright: 24 112 74;
+  --c-zeit: 45 98 170;   --c-zeit-bg: 224 234 247;   --c-zeit-bright: 37 86 152;
+  --c-gym: 179 72 48;    --c-gym-bg: 249 229 224;    --c-gym-bright: 160 60 40;
+  --c-essen: 98 110 32;  --c-essen-bg: 236 240 216;  --c-essen-bright: 84 95 26;
+  --c-trading: 92 70 180; --c-trading-bg: 234 230 248; --c-trading-bright: 80 60 160;
+  --c-shadow: 20 21 24;
+}
+
+.dark {
+  color-scheme: dark;
+  --c-paper: 16 17 20;
+  --c-card: 26 27 32;
+  --c-sand: 34 36 42;
+  --c-field: 30 32 38;
+  --c-line: 42 44 51;
+  --c-line-strong: 58 61 70;
+  --c-ink: 237 237 234;
+  --c-ink-soft: 180 182 188;
+  --c-ink-muted: 143 146 154;
+  --c-ink-faint: 115 118 126;
+  --c-ink-on: 16 17 20;
+  --c-accent: 147 165 255;
+  --c-accent-soft: 175 192 255;
+  --c-accent-deep: 111 134 245;
+  --c-accent-tint: 35 40 74;
+  --c-good: 95 211 160;
+  --c-warn: 231 169 107;
+  --c-bad: 255 146 124;
+  --c-good-tint: 22 46 36;
+  --c-warn-tint: 52 38 24;
+  --c-bad-tint: 54 30 26;
+  --c-good-bright: 126 224 198;
+  --c-bad-bright: 255 168 150;
+  --c-geld: 95 211 160;   --c-geld-bg: 22 46 36;   --c-geld-bright: 126 224 198;
+  --c-zeit: 111 163 216;  --c-zeit-bg: 30 46 58;   --c-zeit-bright: 167 203 236;
+  --c-gym: 226 139 114;   --c-gym-bg: 58 42 32;    --c-gym-bright: 240 160 138;
+  --c-essen: 172 181 110; --c-essen-bg: 44 48 30;  --c-essen-bright: 200 211 148;
+  --c-trading: 163 142 221; --c-trading-bg: 42 36 56; --c-trading-bright: 196 180 238;
+  --c-shadow: 0 0 0;
+}
 
 body {
   @apply bg-paper text-ink antialiased;
   /* Die Startseite bricht mit `mx-[calc(50%-50vw)]` auf volle Fensterbreite
      aus. 100vw zählt die Scrollleiste mit, das Sichtfeld nicht — ohne diese
-     Zeile entsteht dadurch ein waagerechter Balken von ein paar Pixeln,
-     der sich wie ein Fehler anfühlt. */
+     Zeile entsteht ein waagerechter Balken von ein paar Pixeln. */
   overflow-x: hidden;
-  /* Der Grund ist kein flaches Schwarz, sondern ein warmer Verlauf.
-     Die driftenden Farbwolken liegen darüber (siehe .kt-bg). */
-  background-image: radial-gradient(120% 90% at 20% 0%, #221C14 0%, #15110C 55%, #0C0A08 100%);
-  background-attachment: fixed;
+  transition: background-color .4s ease, color .4s ease;
 }
 
 .tabular { font-variant-numeric: tabular-nums; }
 
+/* Die Collage, aus der Empfang, Brett und Titelbilder schneiden. */
+.kt-bild { background-image: url("/kompass-board.jpg"); background-repeat: no-repeat; }
+
+/* Halbtransparente Karte auf Fotos. Ohne backdrop-filter wird sie deckend,
+   sonst wäre der Text darauf nicht lesbar. */
+.kt-glas {
+  background: rgba(18, 19, 24, .55);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  backdrop-filter: blur(18px) saturate(1.15);
+  border: 1px solid rgba(255, 255, 255, .12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .kt-glas { background: rgba(18, 19, 24, .92); }
+}
+
 /* --------------------------------------------------------------- Drucken
-   Für "Als PDF speichern" aus dem Browser. Das dunkle Design taugt nicht
-   für Papier oder einen Handy-Screenshot in der Küche - deshalb wird hier
-   auf schwarz auf weiss umgestellt und alles Bedienbare ausgeblendet. */
+   Für "Als PDF speichern" aus dem Browser: schwarz auf weiss, alles
+   Bedienbare ausgeblendet. */
 @media print {
   body {
     background: #fff !important;
@@ -30,7 +111,6 @@ body {
     color: #000 !important;
   }
 
-  .kt-bg,
   .no-print,
   nav,
   header,
@@ -41,8 +121,6 @@ body {
     display: none !important;
   }
 
-  /* Karten werden zu schlichten Blöcken mit dünnem Rahmen, damit die
-     Gliederung erhalten bleibt, ohne Tinte zu verschwenden. */
   main > div > div,
   [class*="rounded-2xl"],
   [class*="rounded-xl"] {
@@ -64,45 +142,13 @@ body {
   th, td { padding: 3px 6px !important; font-size: 11pt !important; }
 }
 
-/* ── Ambient: langsam driftende Farbwolken hinter allem.
-   Rein dekorativ, nimmt keine Klicks entgegen. */
-.kt-bg {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-.kt-blob {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(100px);
-  opacity: 0.26;
-  mix-blend-mode: screen;
-}
-.kt-grain {
-  position: absolute;
-  inset: 0;
-  background-image: repeating-radial-gradient(circle at 50% 50%,
-    rgba(255,255,255,.035) 0 1px, transparent 1px 3px);
-  opacity: 0.5;
-}
-.kt-vignette {
-  position: absolute;
-  inset: 0;
-  box-shadow: inset 0 0 260px 80px rgba(0,0,0,.55);
-}
-
-/* Alles Bedienbare liegt über dem Ambient-Layer */
-.kt-content { position: relative; z-index: 1; }
-
 /* ── Formularelemente */
 input[type="range"] {
   @apply h-1.5 w-full cursor-pointer appearance-none rounded-full bg-sand;
 }
 input[type="range"]::-webkit-slider-thumb {
   @apply h-4 w-4 appearance-none rounded-full bg-accent;
-  box-shadow: 0 0 0 4px rgba(231, 169, 107, 0.18);
+  box-shadow: 0 0 0 4px rgb(var(--c-accent) / .18);
 }
 input[type="range"]::-moz-range-thumb {
   @apply h-4 w-4 rounded-full border-0 bg-accent;
@@ -116,36 +162,42 @@ input[type="color"] {
   @apply cursor-pointer p-0.5;
 }
 
-/* Datums- und Zeitfelder zeigen ihr Icon sonst pechschwarz auf Dunkel */
+/* Datums- und Zeitfelder: das Icon ist schwarz — im Dunkeln umkehren. */
+.dark input[type="date"]::-webkit-calendar-picker-indicator,
+.dark input[type="time"]::-webkit-calendar-picker-indicator,
+.dark input[type="month"]::-webkit-calendar-picker-indicator,
+.dark input[type="week"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) opacity(0.55);
+}
 input[type="date"]::-webkit-calendar-picker-indicator,
 input[type="time"]::-webkit-calendar-picker-indicator,
 input[type="month"]::-webkit-calendar-picker-indicator,
 input[type="week"]::-webkit-calendar-picker-indicator {
-  filter: invert(1) opacity(0.55);
   cursor: pointer;
 }
 
-/* ── Scrollbar passend zum warmen Dunkel */
+/* ── Scrollbar */
 * {
-  scrollbar-color: #3E3222 transparent;
+  scrollbar-color: rgb(var(--c-line-strong)) transparent;
   scrollbar-width: thin;
 }
 *::-webkit-scrollbar { width: 10px; height: 10px; }
 *::-webkit-scrollbar-track { background: transparent; }
 *::-webkit-scrollbar-thumb {
-  background: #3E3222;
+  background: rgb(var(--c-line-strong));
   border-radius: 99px;
   border: 3px solid transparent;
   background-clip: content-box;
 }
-*::-webkit-scrollbar-thumb:hover { background-clip: content-box; background-color: #55452E; }
+*::-webkit-scrollbar-thumb:hover { background-clip: content-box; background-color: rgb(var(--c-ink-faint)); }
 
-::selection { background: rgba(231, 169, 107, 0.3); }
+::selection { background: rgb(var(--c-accent) / .22); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: .01ms !important;
     animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
     transition-duration: .01ms !important;
   }
 }

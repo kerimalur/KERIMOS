@@ -152,7 +152,7 @@ export default async function StrategienSeite() {
           </div>
 
           <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-soft">
-            <input type="checkbox" name="isActive" defaultChecked className="accent-[#E7A96B]" />
+            <input type="checkbox" name="isActive" defaultChecked className="accent-accent" />
             aktiv — wird gerade gehandelt
           </label>
 

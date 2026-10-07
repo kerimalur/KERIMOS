@@ -15,8 +15,8 @@ import { cx } from "@/components/ui";
  * Farben: kategorial in fester Reihenfolge, für die dunkle Fläche geprüft.
  */
 const FARBEN = ["#3987e5", "#d95926", "#199e70"];
-const GITTER = "#2E2519";
-const ACHSE = "#7A6E5C";
+const GITTER = "rgb(var(--c-line))";
+const ACHSE = "rgb(var(--c-ink-faint))";
 
 export interface VerlaufLinie { label: string; punkte: { datum: string; wert: number }[]; stufe?: boolean }
 
@@ -102,8 +102,8 @@ export function VerlaufPopup({ titel, knopf, linien, einheit = "%", band, refere
                     fill="#199e70" fillOpacity={0.12} stroke="none" ifOverflow="extendDomain" />}
                   {referenz && <ReferenceLine y={referenz.wert} stroke={ACHSE} strokeDasharray="4 4"
                     label={{ value: referenz.text, fill: ACHSE, fontSize: 10, position: "insideTopLeft" }} />}
-                  <Tooltip contentStyle={{ background: "#1C1610", border: "1px solid #3A2F22", borderRadius: 12, fontSize: 12 }}
-                    labelStyle={{ color: "#C9BBA3" }}
+                  <Tooltip contentStyle={{ background: "rgb(var(--c-card))", border: "1px solid rgb(var(--c-line-strong))", borderRadius: 12, fontSize: 12 }}
+                    labelStyle={{ color: "rgb(var(--c-ink-soft))" }}
                     formatter={(w: number, name: string) => [`${Number(w).toFixed(2)}${einheit === "%" ? " %" : ""}`, linien[Number(name.slice(1))]?.label ?? name]} />
                   {linien.map((l, i) => (
                     <Line key={l.label} dataKey={`l${i}`} type={l.stufe ? "stepAfter" : "monotone"} stroke={FARBEN[i]}

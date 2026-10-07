@@ -124,7 +124,7 @@ export default async function EquitySeite({
                   <span className="w-20 shrink-0 text-xs text-ink-muted">{v.label}</span>
                   <div className="min-w-0 flex-1">
                     <Bar pct={(v.n / maxN) * 100}
-                      color={v.label.startsWith("−") || v.label.startsWith("≤") ? "#E28B72" : "#5FC2A6"} />
+                      color={v.label.startsWith("−") || v.label.startsWith("≤") ? "rgb(var(--c-bad))" : "rgb(var(--c-good))"} />
                   </div>
                   <span className="tabular w-8 shrink-0 text-right text-xs text-ink-soft">
                     {v.n}

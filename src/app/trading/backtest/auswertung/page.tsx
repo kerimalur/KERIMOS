@@ -90,7 +90,7 @@ export default async function GesamtauswertungPage({
             {alle.length} / {BACKTEST_ZIEL} Trades
           </span>
         </div>
-        <Bar pct={fortschritt} color="#8B94B8" />
+        <Bar pct={fortschritt} color="rgb(var(--c-zeit))" />
         <p className="mt-2 text-xs text-ink-faint">
           Ab {BACKTEST_ZIEL} dokumentierten Trades ist die Auswertung belastbar
           genug für den nächsten Schritt (FTMO). Über alle Pairs gezählt.

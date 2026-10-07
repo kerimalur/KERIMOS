@@ -31,11 +31,11 @@ const LAGE_LABEL: Record<keyof TradeLage, string> = {
 
 /** Farben der Ergebnisse — dieselben im Raster, im Zeitstrahl und in der Legende. */
 export const ERGEBNIS_FARBE: Record<BacktestResult, string> = {
-  full_tp: "#7EE0C6",
-  teil_tp_be: "#5FC2A6",
-  breakeven: "#9A8C74",
-  sl: "#F0A08A",
-  skip: "#7A6E5C",
+  full_tp: "rgb(var(--c-good-bright))",
+  teil_tp_be: "rgb(var(--c-good))",
+  breakeven: "rgb(var(--c-ink-muted))",
+  sl: "rgb(var(--c-bad-bright))",
+  skip: "rgb(var(--c-ink-faint))",
 };
 
 export function ergebnisTon(t: NativeBacktestTrade) {

@@ -43,7 +43,8 @@ export function CardTitle({ className, ...props }: Div) {
   return (
     <div
       className={cx(
-        "mb-4 text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted",
+        // Design D: Satzschreibung statt Versalien — ruhiger und besser lesbar.
+        "mb-4 text-sm font-semibold text-ink-muted",
         className
       )}
       {...props}
@@ -65,23 +66,14 @@ export function Stat({
     ? AREA[area].text
     : {
         neutral: "text-ink", good: "text-good-bright",
-        warn: "text-accent", bad: "text-bad-bright",
+        warn: "text-warn", bad: "text-bad-bright",
       }[tone];
-  // Die grosse Zahl bekommt einen leisen Schein in ihrer eigenen Farbe —
-  // auf dem dunklen Grund liest sie sich dadurch als Leuchtziffer.
-  const glow = {
-    neutral: undefined, good: "0 0 20px rgba(95,194,166,.33)",
-    warn: "0 0 20px rgba(231,169,107,.33)", bad: "0 0 20px rgba(226,139,114,.33)",
-  }[tone];
   return (
     <div>
-      <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted">
+      <div className="text-sm font-medium text-ink-muted">
         {label}
       </div>
-      <div
-        className={cx("tabular mt-1.5 font-display text-[26px] font-bold leading-tight", toneClass)}
-        style={glow && !area ? { textShadow: glow } : undefined}
-      >
+      <div className={cx("tabular mt-1 font-display text-[30px] font-semibold leading-tight tracking-tight", toneClass)}>
         {value}
       </div>
       {sub && <div className="mt-1 text-xs text-ink-muted">{sub}</div>}
@@ -90,7 +82,8 @@ export function Stat({
 }
 
 export const inputClass =
-  "w-full rounded-xl border border-line bg-field px-3 py-2 text-sm text-ink " +
+  // 16 px Schrift: darunter zoomt iOS beim Antippen ins Feld.
+  "w-full rounded-xl border border-line bg-field px-3 py-2 text-base text-ink sm:text-sm " +
   "placeholder:text-ink-faint outline-none transition " +
   "hover:border-line-strong focus:border-accent focus:ring-2 focus:ring-accent/20";
 
@@ -113,14 +106,13 @@ export function Button({
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "ghost" | "danger";
 }) {
-  // Der leichte Rückstoss beim Drücken ist das, was den Tactile-Stil
-  // ausmacht: die Fläche gibt kurz nach, statt nur die Farbe zu wechseln.
+  // Design D: Pillen, beim Drücken gibt die Fläche kurz nach.
   const base =
-    "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium " +
-    "transition duration-150 ease-tactile active:scale-[0.96] " +
+    "inline-flex min-h-[40px] items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-semibold " +
+    "transition duration-150 ease-tactile active:scale-[0.97] " +
     "disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100";
   const variants = {
-    primary: "bg-accent text-ink-on shadow-glow-accent hover:bg-accent-soft",
+    primary: "bg-accent text-ink-on hover:bg-accent-deep dark:hover:bg-accent-soft",
     ghost: "border border-line bg-sand text-ink-soft hover:border-line-strong hover:text-ink",
     danger: "border border-bad/30 bg-bad-tint text-bad-bright hover:border-bad/60",
   };
@@ -146,7 +138,7 @@ export function Badge({
   const tones = {
     neutral: "bg-sand text-ink-soft",
     good: "bg-good-tint text-good-bright",
-    warn: "bg-warn-tint text-accent",
+    warn: "bg-warn-tint text-warn",
     bad: "bg-bad-tint text-bad-bright",
     accent: "bg-accent-tint text-accent-soft",
   };
@@ -165,7 +157,7 @@ export function Badge({
  * Ersetzt die vielen handgebauten Balken-Divs im Projekt.
  */
 export function Bar({
-  pct, color = "#E7A96B", className,
+  pct, color = "rgb(var(--c-accent))", className,
 }: { pct: number; color?: string; className?: string }) {
   const w = Math.max(0, Math.min(100, pct));
   return (

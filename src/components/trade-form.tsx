@@ -254,7 +254,7 @@ export function TradeForm({
                            text-sm text-ink-soft transition hover:bg-sand/70">
                 <input type="checkbox" name={`setup_${s.key}`}
                   defaultChecked={vorgabe?.setups?.[s.key] ?? false}
-                  className="accent-[#E7A96B]" />
+                  className="accent-accent" />
                 {s.label}
               </label>
             ))}
@@ -270,7 +270,7 @@ export function TradeForm({
                 className="flex cursor-pointer items-center gap-2 rounded-xl bg-sand px-3 py-1.5
                            text-sm text-ink-soft transition hover:bg-sand/70">
                 <input type="checkbox" name="confluences" value={k}
-                  className="accent-[#E7A96B]" />
+                  className="accent-accent" />
                 {k}
               </label>
             ))}

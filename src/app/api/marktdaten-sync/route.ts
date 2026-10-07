@@ -7,6 +7,7 @@ import { updateFred } from "@/lib/marktdaten/jobs/updateFred";
 import { updateBis } from "@/lib/marktdaten/jobs/updateBis";
 import { updateCalendar } from "@/lib/marktdaten/jobs/updateCalendar";
 import { updateCot } from "@/lib/marktdaten/jobs/updateCot";
+import { updateZweiJahr } from "@/lib/marktdaten/jobs/updateZweiJahr";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -21,7 +22,9 @@ export const maxDuration = 300;
  *
  * AUFRUF (cron-job.org, einmal täglich, z.B. 06:30 Uhr Zürich):
  *     https://kerimos.vercel.app/api/marktdaten-sync?secret=<CRON_SECRET>
- * Einzelne Jobs:  &job=preise | fred | bis | kalender | cot
+ * Einzelne Jobs:  &job=preise | fred | bis | kalender | cot | zweijahr
+ * zweijahr (05.10.2026): 2J-Renditen GBP (Bank of England) und CHF (SNB),
+ * die das Screener-Backend nicht liefert.
  * COT-Vollabzug (einmalig, dauert lange):  &job=cot&voll=1
  *
  * COT läuft ohne &job nur, wenn fällig (Sa/So/Mo oder letzter Report älter
@@ -31,7 +34,7 @@ export const maxDuration = 300;
  * lib/ml — deren Tabellen wurden beim Umzug bewusst nicht mitgenommen.
  */
 
-const JOBS = ["preise", "fred", "bis", "kalender", "cot"] as const;
+const JOBS = ["preise", "fred", "bis", "kalender", "cot", "zweijahr"] as const;
 type Job = (typeof JOBS)[number];
 
 async function cotFaellig(db: SupabaseClient): Promise<boolean> {
@@ -81,13 +84,14 @@ export async function GET(request: NextRequest) {
     bis: () => updateBis(db),
     kalender: () => updateCalendar(db),
     cot: () => updateCot(db, { voll }),
+    zweijahr: () => updateZweiJahr(db),
   };
 
   let auswahl: Job[];
   if (gewuenscht) {
     auswahl = [gewuenscht];
   } else {
-    auswahl = ["preise", "fred", "bis", "kalender"];
+    auswahl = ["preise", "fred", "bis", "kalender", "zweijahr"];
     if (await cotFaellig(db)) auswahl.push("cot");
   }
 

@@ -27,7 +27,7 @@ export function Info({ titel, children, breit = 280, className }: {
         <span role="tooltip" style={{ width: breit }}
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
           className="absolute left-1/2 top-6 z-40 -translate-x-1/2 rounded-xl border border-line-strong
-                     bg-[#17130F] p-3 text-left text-xs font-normal normal-case leading-relaxed tracking-normal
+                     bg-paper p-3 text-left text-xs font-normal normal-case leading-relaxed tracking-normal
                      text-ink-soft shadow-card">
           {titel && <strong className="mb-1 block text-ink">{titel}</strong>}
           {children}

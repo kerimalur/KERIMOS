@@ -26,11 +26,11 @@ export const tagKurz = (iso: string) => TAG.format(new Date(iso));
 /** Hintergrund und Textfarbe einer Zelle nach dem Überraschungswert. */
 export function zellKlasse(x: number | null): string {
   if (x === null) return "border border-dashed border-line-strong bg-paper/40 text-ink-faint";
-  if (x >= 1) return "bg-[#2F6B5B] text-ink";
+  if (x >= 1) return "bg-good text-ink-on";
   if (x >= 0.3) return "bg-good-tint text-good-bright";
   if (x > -0.3) return "bg-sand text-ink-soft";
   if (x > -1) return "bg-bad-tint text-bad-bright";
-  return "bg-[#7A3B2E] text-ink";
+  return "bg-bad text-ink-on";
 }
 
 export function tonKlasse(x: number | null): string {
@@ -43,7 +43,7 @@ export function tonKlasse(x: number | null): string {
 /** Balken um die Nulllinie, Ausschlag bis ±3. */
 export function Wirkung({ z, breit = 120 }: { z: number | null; breit?: number }) {
   const w = z === null ? 0 : (Math.min(3, Math.abs(z)) / 3) * 50;
-  const farbe = z === null ? "transparent" : z > 0.05 ? "#5FC2A6" : z < -0.05 ? "#E28B72" : "#9A8C74";
+  const farbe = z === null ? "transparent" : z > 0.05 ? "rgb(var(--c-good))" : z < -0.05 ? "rgb(var(--c-bad))" : "rgb(var(--c-ink-muted))";
   return (
     <span className="relative inline-block h-2.5 rounded-full bg-sand align-middle" style={{ width: breit }}
       title={z === null ? "keine Abweichung" : `z ${fmtZ(z)}`}>

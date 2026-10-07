@@ -14,8 +14,8 @@ import { zufallsBand } from "@/lib/makro/rueckrechnung-rechnen";
  * Linien gleichzeitig — mehr wird unlesbar.
  */
 const FARBEN = ["#3987e5", "#d95926", "#199e70", "#c98500"];
-const GITTER = "#2E2519";
-const ACHSE = "#7A6E5C";
+const GITTER = "rgb(var(--c-line))";
+const ACHSE = "rgb(var(--c-ink-faint))";
 const STANDARD = ["modell", "modell_alt", "pmi_niveau", "zentralbank"];
 
 function Zelle({ s }: { s: VariantenStat }) {
@@ -123,8 +123,8 @@ export function VariantenVergleich({ bild, gerechnetAm }: { bild: VariantenBild;
                 tickFormatter={(x: number) => `${x} %`} />
               <ReferenceLine y={0} stroke={ACHSE} />
               <Tooltip
-                contentStyle={{ background: "#1C1610", border: "1px solid #3A2F22", borderRadius: 12, fontSize: 12 }}
-                labelStyle={{ color: "#C9BBA3" }}
+                contentStyle={{ background: "rgb(var(--c-card))", border: "1px solid rgb(var(--c-line-strong))", borderRadius: 12, fontSize: 12 }}
+                labelStyle={{ color: "rgb(var(--c-ink-soft))" }}
                 formatter={(wert: number, name: string) => [`${wert.toFixed(2)} %`, VARIANTEN.find((v) => v.key === name)?.label ?? name]} />
               {aktiv.map((k, i) => (
                 <Line key={k} type="monotone" dataKey={k} stroke={FARBEN[i]} strokeWidth={2} dot={false} connectNulls />

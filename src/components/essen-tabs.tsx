@@ -41,25 +41,14 @@ export function EssenTabs() {
 
   return (
     <>
-      {/* Computer: Reiterzeile oben */}
-      <nav className="hidden flex-wrap items-center gap-1 rounded-xl bg-sand p-1 sm:flex">
+      {/* Seit Design D (07.10.2026) überall oben: unten liegt jetzt die
+          schwebende Leiste der ganzen App, zwei Leisten übereinander
+          verwirren mehr, als sie helfen. */}
+      <nav className="flex items-center gap-1 overflow-x-auto rounded-full bg-sand p-1">
         {TABS.map((t) => (
           <Link key={t.href} href={t.href}
-            className={cx("rounded-lg px-4 py-1.5 text-sm font-medium transition",
-              aktiv(t.href) ? "bg-card text-ink" : "text-ink-muted hover:text-ink-soft")}>
-            {t.label}
-          </Link>
-        ))}
-      </nav>
-
-      {/* Handy: feste Leiste unten, mit Platzhalter darüber */}
-      <div className="h-16 sm:hidden" />
-      <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-line
-                      bg-paper/95 backdrop-blur sm:hidden">
-        {TABS.map((t) => (
-          <Link key={t.href} href={t.href}
-            className={cx("flex-1 py-3 text-center text-xs font-medium transition",
-              aktiv(t.href) ? "text-accent-soft" : "text-ink-muted")}>
+            className={cx("min-h-[40px] shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition",
+              aktiv(t.href) ? "bg-card text-ink shadow-card" : "text-ink-muted hover:text-ink-soft")}>
             {t.label}
           </Link>
         ))}
