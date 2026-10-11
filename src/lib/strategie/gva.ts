@@ -10,7 +10,7 @@
  * `mindestAbstand` 3D-Kerze komplett liegen, sonst wird die GVA verworfen.
  */
 
-import { block3d, zu3D, type Kerze } from "../trading/zeitrahmen";
+import { block3d, wochenSchluessel, zu3D, zuWoche, type Kerze } from "../trading/zeitrahmen";
 
 export interface GvaEinstellung {
   tolProzent: number;
@@ -18,7 +18,8 @@ export interface GvaEinstellung {
   mindestAbstand: number;
 }
 
-export const GVA_STANDARD: GvaEinstellung = { tolProzent: 5, k2Prozent: 40, mindestAbstand: 1 };
+/** Kerims Einstellung im Pine (11.10.2026): Toleranz 40 %, 2. Kerze 25 % grösser. Pine-Standard wäre 5 / 40. */
+export const GVA_STANDARD: GvaEinstellung = { tolProzent: 40, k2Prozent: 25, mindestAbstand: 1 };
 
 export interface Gva {
   seite: "long" | "short";
@@ -30,27 +31,33 @@ export interface Gva {
   bEnde: string;
 }
 
+export type HtfArt = "3D" | "W";
+
 export interface DreiD {
+  art: HtfArt;
   kerzen: Kerze[];
-  /** Blocknummer → Index in `kerzen`. */
-  indexVonBlock: Map<number, number>;
-  /** Index → letzter Handelstag des Blocks. */
+  /** Index der HTF-Kerze, in die ein Handelstag fällt. */
+  indexVonTag: (tag: string) => number | undefined;
+  /** Index → letzter Handelstag der Kerze. */
   letzterTag: string[];
 }
 
-/** Tageskerzen (Handelstag-Datum, Mo–Fr) → 3D-Kerzen im Screener-Raster. */
-export function baue3D(tage: Kerze[]): DreiD {
+/** Tageskerzen (Handelstag-Datum, Mo–Fr) → 3D- oder Wochenkerzen im Screener-Raster. */
+export function baueHtf(tage: Kerze[], art: HtfArt): DreiD {
   const sortiert = [...tage].sort((a, b) => a.zeit.localeCompare(b.zeit));
-  const kerzen = zu3D(sortiert);
-  const indexVonBlock = new Map<number, number>();
-  kerzen.forEach((k, i) => indexVonBlock.set(block3d(k.zeit), i));
+  const schluessel = (iso: string): string | number => (art === "3D" ? block3d(iso) : wochenSchluessel(iso));
+  const kerzen = art === "3D" ? zu3D(sortiert) : zuWoche(sortiert);
+  const index = new Map<string | number, number>();
+  kerzen.forEach((k, i) => index.set(schluessel(k.zeit), i));
   const letzterTag: string[] = kerzen.map(() => "");
   for (const t of sortiert) {
-    const i = indexVonBlock.get(block3d(t.zeit));
+    const i = index.get(schluessel(t.zeit));
     if (i !== undefined && t.zeit > letzterTag[i]) letzterTag[i] = t.zeit;
   }
-  return { kerzen, indexVonBlock, letzterTag };
+  return { art, kerzen, indexVonTag: (tag) => index.get(schluessel(tag)), letzterTag };
 }
+
+export const baue3D = (tage: Kerze[]): DreiD => baueHtf(tage, "3D");
 
 export function findeGvas(d: DreiD, e: GvaEinstellung = GVA_STANDARD): Gva[] {
   const out: Gva[] = [];
@@ -79,7 +86,7 @@ export function findeGvas(d: DreiD, e: GvaEinstellung = GVA_STANDARD): Gva[] {
 
 /** Wurde die GVA zu früh getroffen (Nachbar-Filter)? `trefferTag` = Handelstag des Treffers. */
 export function zuFrueh(d: DreiD, g: Gva, trefferTag: string, e: GvaEinstellung = GVA_STANDARD): boolean {
-  const idx = d.indexVonBlock.get(block3d(trefferTag));
+  const idx = d.indexVonTag(trefferTag);
   if (idx === undefined) return false;
   return idx - g.bIndex < e.mindestAbstand + 1;
 }

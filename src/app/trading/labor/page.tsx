@@ -60,7 +60,9 @@ function Kachel({ titel, wert, hinweis, ton }: { titel: string; wert: string; hi
 function einstellungText(l: LaborLauf): string {
   const e = l.einstellungen;
   return [
-    e.tf, `BOS ${e.bos === "schluss" ? "Schluss" : "Docht"}`, `Swing ${e.swingN}`,
+    `GVA ${e.gvaTol ?? 5}/${e.gvaK2 ?? 40}${e.wochen ? " + W" : ""}`,
+    `Struktur ${e.strukturTf === "impuls4h" ? `Impuls ${e.impulsAtr ?? 0.75}×ATR` : (e.strukturTf ?? "chart") === "4h" ? "4h-Swing" : `${e.tf}-Swing`}`,
+    `Ausführung ${e.tf}`, `BOS ${e.bos === "schluss" ? "Schluss" : "Docht"}`, `Swing ${e.swingN}`,
     e.dailyOpen ? "Daily Open" : "ohne Daily Open", `Tol. ${e.tolPips} Pips`, `Frist ${e.maxTage} T`,
     `Einstieg ${e.einstiegFib}`, `TP ${e.tpFib}`,
   ].join(" · ");
@@ -94,7 +96,9 @@ async function ladeChart(e: LaborEreignis, tf: "1h" | "4h") {
   try {
     const stunden = await yahooStunden(e.paar);
     const bars = tf === "4h" ? zu4h(stunden) : stunden;
-    const von = Date.parse(e.trefferT) - (tf === "4h" ? 8 : 3) * 86_400_000;
+    const treffer = Date.parse(e.trefferT);
+    const bildung = e.bStart ? Date.parse(`${e.bStart}T00:00:00Z`) - 86_400_000 : treffer;
+    const von = Math.max(treffer - 30 * 86_400_000, Math.min(treffer - (tf === "4h" ? 8 : 3) * 86_400_000, bildung));
     const endeRoh = e.ausstiegT ?? e.einstiegT ?? e.bosT ?? e.trefferT;
     const bis = Date.parse(endeRoh) + (tf === "4h" ? 5 : 2) * 86_400_000;
     return bars.filter((b) => b.t >= von && b.t <= bis);
@@ -263,15 +267,21 @@ export default async function LaborSeite({ searchParams }: { searchParams: Promi
                 <Link href={link({ ev: undefined })} className="ml-auto text-xs text-ink-muted hover:text-ink">schliessen ×</Link>
               </div>
               <div className="mt-2"><TradeChart bars={bars} e={gewaehlt} /></div>
-              <dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-ink-muted sm:grid-cols-4">
-                <div>Treffer: <b className="text-ink">{ZEIT.format(new Date(gewaehlt.trefferT))}</b></div>
-                <div>BOS: <b className="text-ink">{gewaehlt.bosT ? ZEIT.format(new Date(gewaehlt.bosT)) : "–"}</b></div>
-                <div>Einstieg: <b className="text-ink">{gewaehlt.einstiegT ? ZEIT.format(new Date(gewaehlt.einstiegT)) : "–"}</b></div>
-                <div>Ausgang: <b className="text-ink">{gewaehlt.ausstiegT ? ZEIT.format(new Date(gewaehlt.ausstiegT)) : "–"}</b></div>
-                <div>Risiko: <b className="text-ink">{gewaehlt.risikoPips === null ? "–" : `${gewaehlt.risikoPips.toFixed(1)} Pips`}</b></div>
-                <div>neue H vor Einstieg: <b className="text-ink">{gewaehlt.neueHochs}</b></div>
-                <div>GVA gebildet: <b className="text-ink">{gewaehlt.bStart ?? "–"}</b></div>
-              </dl>
+              <ol className="mt-3 grid gap-2 text-xs sm:grid-cols-5">
+                {[
+                  { t: "GVA gebildet", w: gewaehlt.bStart ? `${gewaehlt.gvaTf}-Kerze ${DATUM.format(new Date(`${gewaehlt.bStart}T12:00:00Z`))}${gewaehlt.bEnde && gewaehlt.bEnde !== gewaehlt.bStart ? ` – ${DATUM.format(new Date(`${gewaehlt.bEnde}T12:00:00Z`))}` : ""}` : "–", z: `Level ${gewaehlt.level.toFixed(gewaehlt.paar.endsWith("JPY") ? 3 : 5)}` },
+                  { t: "Treffer", w: ZEIT.format(new Date(gewaehlt.trefferT)), z: "Setup beginnt" },
+                  { t: "BOS", w: gewaehlt.bosT ? ZEIT.format(new Date(gewaehlt.bosT)) : "–", z: gewaehlt.struktur === null ? "" : `Struktur ${gewaehlt.struktur.toFixed(gewaehlt.paar.endsWith("JPY") ? 3 : 5)}` },
+                  { t: "Einstieg", w: gewaehlt.einstiegT ? ZEIT.format(new Date(gewaehlt.einstiegT)) : "–", z: gewaehlt.einstieg === null ? "" : `${gewaehlt.einstieg.toFixed(gewaehlt.paar.endsWith("JPY") ? 3 : 5)} · Risiko ${gewaehlt.risikoPips?.toFixed(1) ?? "–"} Pips` },
+                  { t: "Ausgang", w: gewaehlt.ausstiegT ? ZEIT.format(new Date(gewaehlt.ausstiegT)) : "–", z: STATUS[gewaehlt.status]?.text ?? gewaehlt.status },
+                ].map((s, i) => (
+                  <li key={s.t} className="rounded-xl border border-line bg-sand/50 px-3 py-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">{i + 1}. {s.t}</p>
+                    <p className="mt-0.5 font-semibold text-ink">{s.w}</p>
+                    {s.z && <p className="text-ink-muted">{s.z}</p>}
+                  </li>
+                ))}
+              </ol>
               <p className="mt-2 text-xs text-ink-faint">Zum Gegenprüfen: in TradingView {gewaehlt.paar}, OANDA, Wiedergabe ab dem Treffer, mit „GVA → BOS“.</p>
             </Card>
           )}
@@ -297,6 +307,7 @@ export default async function LaborSeite({ searchParams }: { searchParams: Promi
                     <tr className="text-left text-xs text-ink-muted">
                       <th className="py-1 pr-3 font-medium">Treffer</th>
                       <th className="py-1 pr-3 font-medium">Paar</th>
+                      <th className="py-1 pr-3 font-medium">GVA gebildet</th>
                       <th className="py-1 pr-3 font-medium">Seite</th>
                       <th className="py-1 pr-3 font-medium">Ausgang</th>
                       <th className="py-1 pr-3 text-right font-medium">Risiko</th>
@@ -308,6 +319,7 @@ export default async function LaborSeite({ searchParams }: { searchParams: Promi
                       <tr key={e.id} className={cx("border-t border-line hover:bg-sand", String(e.id) === sp.ev && "bg-accent-tint/60")}>
                         <td className="py-1.5 pr-3"><Link href={link({ ev: String(e.id) })} className="text-ink hover:underline">{ZEIT.format(new Date(e.trefferT))}</Link></td>
                         <td className="py-1.5 pr-3 font-medium">{e.paar}</td>
+                        <td className="py-1.5 pr-3 text-xs text-ink-muted">{e.bStart ? `${e.gvaTf} ${DATUM.format(new Date(`${e.bStart}T12:00:00Z`))}` : "–"}</td>
                         <td className="py-1.5 pr-3 text-ink-muted">{e.seite === "short" ? "Short" : "Long"}</td>
                         <td className="py-1.5 pr-3"><Badge tone={STATUS[e.status]?.ton ?? "neutral"}>{STATUS[e.status]?.text ?? e.status}</Badge></td>
                         <td className="tabular py-1.5 pr-3 text-right text-ink-muted">{e.risikoPips === null ? "–" : `${e.risikoPips.toFixed(0)} P`}</td>

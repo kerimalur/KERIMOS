@@ -4,7 +4,9 @@
  *
  * Short (Long spiegelbildlich, über gespiegelte Preise × −1):
  *  1. Treffer der Top-GVA. Das Hoch H seit dem Treffer wird nachgeführt.
- *  2. Struktur = letztes bestätigtes Swing-Tief VOR dem Treffer (Chart-TF).
+ *  2. Struktur = letztes bestätigtes Swing-Tief VOR dem Treffer — wahlweise auf
+ *     dem Ausführungs-Zeitrahmen oder auf 4h (Kerim 11.10.: „wirklich das
+ *     4-Stunden-Swing", sonst ist das Setup zu schnell).
  *     BOS = eine Kerze schliesst (oder sticht per Docht) unter die Struktur,
  *     und die Struktur liegt unter dem Daily Open des Tages (abschaltbar).
  *  3. Nach dem BOS: L = tiefstes Tief seit H (nachgeführt).
@@ -99,6 +101,68 @@ export function swingTiefs(bars: Bar[], n: number): number[] {
   return out;
 }
 
+/** Ein Swing-Tief als Struktur: Kerze (Beginn/Ende), wann es bestätigt war, Preis. */
+export interface StrukturPunkt {
+  t: number;
+  ende: number;
+  bestaetigt: number;
+  preis: number;
+}
+
+/** Swing-Tiefs einer Kerzenreihe als Strukturpunkte. `dauerMs` = Länge einer Kerze. */
+export function strukturPunkte(bars: Bar[], n: number, dauerMs: number): StrukturPunkt[] {
+  return swingTiefs(bars, n).map((j) => ({
+    t: bars[j].t, ende: bars[j].t + dauerMs, bestaetigt: bars[j + n].t + dauerMs, preis: bars[j].l,
+  }));
+}
+
+/**
+ * Impuls-Ursprünge als Struktur (Kerim 11.10.: „das Hoch, von dem der letzte
+ * Impuls startete"): ZigZag auf den übergebenen Kerzen (Short-Sicht → Tiefs).
+ * Ein Tief gilt als Ursprung, sobald der Kurs danach um mindestens
+ * `faktor × Tages-ATR` gestiegen ist — kleinere Gegenbewegungen (Range,
+ * Konsolidierung) zählen nicht. Bestätigt ist es mit dem Ende der Kerze,
+ * die diese Schwelle überschreitet: kein Blick in die Zukunft.
+ */
+export function strukturImpuls(
+  bars: Bar[], atrVonTag: (tag: string) => number | undefined, faktor: number, dauerMs: number,
+): StrukturPunkt[] {
+  const out: StrukturPunkt[] = [];
+  if (bars.length === 0) return out;
+  let richtung: 1 | -1 = 1;
+  let ext = bars[0].h, extI = 0;
+  for (let i = 1; i < bars.length; i++) {
+    const b = bars[i];
+    const atr = atrVonTag(b.tag);
+    if (!atr) continue;
+    const schwelle = faktor * atr;
+    if (richtung === 1) {
+      if (b.h > ext) { ext = b.h; extI = i; } else if (b.l < ext - schwelle) { richtung = -1; ext = b.l; extI = i; }
+    } else if (b.l < ext) {
+      ext = b.l; extI = i;
+    } else if (b.h > ext + schwelle) {
+      out.push({ t: bars[extI].t, ende: bars[extI].t + dauerMs, bestaetigt: b.t + dauerMs, preis: ext });
+      richtung = 1; ext = b.h; extI = i;
+    }
+  }
+  return out;
+}
+
+/** ATR(14) der Tageskerzen, je Handelstag der Wert vom Vortag (kein Blick in die Zukunft). */
+export function tagesAtr(tage: { zeit: string; high: number; low: number; close: number }[], n = 14): Map<string, number> {
+  const m = new Map<string, number>();
+  const tr: number[] = [];
+  for (let i = 0; i < tage.length; i++) {
+    if (tr.length) m.set(tage[i].zeit, tr.reduce((a, x) => a + x, 0) / tr.length);
+    if (i > 0) {
+      const p = tage[i - 1].close, d = tage[i];
+      tr.push(Math.max(d.high - d.low, Math.abs(d.high - p), Math.abs(d.low - p)));
+      if (tr.length > n) tr.shift();
+    }
+  }
+  return m;
+}
+
 /** Tagesöffnung je Handelstag (erste Kerze des Tages). */
 export function tagesOpen(bars: Bar[]): Map<string, number> {
   const m = new Map<string, number>();
@@ -108,7 +172,7 @@ export function tagesOpen(bars: Bar[]): Map<string, number> {
 
 /** Short-Logik ab dem Treffer-Index (Long: mit gespiegelten Reihen aufrufen). */
 export function simuliereShort(
-  bars: Bar[], start: number, tiefs: number[], open: Map<string, number>, e: SetupEinstellung = SETUP_STANDARD,
+  bars: Bar[], start: number, struktur: StrukturPunkt[], open: Map<string, number>, e: SetupEinstellung = SETUP_STANDARD,
 ): SetupErgebnis {
   const res: SetupErgebnis = {
     status: "verfallen", trefferT: bars[start].t, strukturT: null, struktur: null, bosT: null,
@@ -120,14 +184,14 @@ export function simuliereShort(
   let L = Infinity, lIdx = -1;
   const frist = start + e.maxKerzenBisEinstieg;
 
-  // Letztes Swing-Tief mit Index < vorIdx, bestätigt vor `bisIdx`.
-  const letztesTiefVor = (vorIdx: number, bisIdx: number): number | null => {
-    let lo = 0, hi = tiefs.length - 1, best = -1;
+  // Letztes Swing-Tief, dessen Kerze vor `vorT` endete und das bis `jetztT` bestätigt war.
+  const letztesTiefVor = (vorT: number, jetztT: number): StrukturPunkt | null => {
+    let lo = 0, hi = struktur.length - 1, best = -1;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
-      if (tiefs[mid] < vorIdx) { best = mid; lo = mid + 1; } else hi = mid - 1;
+      if (struktur[mid].ende <= vorT) { best = mid; lo = mid + 1; } else hi = mid - 1;
     }
-    for (let k = best; k >= 0; k--) if (tiefs[k] + e.swingN < bisIdx) return tiefs[k];
+    for (let k = best; k >= 0; k--) if (struktur[k].bestaetigt <= jetztT) return struktur[k];
     return null;
   };
   const merke = () => {
@@ -145,9 +209,11 @@ export function simuliereShort(
     if (zustand === 0) {
       if (b.h > H) { H = b.h; hIdx = i; }
       if (i <= hIdx) continue;
-      const ref = letztesTiefVor(vor, i);
+      const ref = letztesTiefVor(bars[vor].t, b.t);
       if (ref === null) continue;
-      const rp = bars[ref].l;
+      const rp = ref.preis;
+      // Auch ohne BOS festhalten, auf welche Struktur gewartet wurde (für den Chart).
+      res.strukturT = ref.t; res.struktur = rp;
       if (e.dailyOpen) {
         const d = open.get(b.tag);
         if (d === undefined || !(rp < d)) continue;
@@ -155,7 +221,7 @@ export function simuliereShort(
       const bricht = e.bos === "schluss" ? b.c < rp : b.l < rp;
       if (!bricht) continue;
       zustand = 1;
-      res.bosT = b.t; res.strukturT = bars[ref].t; res.struktur = rp;
+      res.bosT = b.t; res.strukturT = ref.t; res.struktur = rp;
       L = Infinity; lIdx = -1;
       for (let k = hIdx; k <= i; k++) if (bars[k].l < L) { L = bars[k].l; lIdx = k; }
       continue;

@@ -42,7 +42,7 @@ export async function speichereLauf(
   if (error || !data) throw new Error(`Lauf speichern: ${error?.message ?? "keine id"}`);
   const id = String((data as { id: string }).id);
   const zeilen = r.ereignisse.map((x) => ({
-    lauf_id: id, paar: x.paar, seite: x.seite, level: x.level, b_start: x.bStart, status: x.status,
+    lauf_id: id, paar: x.paar, seite: x.seite, level: x.level, gva_tf: x.gvaTf, b_start: x.bStart, b_ende: x.bEnde, status: x.status,
     treffer_t: iso(x.trefferT), struktur_t: iso(x.strukturT), struktur: x.struktur, bos_t: iso(x.bosT),
     hoch_t: iso(x.hochT), hoch: x.hoch, tief_t: iso(x.tiefT), tief: x.tief,
     einstieg_t: iso(x.einstiegT), einstieg: x.einstieg, sl: x.sl, tp: x.tp, ausstieg_t: iso(x.ausstiegT),

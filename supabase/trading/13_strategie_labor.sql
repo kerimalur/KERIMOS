@@ -35,3 +35,6 @@ create index if not exists strategie_ereignisse_lauf_idx on trading.strategie_er
 alter table trading.strategie_laeufe enable row level security;
 alter table trading.strategie_ereignisse enable row level security;
 grant all on trading.strategie_laeufe, trading.strategie_ereignisse to service_role;
+
+-- Erweiterung (11.10.2026): Zeitrahmen der GVA und letzter Tag der bildenden Kerze.
+alter table trading.strategie_ereignisse add column if not exists gva_tf text, add column if not exists b_ende date;

@@ -22,8 +22,34 @@ const feld = "w-full rounded-lg border border-line bg-field px-2.5 py-2 text-sm 
 export function LaborFormular({ start }: { start: LaufEinstellung }) {
   return (
     <form action={starteLaborLauf} className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted sm:col-span-2 lg:col-span-4">GVA</p>
       <label className="space-y-1">
-        <span className="text-xs text-ink-muted">Zeitrahmen für BOS und Einstieg</span>
+        <span className="text-xs text-ink-muted">Boden/Top-Toleranz (% Body 1. Kerze)</span>
+        <input name="gvaTol" type="number" min={0.5} max={100} step={0.5} defaultValue={start.gvaTol ?? 40} className={feld} />
+      </label>
+      <label className="space-y-1">
+        <span className="text-xs text-ink-muted">2. Kerze mindestens X % grösser</span>
+        <input name="gvaK2" type="number" min={0} max={500} step={5} defaultValue={start.gvaK2 ?? 25} className={feld} />
+      </label>
+      <label className="flex items-center gap-2 self-end pb-2 sm:col-span-2">
+        <input name="wochen" type="checkbox" defaultChecked={start.wochen ?? false} className="h-4 w-4" />
+        <span className="text-xs text-ink-soft">Wochen-GVAs zusätzlich (Set 2)</span>
+      </label>
+      <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted sm:col-span-2 lg:col-span-4">Einstieg</p>
+      <label className="space-y-1">
+        <span className="text-xs text-ink-muted">Struktur, die gebrochen werden muss</span>
+        <select name="strukturTf" defaultValue={start.strukturTf ?? "impuls4h"} className={feld}>
+          <option value="impuls4h">Ursprung des letzten Impulses (4h)</option>
+          <option value="4h">letztes 4h-Swing vor dem Treffer</option>
+          <option value="chart">letztes Swing auf dem Ausführungs-TF</option>
+        </select>
+      </label>
+      <label className="space-y-1">
+        <span className="text-xs text-ink-muted">Impuls: Gegenbewegung zählt ab × Tages-ATR</span>
+        <input name="impulsAtr" type="number" min={0.1} max={5} step={0.05} defaultValue={start.impulsAtr ?? 0.75} className={feld} />
+      </label>
+      <label className="space-y-1">
+        <span className="text-xs text-ink-muted">Ausführung (BOS-Kerze, Einstieg)</span>
         <select name="tf" defaultValue={start.tf} className={feld}>
           <option value="1h">1 Stunde</option>
           <option value="4h">4 Stunden</option>
@@ -37,7 +63,7 @@ export function LaborFormular({ start }: { start: LaufEinstellung }) {
         </select>
       </label>
       <label className="space-y-1">
-        <span className="text-xs text-ink-muted">Swing: Kerzen links/rechts</span>
+        <span className="text-xs text-ink-muted">Swing: Kerzen links/rechts (nur Swing-Struktur)</span>
         <input name="swingN" type="number" min={1} max={20} step={1} defaultValue={start.swingN} className={feld} />
       </label>
       <label className="space-y-1">

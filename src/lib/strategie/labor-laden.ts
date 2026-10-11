@@ -22,7 +22,9 @@ export interface LaborEreignis {
   paar: string;
   seite: "long" | "short";
   level: number;
+  gvaTf: string;
   bStart: string | null;
+  bEnde: string | null;
   status: string;
   trefferT: string;
   strukturT: string | null;
@@ -74,7 +76,7 @@ export async function ladeEreignisse(laufId: string): Promise<LaborEreignis[]> {
     for (const r of (data ?? []) as Record<string, unknown>[]) {
       out.push({
         id: Number(r.id), paar: String(r.paar), seite: r.seite as "long" | "short", level: Number(r.level),
-        bStart: (r.b_start as string | null) ?? null, status: String(r.status), trefferT: String(r.treffer_t),
+        gvaTf: String(r.gva_tf ?? "3D"), bStart: (r.b_start as string | null) ?? null, bEnde: (r.b_ende as string | null) ?? null, status: String(r.status), trefferT: String(r.treffer_t),
         strukturT: (r.struktur_t as string | null) ?? null, struktur: num(r.struktur), bosT: (r.bos_t as string | null) ?? null,
         hochT: (r.hoch_t as string | null) ?? null, hoch: num(r.hoch), tiefT: (r.tief_t as string | null) ?? null, tief: num(r.tief),
         einstiegT: (r.einstieg_t as string | null) ?? null, einstieg: num(r.einstieg), sl: num(r.sl), tp: num(r.tp),

@@ -1,4 +1,5 @@
 import type { Bar } from "@/lib/strategie/setup";
+import { sitzungsEnde } from "@/lib/strategie/zeit";
 import type { LaborEreignis } from "@/lib/strategie/labor-laden";
 
 /**
@@ -33,7 +34,7 @@ const ZEIT = new Intl.DateTimeFormat("de-CH", { day: "2-digit", month: "2-digit"
 
 export function TradeChart({ bars, e }: { bars: Bar[]; e: LaborEreignis }) {
   if (bars.length < 5) return <p className="text-sm text-ink-muted">Keine Kerzen für diesen Zeitraum (Yahoo).</p>;
-  const W = 1000, H = 420, PL = 8, PR = 70, PT = 14, PB = 24;
+  const W = 1000, H = 440, PL = 62, PR = 132, PT = 14, PB = 24;
   const ms = (s: string | null) => (s ? Date.parse(s) : null);
   const preise = [e.level, e.struktur, e.hoch, e.tief, e.einstieg, e.sl, e.tp].filter((v): v is number => v !== null);
   const lo = Math.min(...bars.map((b) => b.l), ...preise);
@@ -57,13 +58,26 @@ export function TradeChart({ bars, e }: { bars: Bar[]; e: LaborEreignis }) {
   const iAus = idxVon(ms(e.ausstiegT));
   const kurz = e.seite === "short";
   const nachkomma = e.paar.endsWith("JPY") ? 3 : 5;
+  const fmt = (v: number) => v.toFixed(nachkomma);
+  // Preisachse: 6 runde Stufen
+  const spanne = hi - lo + 2 * pad;
+  const roh = spanne / 6;
+  const pot = 10 ** Math.floor(Math.log10(roh));
+  const stufe = [1, 2, 2.5, 5, 10].map((f) => f * pot).find((x) => x >= roh) ?? roh;
+  const ticks: number[] = [];
+  for (let v = Math.ceil((lo - pad) / stufe) * stufe; v <= hi + pad; v += stufe) ticks.push(v);
+  // Bildende GVA-Kerze, falls im Ausschnitt
+  const bVon = e.bStart ? sitzungsEnde(e.bStart) - 86_400_000 : null;
+  const bBis = e.bEnde ? sitzungsEnde(e.bEnde) : null;
+  const iBVon = bVon !== null && bVon >= bars[0].t ? idxVon(bVon) : null;
+  const iBBis = bBis !== null && bBis >= bars[0].t ? idxVon(bBis) : null;
 
   const Linie = ({ v, von, bis, klasse, text, strich }: { v: number | null; von: number | null; bis?: number | null; klasse: string; text: string; strich?: string }) =>
     v === null ? null : (
       <g>
         <line x1={von === null ? PL : xi(von)} x2={bis === null || bis === undefined ? W - PR : xi(bis)} y1={y(v)} y2={y(v)}
           className={klasse} strokeWidth={1.4} strokeDasharray={strich} />
-        <text x={W - PR + 4} y={y(v) + 4} className={`${klasse.replace("stroke-", "fill-")} text-[11px]`}>{text}</text>
+        <text x={W - PR + 4} y={y(v) + 4} className={`${klasse.replace("stroke-", "fill-")} text-[11px]`}>{text} {fmt(v)}</text>
       </g>
     );
   const Marke = ({ i, v, text, oben, klasse }: { i: number | null; v: number | null; text: string; oben: boolean; klasse: string }) =>
@@ -80,6 +94,21 @@ export function TradeChart({ bars, e }: { bars: Bar[]; e: LaborEreignis }) {
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={`${e.paar} ${e.seite} – ${e.status}`}>
+      {/* Preisachse */}
+      {ticks.map((v) => (
+        <g key={v}>
+          <line x1={PL} x2={W - PR} y1={y(v)} y2={y(v)} className="stroke-line" strokeWidth={0.4} />
+          <text x={PL - 6} y={y(v) + 4} textAnchor="end" className="fill-ink-faint text-[10px]">{fmt(v)}</text>
+        </g>
+      ))}
+      {/* Bildende GVA-Kerze */}
+      {iBBis !== null && (
+        <g>
+          <rect x={xi(iBVon ?? 0) - bw / 2} y={PT} width={Math.max(bw, xi(iBBis) - xi(iBVon ?? 0) + bw)} height={H - PT - PB}
+            className="fill-warn" opacity={0.08} />
+          <text x={xi(iBVon ?? 0)} y={PT + 18} className="fill-warn text-[10px]">GVA-Kerze ({e.gvaTf})</text>
+        </g>
+      )}
       {/* Tagesgrenzen */}
       {tage.filter((_, k) => k % schritt === 0).map((d) => (
         <g key={d.i}>
@@ -100,23 +129,23 @@ export function TradeChart({ bars, e }: { bars: Bar[]; e: LaborEreignis }) {
         );
       })}
       {/* Level */}
-      <Linie v={e.level} von={null} bis={iTreffer} klasse="stroke-warn" text="GVA" />
+      <Linie v={e.level} von={iBBis ?? null} bis={iTreffer} klasse="stroke-warn" text="GVA" />
       <Linie v={e.struktur} von={iStruktur} bis={iBos} klasse="stroke-ink-muted" text="Struktur" strich="3 3" />
       <Linie v={e.einstieg} von={iBos} bis={iAus ?? null} klasse="stroke-accent" text="0.618" strich="5 3" />
       <Linie v={e.sl} von={iBos} bis={iAus ?? null} klasse="stroke-bad-bright" text="SL" strich="5 3" />
       <Linie v={e.tp} von={iBos} bis={iAus ?? null} klasse="stroke-good-bright" text="TP" strich="5 3" />
       {/* Marken */}
       <Marke i={iTreffer} v={e.level} text="Treffer" oben={kurz} klasse="fill-warn" />
-      <Marke i={iHoch} v={e.hoch} text={kurz ? "H" : "L"} oben={kurz} klasse="fill-ink" />
+      <Marke i={iHoch} v={e.hoch} text={`${kurz ? "H" : "L"} ${e.hoch === null ? "" : fmt(e.hoch)}`} oben={kurz} klasse="fill-ink" />
       <Marke i={iBos} v={e.struktur} text="BOS" oben={!kurz} klasse="fill-ink-soft" />
-      <Marke i={iTief} v={e.tief} text={kurz ? "L" : "H"} oben={!kurz} klasse="fill-accent" />
+      <Marke i={iTief} v={e.tief} text={`${kurz ? "L" : "H"} ${e.tief === null ? "" : fmt(e.tief)}`} oben={!kurz} klasse="fill-accent" />
       <Marke i={iEin} v={e.einstieg} text="Einstieg" oben={kurz} klasse="fill-accent" />
       {iAus !== null && e.einstieg !== null && (
         <Marke i={iAus} v={e.status === "tp" ? e.tp : e.status === "sl" ? e.sl : null} text={e.status.toUpperCase()} oben={e.status === "sl" ? kurz : !kurz}
           klasse={e.status === "tp" ? "fill-good-bright" : "fill-bad-bright"} />
       )}
-      <text x={PL + 4} y={PT + 4} className="fill-ink-muted text-[11px]">
-        {e.paar} · {e.seite === "short" ? "Short" : "Long"} · GVA {e.level.toFixed(nachkomma)}
+      <text x={PL + 4} y={PT + 6} className="fill-ink-muted text-[11px]">
+        {e.paar} · {e.seite === "short" ? "Short" : "Long"} · {e.gvaTf}-GVA {fmt(e.level)}
       </text>
     </svg>
   );

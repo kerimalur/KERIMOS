@@ -6,6 +6,8 @@
  *   npx -y tsx tools/backtest/gva-backtest.mts                 → 1h und 4h, BOS Schluss und Docht
  *   npx -y tsx tools/backtest/gva-backtest.mts --speichern     → zusätzlich ins Labor (Supabase)
  *   … --tf 1h --bos schluss                                    → nur diese Variante
+ *   … --wochen                                                 → mit Wochen-GVAs
+ *   … --struktur impuls4h|4h|chart  --atr 0.75                 → Art der Struktur (Standard: Impuls-Ursprung 4h)
  *
  * Kerzen-Cache: tools/backtest/.cache (Yahoo, je Tag einmal geladen).
  */
@@ -44,13 +46,13 @@ const quelle = datenquelle(db as any, stundenMitCache);
 const varianten: LaufEinstellung[] = [];
 for (const tf of (arg("--tf") ? [arg("--tf")] : ["1h", "4h"]) as ("1h" | "4h")[]) {
   for (const bos of (arg("--bos") ? [arg("--bos")] : ["schluss", "docht"]) as ("schluss" | "docht")[]) {
-    varianten.push({ ...LAUF_STANDARD, tf, bos });
+    varianten.push({ ...LAUF_STANDARD, tf, bos, wochen: args.includes("--wochen"), strukturTf: (arg("--struktur") as "impuls4h" | "4h" | "chart" | undefined) ?? "impuls4h", impulsAtr: Number(arg("--atr") ?? 0.75) });
   }
 }
 
 const tabelle: Record<string, unknown>[] = [];
 for (const v of varianten) {
-  const name = `${v.tf} · BOS ${v.bos === "schluss" ? "Schluss" : "Docht"} · Terminal`;
+  const name = `${v.tf} · Struktur ${v.strukturTf === "impuls4h" ? `Impuls ${v.impulsAtr}×ATR` : v.strukturTf === "4h" ? "4h-Swing" : `${v.tf}-Swing`} · BOS ${v.bos === "schluss" ? "Schluss" : "Docht"}${v.wochen ? " · mit W-GVA" : ""} · GVA ${v.gvaTol}/${v.gvaK2}`;
   const start = Date.now();
   const r = await fuehreLaufAus(v, quelle);
   const dauer = Math.round((Date.now() - start) / 100) / 10;

@@ -5,16 +5,29 @@
  * denselben Code.
  */
 import type { Kerze } from "../trading/zeitrahmen";
-import { baue3D, beruehrt, findeGvas, zuFrueh, GVA_STANDARD } from "./gva";
+import { baueHtf, beruehrt, findeGvas, zuFrueh, type DreiD, type Gva } from "./gva";
 import { sitzungsEnde } from "./zeit";
 import {
-  simuliereShort, spiegeln, swingTiefs, tagesOpen, zurueckSpiegeln,
+  simuliereShort, spiegeln, strukturImpuls, strukturPunkte, tagesAtr, tagesOpen, zurueckSpiegeln,
   type Bar, type SetupErgebnis, type SetupStatus,
 } from "./setup";
 import { kennzahlen, type Kennzahlen, type TradeZeile } from "./auswertung";
 import { pipGroesse, tageAusBars, zu4h, type LaborTf } from "./kerzen";
 
 export interface LaufEinstellung {
+  /** GVA-Erkennung wie im Pine: Toleranz in % von Body A, 2. Kerze mindestens X % grösser. */
+  gvaTol: number;
+  gvaK2: number;
+  /** Zusätzlich Wochen-GVAs (Set 2 im Pine). */
+  wochen: boolean;
+  /**
+   * Struktur, die gebrochen werden muss:
+   *  impuls4h — Ursprung des letzten Impulses auf 4h (ZigZag, Gegenbewegungen < impulsAtr × Tages-ATR zählen nicht)
+   *  4h       — letztes 4h-Swing vor dem Treffer
+   *  chart    — letztes Swing auf dem Ausführungs-Zeitrahmen
+   */
+  strukturTf: "impuls4h" | "chart" | "4h";
+  impulsAtr: number;
   tf: LaborTf;
   bos: "schluss" | "docht";
   swingN: number;
@@ -30,6 +43,7 @@ export interface LaufEinstellung {
 }
 
 export const LAUF_STANDARD: LaufEinstellung = {
+  gvaTol: 40, gvaK2: 25, wochen: false, strukturTf: "impuls4h", impulsAtr: 0.75,
   tf: "1h", bos: "schluss", swingN: 2, dailyOpen: true, tolPips: 3, maxTage: 10,
   einstiegFib: 0.618, tpFib: -1, kostenMajors: 1.2, kostenCrosses: 2.2,
 };
@@ -53,7 +67,9 @@ export interface LaufEreignis extends SetupErgebnis {
   paar: string;
   seite: "long" | "short";
   level: number;
+  gvaTf: "3D" | "W";
   bStart: string;
+  bEnde: string;
   rNetto: number | null;
   risikoPips: number | null;
 }
@@ -88,22 +104,33 @@ export async function fuehreLaufAus(
         if (!bis || bars[bars.length - 1].tag > bis) bis = bars[bars.length - 1].tag;
         const letzter = tageRoh[tageRoh.length - 1]?.zeit ?? "0000";
         const tage = [...tageRoh, ...tageAusBars(stunden).filter((k) => k.zeit > letzter)];
-        const d3 = baue3D(tage);
-        const gvas = findeGvas(d3, GVA_STANDARD);
+        const gvaEinst = { tolProzent: e.gvaTol ?? 40, k2Prozent: e.gvaK2 ?? 25, mindestAbstand: 1 };
+        const reihen: DreiD[] = [baueHtf(tage, "3D"), ...(e.wochen ? [baueHtf(tage, "W")] : [])];
+        const gvas: { g: Gva; d: DreiD }[] = reihen.flatMap((d) => findeGvas(d, gvaEinst).map((g) => ({ g, d })));
         const pip = pipGroesse(paar);
         const einst = {
           bos: e.bos, swingN: e.swingN, dailyOpen: e.dailyOpen, tolPreis: e.tolPips * pip,
           einstiegFib: e.einstiegFib, tpFib: e.tpFib,
           maxKerzenBisEinstieg: Math.round(e.maxTage * kerzenJeTag), maxKerzenImTrade: 60 * kerzenJeTag,
         };
+        const STUNDE = 3_600_000;
+        const ausfDauer = e.tf === "1h" ? STUNDE : 4 * STUNDE;
         const gespiegelt = spiegeln(bars);
+        // Struktur: Impuls-Ursprung auf 4h, 4h-Swing oder Swing auf dem Ausführungs-Zeitrahmen.
+        const art = e.strukturTf ?? "4h";
+        const strukturBars = art === "chart" ? bars : zu4h(stunden);
+        const strukturDauer = art === "chart" ? ausfDauer : 4 * STUNDE;
+        const atr = tagesAtr(tage);
+        const baueStruktur = (b: Bar[]) => (art === "impuls4h"
+          ? strukturImpuls(b, (tag) => atr.get(tag), e.impulsAtr ?? 0.75, strukturDauer)
+          : strukturPunkte(b, e.swingN, strukturDauer));
         const vor = {
-          short: { bars, tiefs: swingTiefs(bars, e.swingN), open: tagesOpen(bars) },
-          long: { bars: gespiegelt, tiefs: swingTiefs(gespiegelt, e.swingN), open: tagesOpen(gespiegelt) },
+          short: { bars, struktur: baueStruktur(strukturBars), open: tagesOpen(bars) },
+          long: { bars: gespiegelt, struktur: baueStruktur(spiegeln(strukturBars)), open: tagesOpen(gespiegelt) },
         };
         const ersterVollerTag = bars.find((b, i) => i > 0 && b.tag !== bars[i - 1].tag)?.tag ?? bars[0].tag;
 
-        for (const g of gvas) {
+        for (const { g, d } of gvas) {
           // Vor dem Intraday-Fenster schon getroffen → für diesen Lauf ohne Belang.
           let schonVorher = false;
           for (const k of tage) {
@@ -119,14 +146,14 @@ export async function fuehreLaufAus(
             if (beruehrt(g, bars[i].h, bars[i].l)) { start = i; break; }
           }
           if (start < 0) continue;
-          if (zuFrueh(d3, g, bars[start].tag)) { verworfen++; continue; }
+          if (zuFrueh(d, g, bars[start].tag)) { verworfen++; continue; }
           const s = vor[g.seite];
-          const r0 = simuliereShort(s.bars, start, s.tiefs, s.open, einst);
+          const r0 = simuliereShort(s.bars, start, s.struktur, s.open, einst);
           const r = g.seite === "long" ? zurueckSpiegeln(r0) : r0;
           const risikoPips = r0.risiko === null ? null : r0.risiko / pip;
           const kosten = MAJORS.has(paar) ? e.kostenMajors : e.kostenCrosses;
           const rNetto = r0.r === null || risikoPips === null || risikoPips <= 0 ? null : r0.r - kosten / risikoPips;
-          ereignisse.push({ ...r, paar, seite: g.seite, level: g.level, bStart: g.bStart, rNetto, risikoPips });
+          ereignisse.push({ ...r, paar, seite: g.seite, level: g.level, gvaTf: d.art, bStart: g.bStart, bEnde: g.bEnde, rNetto, risikoPips });
         }
         meldung?.(`${paar}: ${gvas.length} GVAs`);
       } catch (err) {
