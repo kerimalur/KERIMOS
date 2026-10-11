@@ -40,7 +40,7 @@ function alterWort(stunden: number | null): string {
 function Balken({ wert, max }: { wert: number; max: number }) {
   const breite = Math.min(50, (Math.abs(wert) / max) * 50);
   return (
-    <div className="relative h-2 w-full rounded bg-surface-2" aria-hidden>
+    <div className="relative h-2 w-full rounded bg-sand" aria-hidden>
       <div className="absolute left-1/2 top-0 h-full w-px bg-ink-faint" />
       <div
         className={cx("absolute top-0 h-full rounded", wert >= 0 ? "bg-good-bright" : "bg-bad-bright")}

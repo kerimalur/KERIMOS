@@ -61,11 +61,12 @@ const BEREICHE: BereichDef[] = [
   },
   {
     key: "journal", label: "Journal", href: "/trading/journal",
-    pfade: ["/trading/journal", "/trading/backtest"],
-    kicker: "Trades und Backtest",
+    pfade: ["/trading/journal", "/trading/backtest", "/trading/labor"],
+    kicker: "Trades, Backtest und Strategie-Labor",
     seiten: [
       { href: "/trading/journal", label: "Journal" },
       { href: "/trading/backtest", label: "Backtest" },
+      { href: "/trading/labor", label: "Strategie-Labor" },
     ],
     bild: { x: 46.5, y: 82, zoom: 1.05 },
     icon: "M4 19V5M4 19h16M7 15l4-4 3 3 5-6",

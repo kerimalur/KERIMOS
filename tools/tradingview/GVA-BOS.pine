@@ -1,0 +1,430 @@
+//@version=5
+// ============================================================================
+// GVA → BOS  v0.2.1  (KerimOS, 11.10.2026)
+//
+// Schritt 1 auf dem Weg zum Indikator, der selbst handeln kann.
+// Gedacht für den Ausführungs-Chart (30m, auch 15m / 1h / 4h).
+//
+//   1. GVA-Erkennung und erster Treffer wie „GVA Linien — Pur v1.1"
+//      (3D, Toleranz, 2. Kerze grösser, Docht zählt, Nachbar-Filter).
+//      NEU v0.2.1: GVAs, die VOR dem Beginn der Chart-Historie entstanden und
+//      noch offen sind, werden aus dem 3D-Verlauf übernommen. Ohne das sah
+//      ein 15m-/30m-Chart nur die GVAs der letzten Wochen (Treffer = 0).
+//
+//   2. Ab dem Treffer, auf dem CHART-Timeframe — Beispiel Short:
+//      - Struktur = letztes bestätigtes Swing-Tief VOR dem Treffer.
+//      - BOS = eine Kerze schliesst (bzw. sticht per Docht) unter diese
+//        Struktur, UND der Bruch geschieht unter dem Daily Open
+//        (Struktur-Level unter dem Daily Open des Tages).
+//      - Das Hoch H seit dem Treffer wird nachgeführt.
+//      Long spiegelbildlich.
+//
+//   3. Nach dem BOS:
+//      - L = tiefstes Tief seit H, wird nachgeführt (Marke „L").
+//      - Wird H überschritten:
+//          nur Docht bzw. Schluss höchstens X Pips darüber
+//            → neues H, Setup wartet auf einen neuen BOS (Struktur = letztes
+//              Swing-Tief vor dem neuen H)
+//          Schluss klar darüber → Struktur läuft weiter, Setup ungültig (×)
+//
+//   4. Ohne BOS innerhalb von X Tagen nach dem Treffer: verfallen (○).
+//
+// Noch NICHT drin (nächster Schritt): Fibonacci, Einstieg 0.618, SL, TP.
+// ============================================================================
+indicator("GVA → BOS (Kerim) v0.2.1", overlay=true, max_lines_count=500, max_labels_count=500, max_bars_back=5000)
+
+// ============================================================================
+// EINSTELLUNGEN
+// ============================================================================
+g_gva = "① GVA (wie GVA Linien — Pur v1.1)"
+gva_tf     = input.timeframe("3D", "GVA-Timeframe", group=g_gva)
+tol_pct    = input.float(5.0,  "Boden/Top-Toleranz (% Body 1. Kerze)", minval=0.1, maxval=50.0, step=0.5, group=g_gva)
+k2_pct     = input.float(40.0, "2. Kerze mindestens X% grösser", minval=0.0, maxval=500.0, step=5.0, group=g_gva)
+touch_wick = input.bool(true, "Docht zählt als Berührung", group=g_gva)
+flt_on     = input.bool(true, "Nachbar-Filter (zu früher Treffer verwerfen)", group=g_gva)
+flt_gap    = input.int(1, "Mindestens X GVA-Kerzen komplett dazwischen", minval=0, maxval=20, group=g_gva)
+max_back   = input.int(3000, "Rückwirkende Prüfung (max. Kerzen)", minval=100, maxval=4500, group=g_gva)
+alt_on     = input.bool(true, "Ältere offene GVAs aus dem 3D-Verlauf übernehmen", group=g_gva)
+alt_max    = input.int(150, "… höchstens so viele (die jüngsten)", minval=10, maxval=300, group=g_gva)
+col_bull   = input.color(#00C851, "Farbe Long", group=g_gva, inline="c")
+col_bear   = input.color(#FF4444, "Short", group=g_gva, inline="c")
+
+g_bos = "② Break of Structure (auf dem Chart-Timeframe)"
+bos_mode = input.string("Schlusskurs", "BOS bestätigt durch", options=["Schlusskurs", "Docht"], group=g_bos)
+swing_n  = input.int(2, "Swing: Kerzen links und rechts", minval=1, maxval=20, group=g_bos)
+use_do   = input.bool(true, "BOS muss unter (Short) / über (Long) dem Daily Open geschehen", group=g_bos)
+tol_pips = input.float(3.0, "H/L-Überschreitung bis X Pips = kein Bruch", minval=0.0, maxval=100.0, step=0.5, group=g_bos)
+max_days = input.float(10.0, "Ohne BOS verfällt das Setup nach X Tagen", minval=0.5, maxval=60.0, step=0.5, group=g_bos)
+show_end = input.bool(true, "Ende markieren (× ungültig, ○ verfallen)", group=g_bos)
+show_sw  = input.bool(false, "Swing-Punkte anzeigen (zum Kontrollieren)", group=g_bos)
+show_do  = input.bool(false, "Daily Open als Stufe zeigen", group=g_bos)
+
+g_per = "📅 Zeitraum und Zähler"
+per_on  = input.bool(false, "Nur Treffer im Zeitraum", group=g_per)
+per_von = input.time(timestamp("01 Jan 2025 00:00 +0000"), "Von", group=g_per)
+per_bis = input.time(timestamp("01 Jan 2026 00:00 +0000"), "Bis", group=g_per)
+tab_on  = input.bool(true, "Zähler-Tabelle zeigen", group=g_per)
+
+// ============================================================================
+// HTF: offene GVAs aus dem ganzen 3D-Verlauf (für den Start der Chart-Historie)
+// Läuft im Kontext des GVA-Timeframes: erkennt jede GVA (A = vorletzte,
+// B = letzte geschlossene Kerze) und streicht sie, sobald eine spätere
+// 3D-Kerze das Level berührt. Was übrig bleibt, ist offen.
+// ============================================================================
+f_htfOffen() =>
+    var float[] sLvl  = array.new_float()
+    var bool[]  sLong = array.new_bool()
+    var int[]   sIdx  = array.new_int()
+    var int[]   sT    = array.new_int()
+    var int[]   sE    = array.new_int()
+    float bA = math.abs(close[2] - open[2])
+    if bar_index >= 2 and bA > 0
+        float bB = math.abs(close[1] - open[1])
+        float tl = bA * (tol_pct / 100.0)
+        bool lg = bB >= bA * (1.0 + k2_pct / 100.0)
+        bool bu = close[2] < open[2] and close[1] > open[1] and lg and math.abs(math.min(open[2], close[2]) - math.min(open[1], close[1])) <= tl
+        bool be = close[2] > open[2] and close[1] < open[1] and lg and math.abs(math.max(open[2], close[2]) - math.max(open[1], close[1])) <= tl
+        if bu or be
+            array.push(sLvl, bu ? math.min(open[1], close[1]) : math.max(open[1], close[1]))
+            array.push(sLong, bu)
+            array.push(sIdx, bar_index[1])
+            array.push(sT, time[1])
+            array.push(sE, time_close[1])
+    // Berührung durch die laufende 3D-Kerze streicht die Linie
+    if array.size(sLvl) > 0
+        for i = array.size(sLvl) - 1 to 0
+            float lv = array.get(sLvl, i)
+            bool isL = array.get(sLong, i)
+            float h = touch_wick ? high : math.max(open, close)
+            float l = touch_wick ? low : math.min(open, close)
+            if isL ? l <= lv : h >= lv
+                array.remove(sLvl, i)
+                array.remove(sLong, i)
+                array.remove(sIdx, i)
+                array.remove(sT, i)
+                array.remove(sE, i)
+    [sLvl, sLong, sIdx, sT, sE]
+
+[hLvl, hLong, hIdxA, hTA, hEA] = request.security(syminfo.tickerid, gva_tf, f_htfOffen(), lookahead=barmerge.lookahead_off)
+
+// GVA-Timeframe für die laufende Erkennung (wie Pur v1.1)
+[oA, cA, oB, cB, tB, eB, iB, hIdx] = request.security(syminfo.tickerid, gva_tf,
+     [open[2], close[2], open[1], close[1], time[1], time_close[1], bar_index[1], bar_index],
+     lookahead=barmerge.lookahead_off)
+
+// Daily Open des laufenden Handelstags (OANDA: 17:00 New York).
+dOpen = request.security(syminfo.tickerid, "D", open, lookahead=barmerge.lookahead_on)
+plot(show_do ? dOpen : na, "Daily Open", color=color.new(color.gray, 40), style=plot.style_stepline)
+
+int   maxBars = math.max(1, math.round(max_days * 86400 / timeframe.in_seconds()))
+float pipSize = syminfo.mintick * 10
+float tolPx   = tol_pips * pipSize
+
+// ============================================================================
+// SWING-PUNKTE (Chart-Timeframe)
+// ============================================================================
+var int[]   pvLoB = array.new_int()
+var float[] pvLoP = array.new_float()
+var int[]   pvHiB = array.new_int()
+var float[] pvHiP = array.new_float()
+
+pl = ta.pivotlow(low, swing_n, swing_n)
+ph = ta.pivothigh(high, swing_n, swing_n)
+if not na(pl)
+    array.push(pvLoB, bar_index - swing_n)
+    array.push(pvLoP, pl)
+    if array.size(pvLoB) > 4000
+        array.shift(pvLoB)
+        array.shift(pvLoP)
+if not na(ph)
+    array.push(pvHiB, bar_index - swing_n)
+    array.push(pvHiP, ph)
+    if array.size(pvHiB) > 4000
+        array.shift(pvHiB)
+        array.shift(pvHiP)
+
+plotshape(show_sw and not na(pl), "Swing-Tief", shape.circle, location.belowbar, color.new(color.gray, 20), offset=-swing_n, size=size.tiny)
+plotshape(show_sw and not na(ph), "Swing-Hoch", shape.circle, location.abovebar, color.new(color.gray, 20), offset=-swing_n, size=size.tiny)
+
+// ============================================================================
+// SPEICHER
+// ============================================================================
+var line[]  actLn   = array.new<line>()
+var float[] actLvl  = array.new<float>()
+var bool[]  actLong = array.new<bool>()
+var int[]   actF    = array.new_int()
+
+// Setups (Short-Begriffe; bei Long gespiegelt)
+var bool[]  suLong  = array.new<bool>()
+var float[] suExt   = array.new<float>()   // H
+var int[]   suExtB  = array.new_int()
+var int[]   suVor   = array.new_int()      // Struktur = letztes Swing VOR dieser Kerze
+var int[]   suState = array.new_int()      // 0 wartet auf BOS, 1 nach BOS
+var float[] suGeg   = array.new<float>()   // L (Gegen-Extrem nach dem BOS)
+var label[] suGegL  = array.new<label>()
+var int[]   suDead  = array.new_int()
+var bool[]  suBos   = array.new<bool>()    // hatte schon einmal einen BOS
+var int[]   suRes   = array.new_int()      // 0 läuft, 1 ungültig, 2 verfallen ohne BOS, 3 Zeit um nach BOS
+
+// [0] Treffer, [1] mit BOS, [2] ungültig, [3] verfallen ohne BOS
+var int[] cnt = array.new_int(4, 0)
+
+var int lastTB = na
+
+// ============================================================================
+// HILFSFUNKTIONEN
+// ============================================================================
+f_hi(int k) => touch_wick ? high[k] : math.max(open[k], close[k])
+f_lo(int k) => touch_wick ? low[k]  : math.min(open[k], close[k])
+
+f_inPer(int t) => not per_on or (t >= per_von and t <= per_bis)
+
+f_firstTouchBack(float lvl, bool isLong, int startT) =>
+    int found = -1
+    for k = max_back to 0
+        if k <= bar_index
+            int tk = time[k]
+            if not na(tk) and tk >= startT
+                bool hit = isLong ? f_lo(k) <= lvl : f_hi(k) >= lvl
+                if hit
+                    found := k
+                    break
+    found
+
+f_zuFrueh(int fIdx, int hI) =>
+    flt_on and not na(fIdx) and not na(hI) and (hI - fIdx) < (flt_gap + 1)
+
+// Letztes Swing-Tief (useLows) bzw. -Hoch mit Kerze < vorB, bestätigt vor cb.
+f_lastPivot(bool useLows, int vorB, int cb) =>
+    float p = na
+    int pb = na
+    int n = useLows ? array.size(pvLoB) : array.size(pvHiB)
+    if n > 0
+        for i = n - 1 to 0
+            int b = useLows ? array.get(pvLoB, i) : array.get(pvHiB, i)
+            if b < vorB and b + swing_n < cb
+                p := useLows ? array.get(pvLoP, i) : array.get(pvHiP, i)
+                pb := b
+                break
+    [p, pb]
+
+f_end(int i, int r, int bi, float y) =>
+    array.set(suRes, i, r)
+    if r == 1
+        array.set(cnt, 2, array.get(cnt, 2) + 1)
+    if r == 2
+        array.set(cnt, 3, array.get(cnt, 3) + 1)
+    if show_end and (r == 1 or r == 2)
+        label.new(bi, y, r == 1 ? "×" : "○", style=label.style_none,
+             textcolor=r == 1 ? color.new(color.orange, 0) : color.new(color.gray, 10), size=size.normal)
+    r
+
+// Ein Schritt eines Setups auf der Kerze mit Offset k.
+f_step(int i, int k) =>
+    bool isLong = array.get(suLong, i)
+    int bi = bar_index - k
+    float hi = high[k]
+    float lo = low[k]
+    float cl = close[k]
+    // Short-Sicht: bei Long werden Hoch/Tief vertauscht und das Vorzeichen gedreht
+    float sHi = isLong ? -lo : hi
+    float sLo = isLong ? -hi : lo
+    float sCl = isLong ? -cl : cl
+    float sDo = isLong ? -dOpen[k] : dOpen[k]
+    int st = array.get(suState, i)
+    float ext = array.get(suExt, i)
+    if bi > array.get(suDead, i)
+        int _e = f_end(i, st == 0 ? 2 : 3, bi, isLong ? lo : hi)
+    else if st == 0
+        if sHi > ext
+            ext := sHi
+            array.set(suExt, i, ext)
+            array.set(suExtB, i, bi)
+        if bi > array.get(suExtB, i)
+            // Short: Struktur ist ein Swing-TIEF, Long: ein Swing-HOCH
+            [rp0, rb] = f_lastPivot(not isLong, array.get(suVor, i), bi)
+            if not na(rp0)
+                float rp = isLong ? -rp0 : rp0
+                bool doOk = not use_do or rp < sDo
+                bool brk = bos_mode == "Schlusskurs" ? sCl < rp : sLo < rp
+                if doOk and brk
+                    array.set(suState, i, 1)
+                    if not array.get(suBos, i)
+                        array.set(suBos, i, true)
+                        array.set(cnt, 1, array.get(cnt, 1) + 1)
+                    color c = isLong ? col_bull : col_bear
+                    int eb = array.get(suExtB, i)
+                    line.new(rb, rp0, bi, rp0, color=c, style=line.style_dotted, width=1)
+                    label.new(bi, rp0, "BOS", style=isLong ? label.style_label_down : label.style_label_up,
+                         color=color.new(c, 10), textcolor=color.white, size=size.tiny)
+                    label.new(eb, isLong ? -ext : ext, isLong ? "L" : "H",
+                         style=isLong ? label.style_label_up : label.style_label_down,
+                         color=color.new(color.gray, 25), textcolor=color.white, size=size.tiny)
+                    // Gegen-Extrem seit dem Hoch
+                    float g = sLo
+                    int gb = bi
+                    int span = math.min(bi - eb, 4000)
+                    for j = 0 to span
+                        float x = isLong ? -high[k + j] : low[k + j]
+                        if x < g
+                            g := x
+                            gb := bi - j
+                    array.set(suGeg, i, g)
+                    label gl = label.new(gb, isLong ? -g : g, isLong ? "H" : "L",
+                         style=isLong ? label.style_label_down : label.style_label_up,
+                         color=color.new(color.blue, 30), textcolor=color.white, size=size.tiny)
+                    label.delete(array.get(suGegL, i))
+                    array.set(suGegL, i, gl)
+    else
+        // nach dem BOS
+        if sHi > ext
+            if sCl > ext + tolPx
+                // klare Fortsetzung der Struktur über H hinaus → ungültig
+                int _e = f_end(i, 1, bi, isLong ? lo : hi)
+            else
+                // nur Docht / wenige Pips: neues H, neuer BOS nötig
+                array.set(suExt, i, sHi)
+                array.set(suExtB, i, bi)
+                array.set(suVor, i, bi)
+                array.set(suState, i, 0)
+        else if sLo < array.get(suGeg, i)
+            array.set(suGeg, i, sLo)
+            label.set_xy(array.get(suGegL, i), bi, isLong ? -sLo : sLo)
+    array.get(suRes, i)
+
+f_newSetup(bool isLong, float lvl, int k) =>
+    int bi = bar_index - k
+    array.push(suLong, isLong)
+    array.push(suExt, -1e12)
+    array.push(suExtB, bi)
+    array.push(suVor, bi)
+    array.push(suState, 0)
+    array.push(suGeg, 1e12)
+    array.push(suGegL, label(na))
+    array.push(suDead, bi + maxBars)
+    array.push(suBos, false)
+    array.push(suRes, 0)
+    int idx = array.size(suLong) - 1
+    color c = isLong ? col_bull : col_bear
+    label.new(bi, lvl, isLong ? "Hit ▲" : "Hit ▼",
+         style=isLong ? label.style_label_up : label.style_label_down,
+         color=c, textcolor=color.white, size=size.tiny)
+    array.set(cnt, 0, array.get(cnt, 0) + 1)
+    if k > 0
+        for j = k to 1
+            if array.get(suRes, idx) == 0
+                int _r = f_step(idx, j)
+    idx
+
+f_closeLine(line ln, int endT) =>
+    line.set_extend(ln, extend.none)
+    line.set_x2(ln, endT)
+    line.set_style(ln, line.style_dashed)
+    line.set_width(ln, 1)
+    endT
+
+// Neue Linie anlegen und rückwirkend auf einen Treffer prüfen.
+f_neueLinie(float lvl, bool isLong, int tStart, int tEnde, int fIdx) =>
+    color c = isLong ? col_bull : col_bear
+    line ln = line.new(tStart, lvl, time, lvl, xloc=xloc.bar_time, color=c, width=2, extend=extend.right)
+    int hitK = f_firstTouchBack(lvl, isLong, tEnde)
+    if hitK >= 0
+        if f_zuFrueh(fIdx, hIdx[hitK])
+            line.delete(ln)
+        else
+            int _c = f_closeLine(ln, time[hitK])
+            if f_inPer(time[hitK])
+                int _s = f_newSetup(isLong, lvl, hitK)
+    else
+        array.push(actLn, ln)
+        array.push(actLvl, lvl)
+        array.push(actLong, isLong)
+        array.push(actF, fIdx)
+    hitK
+
+// ============================================================================
+// ABLAUF
+// ============================================================================
+
+// 0) Erste Kerze: ältere offene GVAs aus dem 3D-Verlauf übernehmen
+if barstate.isfirst and alt_on and not na(hLvl)
+    int n = array.size(hLvl)
+    int ab = math.max(0, n - alt_max)
+    if n > 0
+        for i = ab to n - 1
+            // Die jüngste GVA erkennt Schritt 1 ohnehin — nicht doppelt anlegen.
+            if na(tB) or array.get(hTA, i) != tB
+                int _n = f_neueLinie(array.get(hLvl, i), array.get(hLong, i), array.get(hTA, i), array.get(hEA, i), array.get(hIdxA, i))
+
+// 1) Neue GVA erkennen (einmal pro geschlossener GVA-Kerze)
+bodyA = math.abs(cA - oA)
+if not na(tB) and (na(lastTB) or tB != lastTB)
+    lastTB := tB
+    if bodyA > 0
+        float bodyB = math.abs(cB - oB)
+        float tol = bodyA * (tol_pct / 100.0)
+        bool larger = bodyB >= bodyA * (1.0 + k2_pct / 100.0)
+        bool bull = cA < oA and cB > oB and larger and math.abs(math.min(oA, cA) - math.min(oB, cB)) <= tol
+        bool bear = cA > oA and cB < oB and larger and math.abs(math.max(oA, cA) - math.max(oB, cB)) <= tol
+        if bull or bear
+            int _n = f_neueLinie(bull ? math.min(oB, cB) : math.max(oB, cB), bull, tB, nz(eB, tB), nz(iB, -1))
+
+// 2) Aktive Linien: erster Treffer auf der aktuellen Kerze?
+if array.size(actLn) > 0
+    for i = array.size(actLn) - 1 to 0
+        float lvl = array.get(actLvl, i)
+        bool isLong = array.get(actLong, i)
+        bool hit = isLong ? f_lo(0) <= lvl : f_hi(0) >= lvl
+        if hit
+            line ln = array.get(actLn, i)
+            if f_zuFrueh(array.get(actF, i), hIdx)
+                line.delete(ln)
+            else
+                int _c = f_closeLine(ln, time)
+                if f_inPer(time)
+                    int _s = f_newSetup(isLong, lvl, 0)
+            array.remove(actLn, i)
+            array.remove(actLvl, i)
+            array.remove(actLong, i)
+            array.remove(actF, i)
+
+// 3) Setups einen Schritt weiter; fertige entfernen
+if array.size(suLong) > 0
+    for i = array.size(suLong) - 1 to 0
+        int r = array.get(suRes, i)
+        if r == 0
+            r := f_step(i, 0)
+        if r != 0
+            array.remove(suLong, i)
+            array.remove(suExt, i)
+            array.remove(suExtB, i)
+            array.remove(suVor, i)
+            array.remove(suState, i)
+            array.remove(suGeg, i)
+            array.remove(suGegL, i)
+            array.remove(suDead, i)
+            array.remove(suBos, i)
+            array.remove(suRes, i)
+
+// 4) Zähler
+var table tab = table.new(position.top_right, 2, 7, border_width=1,
+     frame_color=color.new(color.gray, 60), frame_width=1)
+if tab_on and barstate.islast
+    int nHit = array.get(cnt, 0)
+    int nBos = array.get(cnt, 1)
+    int nUng = array.get(cnt, 2)
+    int nVer = array.get(cnt, 3)
+    table.cell(tab, 0, 0, "GVA → BOS v0.2.1", text_color=color.gray, text_size=size.small)
+    table.cell(tab, 1, 0, per_on ? "im Zeitraum" : "gesamt", text_color=color.gray, text_size=size.small)
+    table.cell(tab, 0, 1, "Treffer", text_color=color.silver, text_size=size.small)
+    table.cell(tab, 1, 1, str.tostring(nHit), text_color=color.white, text_size=size.small)
+    table.cell(tab, 0, 2, "mit BOS", text_color=color.silver, text_size=size.small)
+    table.cell(tab, 1, 2, str.tostring(nBos), text_color=color.white, text_size=size.small)
+    table.cell(tab, 0, 3, "× ungültig", text_color=color.silver, text_size=size.small)
+    table.cell(tab, 1, 3, str.tostring(nUng), text_color=color.white, text_size=size.small)
+    table.cell(tab, 0, 4, "○ ohne BOS verfallen", text_color=color.silver, text_size=size.small)
+    table.cell(tab, 1, 4, str.tostring(nVer), text_color=color.white, text_size=size.small)
+    table.cell(tab, 0, 5, "läuft noch", text_color=color.silver, text_size=size.small)
+    table.cell(tab, 1, 5, str.tostring(array.size(suLong)), text_color=color.white, text_size=size.small)
+    table.cell(tab, 0, 6, "offene GVAs", text_color=color.silver, text_size=size.small)
+    table.cell(tab, 1, 6, str.tostring(array.size(actLn)), text_color=color.white, text_size=size.small)
