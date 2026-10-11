@@ -66,6 +66,8 @@ const BEREICHE: BereichDef[] = [
       { href: "/trading/waehrungen", label: "Währungen" },
       { href: "/trading/fundamentals/kalender", label: "Kalender" },
       { href: "/trading/fundamentals/wochenideen", label: "Wochenaussicht" },
+      { href: "/trading/fundamentals/rueckblick", label: "Wochenrückblick" },
+      { href: "/trading/fundamentals/beobachter", label: "Beobachter" },
       { href: "/trading/fundamentals/rueckrechnung", label: "Makro-Backtest" },
     ],
     bild: { x: 69, y: 40, zoom: 1.7 },

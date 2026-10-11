@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchCandles } from "@/lib/marktdaten/quellen/oanda";
+import { fetchYahooCandles } from "@/lib/marktdaten/quellen/yahoo";
 import { INSTRUMENTS } from "@/lib/marktdaten/konstanten/instruments";
 import { chunkUpsert } from "./util";
 
@@ -29,14 +30,24 @@ export async function updatePrices(
     }),
   );
 
-  // OANDA-Candles parallel fetchen
+  let ersatz = 0;
+  // OANDA-Candles parallel fetchen (Yahoo als Ersatz)
   const results = await Promise.allSettled(
     instruments.map(async (inst, i) => {
       const lastDate = lastDates[i];
-      const candles = await fetchCandles(
-        inst.instrument,
-        lastDate ? { from: lastDate } : { count: 500 },
-      );
+      const optionen = lastDate ? { from: lastDate } : { count: 500 };
+      let candles;
+      try {
+        candles = await fetchCandles(inst.instrument, optionen);
+      } catch (e) {
+        // OANDA antwortet nicht (Schlüssel, Konto, Host): Ersatz über Yahoo, damit die Kurse nicht stehen bleiben.
+        try {
+          candles = await fetchYahooCandles(inst.instrument, optionen);
+          ersatz++;
+        } catch (e2) {
+          throw new Error(`${e instanceof Error ? e.message : e} · Yahoo: ${e2 instanceof Error ? e2.message : e2}`);
+        }
+      }
       const rows = candles.map((c) => ({ instrument: inst.instrument, ...c }));
       const written = await chunkUpsert(db, "price_daily", rows, "instrument,date");
       return written;
@@ -60,5 +71,5 @@ export async function updatePrices(
   if (errors.length === instruments.length) {
     throw new Error(`alle Instrumente fehlgeschlagen: ${errors[0]}`);
   }
-  return { instruments: instruments.length, rows: totalRows, errors };
+  return { instruments: instruments.length, rows: totalRows, yahooErsatz: ersatz, errors };
 }

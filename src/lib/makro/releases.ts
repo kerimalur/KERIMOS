@@ -461,6 +461,17 @@ function aehnlich(a: string, b: string): number {
   return n / Math.max(x.size, y.size);
 }
 
+/** m/m, y/y oder q/q aus einem Titel; null, wenn keiner erkennbar ist. */
+function periodeVon(name: string): "m" | "y" | "q" | null {
+  const n = name.toLowerCase();
+  if (/\b(m\/m|mom)\b|monat/.test(n)) return "m";
+  if (/\b(y\/y|yoy)\b|jahr/.test(n)) return "y";
+  if (/\b(q\/q|qoq)\b|quartal/.test(n)) return "q";
+  return null;
+}
+/** „Kern" (Core) im Titel? Verhindert, dass der Gesamtindex den Kernwert überschreibt (PCE 11.10.2026). */
+const istKern = (name: string) => /\b(core|kern)|ohne\s+(nahrung|lebensmittel|energie)|ex\.?\s*(food|energy)/i.test(name);
+
 function mt5Einheit(z: Mt5Zeile): string {
   if ((z.unit ?? "").toUpperCase().includes("PERCENT")) return "%";
   const m = (z.multiplier ?? "").toUpperCase();
@@ -485,6 +496,8 @@ export interface Mt5Bericht {
   istGesetzt: number;
   historie: number;
   ohneZuordnung: number;
+  /** Kommende MT5-Termine ohne Forex-Factory-Gegenstück (Kalender der nächsten Wochen). */
+  zukunft: number;
 }
 
 /**
@@ -529,6 +542,11 @@ export function mitMt5(releases: Release[], mt5: Mt5Zeile[], jetzt = Date.now())
     const t = Date.parse(m.event_time);
     for (const r of jeCcy.get(m.ccy) ?? []) {
       if (Math.abs(Date.parse(r.event_time) - t) > TOLERANZ_MS) continue;
+      // Gleiche Periode und gleiche Art (Kern/Gesamt): sonst ist es ein anderer Wert
+      // (Kern-PCE m/m bekam 0.9 vom Gesamtindex, 11.10.2026).
+      const pm = periodeVon(m.name), pr = periodeVon(`${r.titel} ${r.serie}`);
+      if (pm && pr && pm !== pr) continue;
+      if (istKern(m.name) !== istKern(`${r.titel} ${r.serie}`)) continue;
       let faktor = 1, punkte = 0;
       if (m.previous !== null && r.vorwert !== null) {
         const k = FAKTOREN.find((f) => gleich(m.previous! * f, r.vorwert!));
@@ -587,11 +605,33 @@ export function mitMt5(releases: Release[], mt5: Mt5Zeile[], jetzt = Date.now())
     eigenstaendig.set(m.event_id, (bisher ?? true) && !kollision);
   }
 
-  let historie = 0, ohneZuordnung = 0;
+  let historie = 0, ohneZuordnung = 0, zukunft = 0;
   for (const m of mt5) {
     if (mVergeben.has(m.value_id)) continue;
     const t = Date.parse(m.event_time);
-    if (t > jetzt) continue;
+    if (t > jetzt) {
+      // Kommende Termine aus MT5 (Erwartung, noch ohne Ist): macht den Kalender der nächsten Woche
+      // unabhängig von Forex Factory. Nur wichtige Termine und nur, wenn Forex Factory zur
+      // selben Zeit nichts Gleichartiges führt (sonst Doppelung).
+      if (t - jetzt > 21 * 86_400_000) continue;
+      const impact = mt5Impact(m);
+      if (impact !== "High" && impact !== "Medium") continue;
+      const zk = zuordnung.get(m.event_id);
+      const serie = zk ? zk.serie : serieVon(m.name);
+      const kat = zk ? zk.kategorie : kategorieVon(serie);
+      const kollision = (ffZeiten.get(`${m.ccy}|${kat}`) ?? []).some((x) => Math.abs(x - t) <= TOLERANZ_MS);
+      if (kollision) continue;
+      const f = zk ? zk.faktor : 1;
+      out.push({
+        id: `mt5:${m.value_id}`, ccy: m.ccy, titel: zk ? zk.titel : m.name, serie, kategorie: kat,
+        event_time: new Date(t).toISOString(), impact, einheit: zk ? zk.einheit : mt5Einheit(m),
+        erwartung: m.forecast === null ? null : m.forecast * f,
+        ist: null, vorwert: m.previous === null ? null : m.previous * f,
+        ist_quelle: null, abweichung: null, z: null,
+      });
+      zukunft++;
+      continue;
+    }
     if (m.actual === null) continue;
     const z = zuordnung.get(m.event_id);
     if (z) {
@@ -630,8 +670,31 @@ export function mitMt5(releases: Release[], mt5: Mt5Zeile[], jetzt = Date.now())
 
   return {
     releases: out,
-    bericht: { zeilen: mt5.length, zugeordnet: mVergeben.size, istGesetzt, historie, ohneZuordnung },
+    bericht: { zeilen: mt5.length, zugeordnet: mVergeben.size, istGesetzt, historie, ohneZuordnung, zukunft },
   };
+}
+
+/**
+ * Doppelte Termine entfernen: gleiche Währung, gleicher Serienname und Zeit
+ * innerhalb von 2 Stunden (z.B. BOJ Policy Rate 02:54 doppelt). Behalten wird
+ * die Zeile mit Ist, sonst die mit Erwartung, sonst die erste. Liefert auch
+ * die entfernten ids, damit sie aus der Tabelle gelöscht werden können.
+ */
+export function entferneDoppelte(releases: Release[]): { releases: Release[]; entfernt: string[] } {
+  const gewicht = (r: Release) => (r.ist !== null ? 4 : 0) + (r.erwartung !== null ? 2 : 0) + (r.vorwert !== null ? 1 : 0)
+    + (r.ist_quelle === "jblanked" ? 1 : 0) + (r.id.startsWith("mt5:") ? 0 : 0.5);
+  const sortiert = [...releases].sort((a, b) => Date.parse(a.event_time) - Date.parse(b.event_time));
+  const behalten = new Map<string, Release[]>();
+  const entfernt = new Set<string>();
+  for (const r of sortiert) {
+    const k = `${r.ccy}|${r.serie.toLowerCase()}`;
+    const liste = behalten.get(k) ?? [];
+    const dup = liste.findIndex((x) => Math.abs(Date.parse(x.event_time) - Date.parse(r.event_time)) <= 2 * 3_600_000);
+    if (dup === -1) { liste.push(r); behalten.set(k, liste); continue; }
+    const alt = liste[dup];
+    if (gewicht(r) > gewicht(alt)) { entfernt.add(alt.id); liste[dup] = r; } else entfernt.add(r.id);
+  }
+  return { releases: releases.filter((r) => !entfernt.has(r.id)), entfernt: [...entfernt] };
 }
 
 /* --------------------------------------------- Zinsentscheid aus Stimmen */

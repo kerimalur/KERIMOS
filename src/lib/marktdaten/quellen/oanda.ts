@@ -15,8 +15,28 @@ interface OandaCandle {
   mid: { o: string; h: string; l: string; c: string };
 }
 
+const PRACTICE = "https://api-fxpractice.oanda.com/v3";
+const LIVE = "https://api-fxtrade.oanda.com/v3";
+
 function baseUrl(): string {
-  return process.env.OANDA_URL ?? "https://api-fxpractice.oanda.com/v3";
+  return process.env.OANDA_URL ?? PRACTICE;
+}
+
+/**
+ * GET gegen OANDA. Ein Schlüssel gehört entweder zum Practice- oder zum
+ * Live-Konto; antwortet der gewählte Host mit 401/403, wird (nur wenn
+ * OANDA_URL nicht gesetzt ist) der andere Host versucht. Das war die
+ * wahrscheinlichste Ursache für „Kurse seit 27.09. nicht aktualisiert“.
+ */
+async function oandaGet(pfad: string, extra: RequestInit = {}): Promise<Response> {
+  const ersterHost = baseUrl();
+  const res = await fetch(`${ersterHost}${pfad}`, { headers: headers(), cache: "no-store", ...extra });
+  if ((res.status === 401 || res.status === 403) && !process.env.OANDA_URL) {
+    const anderer = ersterHost === PRACTICE ? LIVE : PRACTICE;
+    const zweite = await fetch(`${anderer}${pfad}`, { headers: headers(), cache: "no-store", ...extra });
+    if (zweite.ok) return zweite;
+  }
+  return res;
 }
 
 function headers(): HeadersInit {
@@ -45,10 +65,7 @@ export async function fetchCandles(
     params.set("count", String(opts.count ?? 5000));
   }
 
-  const res = await fetch(
-    `${baseUrl()}/instruments/${instrument}/candles?${params}`,
-    { headers: headers(), cache: "no-store" },
-  );
+  const res = await oandaGet(`/instruments/${instrument}/candles?${params}`);
   if (!res.ok) {
     throw new Error(`OANDA ${instrument}: HTTP ${res.status} ${await res.text()}`);
   }
@@ -86,9 +103,7 @@ export async function fetchIntraday(
   count: number,
 ): Promise<IntradayKerze[]> {
   const params = new URLSearchParams({ granularity, price: "M", from: fromIso, count: String(count) });
-  const res = await fetch(`${baseUrl()}/instruments/${instrument}/candles?${params}`, {
-    headers: headers(), cache: "no-store", signal: AbortSignal.timeout(8_000),
-  });
+  const res = await oandaGet(`/instruments/${instrument}/candles?${params}`, { signal: AbortSignal.timeout(8_000) });
   if (!res.ok) throw new Error(`OANDA ${instrument} ${granularity}: HTTP ${res.status}`);
   const json = (await res.json()) as { candles: OandaCandle[] };
   return json.candles.map((c) => ({

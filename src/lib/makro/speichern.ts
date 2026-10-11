@@ -59,6 +59,6 @@ export async function berichtErgaenzen(db: SupabaseClient, eintraege: Record<str
   const { data } = await db.from("makro_sync").select("gelaufen, bericht").eq("id", 1).maybeSingle();
   const bericht = { ...((data?.bericht as Record<string, string> | null) ?? {}), ...eintraege };
   await db.from("makro_sync").upsert({
-    id: 1, gelaufen: (data?.gelaufen as string | null) ?? new Date().toISOString(), bericht,
+    id: 1, gelaufen: new Date().toISOString(), bericht, // Statuszeile = letzter Lauf irgendeines Jobs (stand sonst auf 29.09.)
   });
 }

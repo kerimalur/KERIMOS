@@ -2,9 +2,8 @@ import "server-only";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { mcpEssenNotizen, mcpRoutinen, mcpWochenziele } from "@/lib/mcp/kompass";
-import {
-  mcpBacktest, mcpGvaStatus, mcpTrades, mcpWirtschaftskalender,
-} from "@/lib/mcp/trading";
+import { mcpBacktest, mcpGvaStatus, mcpTrades } from "@/lib/mcp/trading";
+import { mcpKalender, mcpMakroUrteil, mcpBeobachter, mcpMarkt, mcpSentiment, mcpWochenrueckblick } from "@/lib/mcp/makro";
 import {
   essenNotizSetzen, routineSetzen, wochenzielAendern, wochenzielErstellen,
 } from "@/lib/mcp/schreiben";
@@ -57,7 +56,7 @@ export function registriereLesen(server: McpServer) {
       teil(() => mcpRoutinen()),
       teil(() => mcpGvaStatus()),
       teil(() => mcpTrades({ status: "offen", art: "live", limit: 20 })),
-      teil(() => mcpWirtschaftskalender("heute")),
+      teil(() => mcpKalender("heute", "high")),
     ]);
 
     const offeneZiele = "ziele" in ziele
@@ -152,12 +151,59 @@ export function registriereLesen(server: McpServer) {
 
   server.registerTool("wirtschaftskalender", {
     title: "Wirtschaftskalender",
-    description: "High-Impact-Termine von heute oder der laufenden Woche (Mo–So).",
+    description:
+      "Termine MIT Erwartung, Ist, Vorwert und Überraschung (aus dem MT5-Kalender, Tabelle makro_releases). " +
+      "Standard: High-Impact von heute. Zeitraum heute, woche (laufende Mo–So), vorwoche oder naechste_woche.",
     inputSchema: z.object({
-      zeitraum: z.enum(["heute", "woche"]).optional().describe("Standard: heute"),
+      zeitraum: z.enum(["heute", "woche", "vorwoche", "naechste_woche"]).optional().describe("Standard: heute"),
+      impact: z.enum(["high", "alle"]).optional().describe("Standard: high"),
     }),
     annotations: NUR_LESEN,
-  }, async ({ zeitraum }) => antwort(() => mcpWirtschaftskalender(zeitraum ?? "heute")));
+  }, async ({ zeitraum, impact }) => antwort(() => mcpKalender(zeitraum ?? "heute", impact ?? "high")));
+
+  server.registerTool("makro_urteil", {
+    title: "Makro-Urteil je Währung",
+    description:
+      "Das Urteil des Makro-Terminals für alle 8 Währungen: bullish bis bearish, Score, Gründe, Kernzahlen " +
+      "mit Stand, auffälligste News der letzten 14 Tage. Erste Wahl für 'wie steht USD/EUR/…' und Fundamental-Bias.",
+    annotations: NUR_LESEN,
+  }, async () => antwort(() => mcpMakroUrteil()));
+
+  server.registerTool("wochenrueckblick", {
+    title: "Wochenrückblick Makro",
+    description:
+      "Sonntags-Rückblick: Datenalter je Quelle (Ampel), wie die festgehaltenen Paar-Ideen der Woche gelaufen sind, " +
+      "wichtigste News mit Tagesreaktion der Währung und die Ampel je Währung für nächste Woche. " +
+      "Ohne Datum: die gerade beendete Woche (am Wochenende) bzw. die letzte volle.",
+    inputSchema: z.object({
+      woche: DATUM.optional().describe("Irgendein Tag der gewünschten Woche."),
+    }),
+    annotations: { ...NUR_LESEN, openWorldHint: true },
+  }, async ({ woche }) => antwort(() => mcpWochenrueckblick(woche)));
+
+  server.registerTool("beobachter", {
+    title: "Fundamentaler Beobachter",
+    description:
+      "Passiver Auswerter: misst nach jeder Wirtschaftsmeldung die Marktreaktion (1/3/5 Tage) und zeigt, ob er läuft " +
+      "und welche Muster (mit Statusstufe stabil/Hinweis/Zufall) er bisher gefunden hat.",
+    inputSchema: z.object({ horizont: z.enum(["1h", "4h", "1d", "3d", "5d"]).optional().describe("Horizont, Standard 1d.") }),
+    annotations: NUR_LESEN,
+  }, async ({ horizont }) => antwort(() => mcpBeobachter(horizont ?? "1d")));
+
+  server.registerTool("sentiment", {
+    title: "Retail-Sentiment",
+    description: "Long/Short-Anteile der Privatanleger je Symbol (Myfxbook), jüngster Schnappschuss, mit Einstufung extrem/ausgewogen.",
+    annotations: { ...NUR_LESEN, openWorldHint: true },
+  }, async () => antwort(() => mcpSentiment()));
+
+  server.registerTool("markt_watchlist", {
+    title: "Markt-Watchlist",
+    description:
+      "Kerims eigene Linien mit Warum, Priorität, Fokus, Abstand zum Preis, Zustand (erreicht/nah/beobachten), " +
+      "Drei-Punkte-Check, Urteil für das Paar und die letzten Entscheidungen (Trade oder Skip, mit Grund). " +
+      "'faellig' = erreichte Linien ohne Entscheidung.",
+    annotations: { ...NUR_LESEN, openWorldHint: true },
+  }, async () => antwort(() => mcpMarkt()));
 }
 
 /** Auth aus dem Tool-Kontext holen; ohne geprüftes Token wird nichts geschrieben. */

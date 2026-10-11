@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createTradingClient, G8 } from "@/lib/supabase/trading";
 import {
-  kategorieVon, mitAbweichung, mitMt5, mitStimmenGegenprobe, parseWert, releasesAusKalender, serieVon,
+  entferneDoppelte, kategorieVon, mitAbweichung, mitMt5, mitStimmenGegenprobe, parseWert, releasesAusKalender, serieVon,
   type KalenderZeile, type Mt5Bericht, type Mt5Zeile, type Release,
 } from "./releases";
 
@@ -300,7 +300,8 @@ export async function syncReleases(db: SupabaseClient, opt: { voll?: boolean } =
   // 5. Abweichung und z über die ganze Historie neu rechnen, dann schreiben.
   // nachId ist nach id eindeutig — ein Upsert-Stück mit derselben id zweimal
   // bräche mit „cannot affect row a second time" ab.
-  const alle = mitAbweichung([...nachId.values()]);
+  const { releases: ohneDoppelte, entfernt: doppelte } = entferneDoppelte([...nachId.values()]);
+  const alle = mitAbweichung(ohneDoppelte);
   let geschrieben = 0;
   for (let i = 0; i < alle.length; i += 500) {
     const stueck = alle.slice(i, i + 500).map((r) => ({ ...r, geholt_am: new Date().toISOString() }));
@@ -325,6 +326,12 @@ export async function syncReleases(db: SupabaseClient, opt: { voll?: boolean } =
         break;
       }
     }
+  }
+
+  // Doppelte (z.B. BOJ Policy Rate 02:54) auch aus der Tabelle nehmen.
+  for (let i = 0; i < doppelte.length; i += 200) {
+    const { error } = await db.from("makro_releases").delete().in("id", doppelte.slice(i, i + 200));
+    if (error) { fehler.push(`Doppelte entfernen: ${error.message}`); break; }
   }
 
   const jeQuelle: Record<string, number> = {};

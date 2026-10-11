@@ -1,0 +1,1211 @@
+From a3608767447cf02e6e4dfaa9faa9df87ec39ad53 Mon Sep 17 00:00:00 2001
+From: Claude <claude@local>
+Date: Tue, 29 Sep 2026 21:09:57 +0000
+Subject: [PATCH] Journal-Schnappschuss mit Urteil 40/35/25, Paar-Klassen A/B,
+ Wochenaussicht mit Auswertung
+
+---
+ src/app/api/makro-sync/route.ts               |   9 +
+ src/app/trading/fundamentals/page.tsx         |  81 ++++---
+ .../trading/fundamentals/wochenideen/page.tsx | 227 ++++++++++++++++++
+ src/app/trading/journal/trades/page.tsx       |  60 +++++
+ src/components/makro/einschaetzung-form.tsx   |  71 ++++++
+ src/components/nav.tsx                        |   1 +
+ src/components/trading/lage-anzeige.tsx       |  24 ++
+ src/lib/makro/laden.ts                        |  13 +-
+ src/lib/makro/releases-laden.ts               |  23 +-
+ src/lib/makro/urteil.ts                       |  32 +++
+ src/lib/makro/wochenideen-rechnen.ts          |  63 +++++
+ src/lib/makro/wochenideen.ts                  | 141 +++++++++++
+ src/lib/trading/hit-detail.ts                 |  53 +++-
+ src/lib/trading/lage-festhalten.ts            |   4 +-
+ src/lib/wochenideen-actions.ts                |  35 +++
+ supabase/trading/07_makro_wochenideen.sql     |  45 ++++
+ tools/checks/releases.mts                     |  26 ++
+ 17 files changed, 870 insertions(+), 38 deletions(-)
+ create mode 100644 src/app/trading/fundamentals/wochenideen/page.tsx
+ create mode 100644 src/components/makro/einschaetzung-form.tsx
+ create mode 100644 src/lib/makro/wochenideen-rechnen.ts
+ create mode 100644 src/lib/makro/wochenideen.ts
+ create mode 100644 src/lib/wochenideen-actions.ts
+ create mode 100644 supabase/trading/07_makro_wochenideen.sql
+
+diff --git a/src/app/api/makro-sync/route.ts b/src/app/api/makro-sync/route.ts
+index 4e046cb..d486e2b 100644
+--- a/src/app/api/makro-sync/route.ts
++++ b/src/app/api/makro-sync/route.ts
+@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
+ import { holeAlles } from "@/lib/makro/quellen";
+ import { makroDb, speichereReihe, bestehendeReihe, berichtErgaenzen } from "@/lib/makro/speichern";
+ import { syncReleases } from "@/lib/makro/releases-sync";
++import { wochenideenLauf } from "@/lib/makro/wochenideen";
+ 
+ export const dynamic = "force-dynamic";
+ // Der Lauf „releases" rechnet die ganze Historie neu und schreibt sie in
+@@ -30,6 +31,7 @@ export const maxDuration = 300;
+  *     &job=releases           nur die Veröffentlichungen (alle 15 Minuten)
+  *     &job=releases&voll=1    einmalig: JBlanked-Historie ab 2024 nachladen
+  *     &job=reihen             nur die Monatsreihen
++ *     &job=wochenideen        nur die Wochenaussicht (anlegen + nachmessen)
+  *     &job=jb-test&pfad=...   Probeabruf bei JBlanked (siehe jbTest unten)
+  * Ohne &job laufen beide.
+  */
+@@ -54,6 +56,11 @@ export async function GET(request: NextRequest) {
+   if (job === "jb-test") {
+     return NextResponse.json(await jbTest(request.nextUrl.searchParams.get("pfad") ?? ""));
+   }
++  if (job === "wochenideen") {
++    const text = await wochenideenLauf();
++    await berichtErgaenzen(db, { wochenideen: text });
++    return NextResponse.json({ ok: true, wochenideen: text });
++  }
+   if (job && job !== "releases" && job !== "reihen") {
+     return NextResponse.json({ ok: false, fehler: `unbekannter Job: ${job}` }, { status: 400 });
+   }
+@@ -71,6 +78,8 @@ export async function GET(request: NextRequest) {
+   ]);
+   const bericht: Record<string, string> = {};
+   if (releases) bericht.releases = releasesZeile(releases);
++  // Die Wochenaussicht nach den Releases — sie braucht das frische Urteil.
++  if (job !== "reihen") bericht.wochenideen = await wochenideenLauf();
+ 
+   await Promise.all(ergebnisse.map(async (e) => {
+     const schluessel = `${e.ccy}.${e.feld}`;
+diff --git a/src/app/trading/fundamentals/page.tsx b/src/app/trading/fundamentals/page.tsx
+index 79a94b0..30767b4 100644
+--- a/src/app/trading/fundamentals/page.tsx
++++ b/src/app/trading/fundamentals/page.tsx
+@@ -7,7 +7,7 @@ import { ereignisAnlegen, ereignisLoeschen } from "@/lib/makro-actions";
+ import { RangTabelle, ScoreBalken, MontyZeichen } from "@/components/makro/teile";
+ import { ladeUebersicht } from "@/lib/makro/releases-laden";
+ import { QUELLE_LABEL, type IstQuelle } from "@/lib/makro/releases";
+-import { BANK } from "@/lib/makro/urteil";
++import { BANK, paarKlasse, type PaarKlasse } from "@/lib/makro/urteil";
+ import { ERKLAERUNG } from "@/lib/makro/erklaerungen";
+ import { UeberraschungsMatrix } from "@/components/makro/ueberraschung-teile";
+ import { UrteilMarke, WaehrungsZeile } from "@/components/makro/urteil-teile";
+@@ -51,7 +51,10 @@ export default async function FundamentalsSeite() {
+ 
+   // Paar-Ideen jetzt aus dem Urteil (Zentralbank, Wirtschaft, Überraschung),
+   // nicht mehr nur aus dem Niveau.
+-  const ideen = paarIdeen(b.zeilen.map((z) => ({ ...z, gesamt: urteile[z.ccy]?.score ?? null })), PAARE);
++  const ideen = paarIdeen(b.zeilen.map((z) => ({ ...z, gesamt: urteile[z.ccy]?.score ?? null })), PAARE)
++    .map((i) => ({ ...i, klasse: paarKlasse(urteile[i.stark]?.score ?? null, urteile[i.schwach]?.score ?? null) }));
++  const ideenA = ideen.filter((i) => i.klasse === "A");
++  const ideenB = ideen.filter((i) => i.klasse === "B");
+   const montyJeCcy = Object.fromEntries(b.monty.zeilen.map((z) => [z.ccy, z]));
+ 
+   const zyklen = Object.fromEntries(G8.map((ccy) => {
+@@ -133,35 +136,29 @@ export default async function FundamentalsSeite() {
+             GVA-Linie, es sagt nur, in welche Richtung du sie suchen solltest.
+           </Info>
+         </div>
+-        {ideen.length === 0 ? (
++        {ideenA.length === 0 ? (
+           <Empty>
+-            Kein Paar mit deutlichem Abstand. Das ist eine Aussage: heute steht
+-            keine Währung klar gegen eine andere.
++            Kein Paar stark gegen schwach. Das ist eine Aussage: heute steht keine
++            Währung klar gegen eine andere.
+           </Empty>
+         ) : (
+-          <ul className="space-y-1.5">
+-            {ideen.map((i) => {
+-              const s = urteile[i.stark], w = urteile[i.schwach];
+-              return (
+-                <li key={i.paar + i.seite} className="rounded-xl bg-sand/50 px-3 py-2.5">
+-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+-                    <span className="w-[86px] font-display font-bold text-ink">{i.paar}</span>
+-                    <Badge tone={i.seite === "Long" ? "good" : "bad"}>{i.seite}</Badge>
+-                    <span className="flex items-center gap-1.5 text-xs text-ink-muted">
+-                      {i.stark} <UrteilMarke wort={s.wort} /> gegen {i.schwach} <UrteilMarke wort={w.wort} />
+-                    </span>
+-                  </div>
+-                  <p className="mt-1.5 text-xs text-ink-muted">
+-                    <span className="text-good-bright">▲</span> {s.gruende[0]?.text ?? "—"}
+-                  </p>
+-                  <p className="text-xs text-ink-muted">
+-                    <span className="text-bad-bright">▼</span> {w.gruende[0]?.text ?? "—"}
+-                  </p>
+-                </li>
+-              );
+-            })}
+-          </ul>
++          <IdeenListe ideen={ideenA} urteile={urteile} />
++        )}
++        {ideenB.length > 0 && (
++          <details className="mt-3 rounded-xl border border-warn/30 bg-warn-tint/40 px-3 py-2">
++            <summary className="cursor-pointer text-xs text-accent-soft">
++              Mit Vorsicht · stark gegen neutral ({ideenB.length})
++            </summary>
++            <p className="mt-2 text-[11px] leading-relaxed text-ink-muted">
++              Nur eine Seite zieht. Meist die schwächere Idee — die Wochenaussicht misst,
++              ob diese Klasse bei dir überhaupt trägt.
++            </p>
++            <div className="mt-2"><IdeenListe ideen={ideenB} urteile={urteile} /></div>
++          </details>
+         )}
++        <Link href="/trading/fundamentals/wochenideen" className="mt-3 inline-block text-xs text-accent-soft hover:underline">
++          Wochenaussicht und Auswertung →
++        </Link>
+       </Card>
+ 
+       <h2 className="pt-2 font-display text-base font-semibold text-ink-soft">Hintergrund</h2>
+@@ -388,3 +385,33 @@ export default async function FundamentalsSeite() {
+     </div>
+   );
+ }
++
++function IdeenListe({ ideen, urteile }: {
++  ideen: { paar: string; seite: string; stark: string; schwach: string; klasse: PaarKlasse | null }[];
++  urteile: Record<string, import("@/lib/makro/urteil").UrteilBild>;
++}) {
++  return (
++    <ul className="space-y-1.5">
++      {ideen.map((i) => {
++        const s = urteile[i.stark], w = urteile[i.schwach];
++        return (
++          <li key={i.paar + i.seite} className="rounded-xl bg-sand/50 px-3 py-2.5">
++            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
++              <span className="w-[86px] font-display font-bold text-ink">{i.paar}</span>
++              <Badge tone={i.seite === "Long" ? "good" : "bad"}>{i.seite}</Badge>
++              <span className="flex items-center gap-1.5 text-xs text-ink-muted">
++                {i.stark} <UrteilMarke wort={s.wort} /> gegen {i.schwach} <UrteilMarke wort={w.wort} />
++              </span>
++            </div>
++            <p className="mt-1.5 text-xs text-ink-muted">
++              <span className="text-good-bright">▲</span> {s.gruende[0]?.text ?? "—"}
++            </p>
++            <p className="text-xs text-ink-muted">
++              <span className="text-bad-bright">▼</span> {w.gruende[0]?.text ?? "—"}
++            </p>
++          </li>
++        );
++      })}
++    </ul>
++  );
++}
+diff --git a/src/app/trading/fundamentals/wochenideen/page.tsx b/src/app/trading/fundamentals/wochenideen/page.tsx
+new file mode 100644
+index 0000000..5ff8260
+--- /dev/null
++++ b/src/app/trading/fundamentals/wochenideen/page.tsx
+@@ -0,0 +1,227 @@
++import Link from "next/link";
++import { tradingConfigured } from "@/lib/supabase/trading";
++import { ladeWochenideen, type WochenIdee } from "@/lib/makro/wochenideen";
++import { montagVon } from "@/lib/makro/wochenideen-rechnen";
++import { wochenideenJetzt } from "@/lib/wochenideen-actions";
++import { EinschaetzungForm } from "@/components/makro/einschaetzung-form";
++import { Info } from "@/components/makro/info";
++import { Badge, Card, CardTitle, Empty, cx } from "@/components/ui";
++
++export const dynamic = "force-dynamic";
++
++/**
++ * Wochenaussicht (29.09.2026).
++ *
++ * Oben die Ideen dieser Woche mit Kerims Einschätzung, darunter die
++ * Auswertung: wie sind die Ideen nach 1, 2 und 3 Wochen gelaufen — getrennt
++ * nach Klasse (A stark gegen schwach, B stark gegen neutral), nach Kerims
++ * Einschätzung und nach Paar. Hauptmass sind 2 Wochen.
++ *
++ * Gemessen in Prozent in Richtung der Idee, weil Pips zwischen Paaren nicht
++ * vergleichbar sind (ein Pip GBPJPY ist etwas anderes als ein Pip EURCHF).
++ * Die Pips stehen daneben, zum Einordnen.
++ */
++
++const TAG = new Intl.DateTimeFormat("de-CH", { day: "2-digit", month: "2-digit", year: "2-digit", timeZone: "UTC" });
++const wocheText = (w: string) => `Woche ab ${TAG.format(new Date(`${w}T00:00:00Z`))}`;
++
++function Prozent({ p, pips }: { p: number | null; pips: number | null }) {
++  if (p === null) return <span className="text-ink-faint">—</span>;
++  return (
++    <span className={cx("tabular font-mono", p > 0 ? "text-good-bright" : p < 0 ? "text-bad-bright" : "text-ink-soft")}
++      title={pips === null ? undefined : `${pips > 0 ? "+" : ""}${pips} Pips`}>
++      {p > 0 ? "+" : ""}{p.toFixed(2)} %
++    </span>
++  );
++}
++
++interface Gruppe { label: string; n: number; treffer: number | null; schnitt: number | null }
++
++function gruppe(label: string, ideen: WochenIdee[]): Gruppe {
++  const mit = ideen.filter((i) => i.prozent_2w !== null);
++  const treffer = mit.filter((i) => i.prozent_2w! > 0).length;
++  return {
++    label, n: mit.length,
++    treffer: mit.length ? Math.round((treffer / mit.length) * 100) : null,
++    schnitt: mit.length ? mit.reduce((s, i) => s + i.prozent_2w!, 0) / mit.length : null,
++  };
++}
++
++function GruppenKarten({ gruppen }: { gruppen: Gruppe[] }) {
++  return (
++    <div className="grid gap-2 sm:grid-cols-3">
++      {gruppen.map((g) => (
++        <div key={g.label} className="rounded-xl bg-sand/60 px-3 py-2.5">
++          <p className="text-[11px] uppercase tracking-wide text-ink-muted">{g.label}</p>
++          <p className="tabular mt-1 font-mono text-lg text-ink">
++            {g.treffer === null ? "—" : `${g.treffer} %`}
++            <span className="ml-2 text-xs text-ink-muted">aufgegangen</span>
++          </p>
++          <p className="text-[11px] text-ink-muted">
++            {g.n} gemessen · Schnitt {g.schnitt === null ? "—" : `${g.schnitt > 0 ? "+" : ""}${g.schnitt.toFixed(2)} %`}
++          </p>
++        </div>
++      ))}
++    </div>
++  );
++}
++
++function IdeeKarte({ i, mitForm }: { i: WochenIdee; mitForm: boolean }) {
++  return (
++    <li className={cx("rounded-xl px-3 py-2.5", i.klasse === "A" ? "bg-sand/50" : "bg-warn-tint/40")}>
++      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
++        <span className="w-[86px] font-display font-bold text-ink">{i.paar}</span>
++        <Badge tone={i.seite === "long" ? "good" : "bad"}>{i.seite === "long" ? "Long" : "Short"}</Badge>
++        <Badge tone={i.klasse === "A" ? "accent" : "warn"}>{i.klasse === "A" ? "A · stark/schwach" : "B · mit Vorsicht"}</Badge>
++        <span className="text-xs text-ink-muted">
++          {i.stark} {i.urteil?.stark.wort ?? ""} gegen {i.schwach} {i.urteil?.schwach.wort ?? ""}
++        </span>
++        <span className="ml-auto flex gap-3 text-xs">
++          <span className="text-ink-faint">1W</span><Prozent p={i.prozent_1w} pips={i.pips_1w} />
++          <span className="text-ink-faint">2W</span><Prozent p={i.prozent_2w} pips={i.pips_2w} />
++          <span className="text-ink-faint">3W</span><Prozent p={i.prozent_3w} pips={i.pips_3w} />
++        </span>
++      </div>
++      {i.urteil && (
++        <div className="mt-1.5 space-y-0.5">
++          {i.urteil.stark.gruende[0] && <p className="text-xs text-ink-muted"><span className="text-good-bright">▲</span> {i.stark}: {i.urteil.stark.gruende[0]}</p>}
++          {i.urteil.schwach.gruende[0] && <p className="text-xs text-ink-muted"><span className="text-bad-bright">▼</span> {i.schwach}: {i.urteil.schwach.gruende[0]}</p>}
++        </div>
++      )}
++      {mitForm
++        ? <EinschaetzungForm id={i.id} wert={i.einschaetzung} notiz={i.notiz} />
++        : (i.einschaetzung || i.notiz) && (
++          <p className="mt-1.5 text-[11px] text-ink-faint">
++            Deine Einschätzung: {i.einschaetzung === "zustimmen" ? "stimme zu" : i.einschaetzung ?? "—"}
++            {i.notiz ? ` · ${i.notiz}` : ""}
++          </p>
++        )}
++    </li>
++  );
++}
++
++export default async function WochenideenSeite() {
++  if (!tradingConfigured()) {
++    return <Card><Empty>Trading-Datenbank nicht verbunden.</Empty></Card>;
++  }
++  const alle = await ladeWochenideen();
++  const diese = montagVon(new Date());
++  const jetzt = alle.filter((i) => i.woche === diese);
++  const frueher = alle.filter((i) => i.woche < diese);
++
++  const nachKlasse = [gruppe("Klasse A · stark gegen schwach", alle.filter((i) => i.klasse === "A")),
++    gruppe("Klasse B · stark gegen neutral", alle.filter((i) => i.klasse === "B")),
++    gruppe("Alle Ideen", alle)];
++  const nachEinschaetzung = [gruppe("Du: stimme zu", alle.filter((i) => i.einschaetzung === "zustimmen")),
++    gruppe("Du: Zweifel", alle.filter((i) => i.einschaetzung === "zweifel")),
++    gruppe("Du: dagegen", alle.filter((i) => i.einschaetzung === "dagegen"))];
++  const gemessen = alle.filter((i) => i.prozent_2w !== null).length;
++  const paare = [...new Set(alle.map((i) => i.paar))]
++    .map((p) => gruppe(p, alle.filter((i) => i.paar === p)))
++    .filter((g) => g.n > 0)
++    .sort((a, b) => (b.schnitt ?? 0) - (a.schnitt ?? 0));
++  const wochen = [...new Set(frueher.map((i) => i.woche))];
++
++  return (
++    <div className="space-y-5">
++      <div className="flex flex-wrap items-baseline justify-between gap-3">
++        <div>
++          <h1 className="font-display text-xl font-bold text-ink">Wochenaussicht</h1>
++          <p className="mt-1 max-w-2xl text-sm text-ink-muted">
++            Jeden Montag die Paar-Ideen aus dem Terminal, festgehalten — und danach
++            gemessen, wie sie nach 1, 2 und 3 Wochen standen. Hauptmass: 2 Wochen.
++          </p>
++        </div>
++        <Link href="/trading/fundamentals" className="text-xs text-accent-soft hover:underline">← Terminal</Link>
++      </div>
++
++      <Card area="trading">
++        <div className="mb-3 flex flex-wrap items-center gap-2">
++          <CardTitle className="mb-0">{wocheText(diese)}</CardTitle>
++          <Info titel="Wie gemessen wird">
++            Einstieg zur Eröffnung der Montagskerze, Ausstieg zum Schluss am Freitag
++            nach 1, 2 und 3 Wochen. Plus heisst: das Paar lief in Richtung der Idee.
++            Die Pips stehen im Tooltip — verglichen wird in Prozent, weil Pips
++            zwischen Paaren nicht vergleichbar sind.
++          </Info>
++        </div>
++        {jetzt.length === 0 ? (
++          <div className="space-y-3">
++            <Empty>
++              Für diese Woche sind noch keine Ideen festgehalten. Das passiert
++              automatisch beim ersten täglichen Lauf ab Montag.
++            </Empty>
++            <form action={wochenideenJetzt}>
++              <button type="submit" className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-ink-on">
++                Jetzt festhalten
++              </button>
++            </form>
++          </div>
++        ) : (
++          <ul className="space-y-2">
++            {jetzt.map((i) => <IdeeKarte key={i.id} i={i} mitForm />)}
++          </ul>
++        )}
++      </Card>
++
++      <Card>
++        <div className="mb-3 flex flex-wrap items-center gap-2">
++          <CardTitle className="mb-0">Auswertung nach 2 Wochen</CardTitle>
++          <span className="ml-auto text-[11px] text-ink-faint">
++            {gemessen} Idee{gemessen === 1 ? "" : "n"} gemessen{gemessen < 30 ? " — unter 30 ist jeder Unterschied noch Zufall" : ""}
++          </span>
++        </div>
++        {gemessen === 0 ? (
++          <p className="text-sm text-ink-muted">
++            Noch nichts gemessen — die ersten Ergebnisse nach 2 Wochen gibt es zwei
++            Wochen nach der ersten festgehaltenen Woche.
++          </p>
++        ) : (
++          <div className="space-y-4">
++            <GruppenKarten gruppen={nachKlasse} />
++            <div>
++              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Dein Bauchgefühl gegen das Urteil</p>
++              <GruppenKarten gruppen={nachEinschaetzung} />
++              <p className="mt-2 text-[11px] text-ink-faint">
++                Laufen die Ideen, bei denen du „dagegen" warst, schlechter als die, denen du zustimmst,
++                liegt dein Gefühl besser als das Urteil allein.
++              </p>
++            </div>
++            <details>
++              <summary className="cursor-pointer text-xs text-accent-soft">Je Paar ({paare.length})</summary>
++              <table className="mt-2 w-full text-sm">
++                <thead>
++                  <tr className="text-left text-[10px] uppercase tracking-[0.08em] text-ink-faint">
++                    <th className="pb-2 font-medium">Paar</th>
++                    <th className="pb-2 text-right font-medium">Gemessen</th>
++                    <th className="pb-2 text-right font-medium">Aufgegangen</th>
++                    <th className="pb-2 text-right font-medium">Schnitt 2W</th>
++                  </tr>
++                </thead>
++                <tbody>
++                  {paare.map((g) => (
++                    <tr key={g.label} className="border-t border-line/60">
++                      <td className="py-1.5 font-display text-xs font-bold text-ink">{g.label}</td>
++                      <td className="tabular py-1.5 text-right text-xs text-ink-muted">{g.n}</td>
++                      <td className="tabular py-1.5 text-right text-xs text-ink-soft">{g.treffer === null ? "—" : `${g.treffer} %`}</td>
++                      <td className="py-1.5 text-right text-xs"><Prozent p={g.schnitt} pips={null} /></td>
++                    </tr>
++                  ))}
++                </tbody>
++              </table>
++            </details>
++          </div>
++        )}
++      </Card>
++
++      {wochen.map((w) => (
++        <Card key={w}>
++          <CardTitle>{wocheText(w)}</CardTitle>
++          <ul className="space-y-2">
++            {frueher.filter((i) => i.woche === w).map((i) => <IdeeKarte key={i.id} i={i} mitForm={false} />)}
++          </ul>
++        </Card>
++      ))}
++    </div>
++  );
++}
+diff --git a/src/app/trading/journal/trades/page.tsx b/src/app/trading/journal/trades/page.tsx
+index 80315f1..b5c654c 100644
+--- a/src/app/trading/journal/trades/page.tsx
++++ b/src/app/trading/journal/trades/page.tsx
+@@ -312,6 +312,8 @@ export default async function TradesSeite({
+         offenStart={Boolean(vorgabe)}
+       />
+ 
++      <UrteilAuswertung trades={alleTrades} />
++
+       <Card>
+         <CardTitle>Filter</CardTitle>
+         <div className="space-y-2.5">
+@@ -479,3 +481,61 @@ export default async function TradesSeite({
+     </div>
+   );
+ }
++
++/**
++ * Laufen Trades mit dem Urteil besser als dagegen? (29.09.2026)
++ *
++ * Zählt nur geschlossene Trades, deren Schnappschuss das Urteil mit der
++ * Gewichtung 40/35/25 trägt (`urteilNeu`) — ältere Schnappschüsse rechnen
++ * mit einem anderen Modell und würden den Vergleich verwässern. Unter etwa
++ * 30 Trades je Gruppe ist jede Differenz Zufall; die Karte sagt das dazu.
++ */
++function UrteilAuswertung({ trades }: { trades: Trade[] }) {
++  const mit = trades.filter((t) => t.status !== "open" && t.fundamentalSnapshot?.urteilNeu);
++  const gruppen = (["bestaetigt", "neutral", "dagegen"] as const).map((u) => {
++    const liste = mit.filter((t) => t.fundamentalSnapshot?.fundamental?.urteil === u);
++    const rs = liste.map((t) => signiertesR(t));
++    const gewinne = liste.filter((t) => t.result === "win").length;
++    return {
++      u, n: liste.length,
++      winrate: liste.length ? Math.round((gewinne / liste.length) * 100) : null,
++      schnitt: rs.length ? rs.reduce((a, b) => a + b, 0) / rs.length : null,
++      summe: rs.reduce((a, b) => a + b, 0),
++    };
++  });
++  const label = { bestaetigt: "mit dem Urteil", neutral: "Urteil neutral", dagegen: "gegen das Urteil" } as const;
++  return (
++    <Card>
++      <CardTitle>Mit oder gegen das Urteil</CardTitle>
++      {mit.length === 0 ? (
++        <p className="text-sm text-ink-muted">
++          Sammelt ab jetzt: Jeder neue Trade bekommt beim Import das Urteil beider
++          Währungen (Zentralbank 40 %, Wirtschaft 35 %, Überraschungen 25 %). Sobald
++          die ersten Trades geschlossen sind, steht hier, ob Trades mit dem Urteil
++          besser laufen als dagegen.
++        </p>
++      ) : (
++        <>
++          <div className="grid gap-2 sm:grid-cols-3">
++            {gruppen.map((g) => (
++              <div key={g.u} className={cx("rounded-xl px-3 py-2.5",
++                g.u === "bestaetigt" ? "bg-good-tint" : g.u === "dagegen" ? "bg-bad-tint" : "bg-sand/60")}>
++                <p className="text-[11px] uppercase tracking-wide text-ink-muted">{label[g.u]}</p>
++                <p className="tabular mt-1 font-mono text-lg text-ink">
++                  {g.schnitt === null ? "—" : `${g.schnitt >= 0 ? "+" : ""}${g.schnitt.toFixed(2)} R`}
++                </p>
++                <p className="text-[11px] text-ink-muted">
++                  {g.n} Trade{g.n === 1 ? "" : "s"} · Trefferquote {g.winrate === null ? "—" : `${g.winrate} %`} · Summe {g.summe >= 0 ? "+" : ""}{g.summe.toFixed(1)} R
++                </p>
++              </div>
++            ))}
++          </div>
++          <p className="mt-2 text-[11px] text-ink-faint">
++            Schnitt-R je Trade. Unter etwa 30 Trades je Gruppe ist ein Unterschied noch Zufall —
++            {mit.length < 30 ? ` bisher ${mit.length} Trades mit Urteil.` : " die Stichprobe reicht langsam für eine Aussage."}
++          </p>
++        </>
++      )}
++    </Card>
++  );
++}
+diff --git a/src/components/makro/einschaetzung-form.tsx b/src/components/makro/einschaetzung-form.tsx
+new file mode 100644
+index 0000000..b5de7a8
+--- /dev/null
++++ b/src/components/makro/einschaetzung-form.tsx
+@@ -0,0 +1,71 @@
++"use client";
++import { useState } from "react";
++import { cx } from "@/components/ui";
++import { einschaetzungSpeichern } from "@/lib/wochenideen-actions";
++
++/**
++ * Kerims eigene Einschätzung zu einer Wochenidee: antippen statt tippen,
++ * dazu ein Textfeld mit Bausteinen. Die Auswahl ist auswertbar („liegt mein
++ * Bauchgefühl besser als das Urteil?"), der Text ist für ihn selbst.
++ */
++const WAHL = [
++  { key: "zustimmen", label: "Stimme zu", ton: "bg-good-tint text-good-bright" },
++  { key: "zweifel", label: "Zweifel", ton: "bg-warn-tint text-accent-soft" },
++  { key: "dagegen", label: "Dagegen", ton: "bg-bad-tint text-bad-bright" },
++] as const;
++
++const BAUSTEINE = [
++  "Passt zur GVA",
++  "Chart widerspricht",
++  "Schon weit gelaufen",
++  "Zinsentscheid diese Woche – abwarten",
++  "News-Risiko (NFP/CPI)",
++  "Risk-Regime spricht dagegen",
++];
++
++export function EinschaetzungForm({ id, wert, notiz }: {
++  id: string; wert: string | null; notiz: string | null;
++}) {
++  const [wahl, setWahl] = useState<string | null>(wert);
++  const [text, setText] = useState(notiz ?? "");
++  const [gespeichert, setGespeichert] = useState(false);
++  const geaendert = wahl !== wert || text !== (notiz ?? "");
++
++  return (
++    <form action={async (fd) => { await einschaetzungSpeichern(fd); setGespeichert(true); }}
++      className="mt-2 space-y-2 border-t border-line/50 pt-2">
++      <input type="hidden" name="id" value={id} />
++      <input type="hidden" name="einschaetzung" value={wahl ?? ""} />
++      <div className="flex flex-wrap items-center gap-1.5">
++        <span className="text-[11px] text-ink-faint">Deine Einschätzung</span>
++        {WAHL.map((w) => (
++          <button key={w.key} type="button" onClick={() => { setWahl(wahl === w.key ? null : w.key); setGespeichert(false); }}
++            className={cx("rounded-lg px-2.5 py-1 text-xs transition",
++              wahl === w.key ? cx(w.ton, "font-semibold ring-1 ring-current") : "bg-sand text-ink-muted hover:text-ink")}>
++            {w.label}
++          </button>
++        ))}
++      </div>
++      <div className="flex flex-wrap gap-1">
++        {BAUSTEINE.map((b) => (
++          <button key={b} type="button"
++            onClick={() => { setText((t) => (t ? `${t.replace(/\s+$/, "")} · ${b}` : b)); setGespeichert(false); }}
++            className="rounded-md bg-sand/70 px-2 py-0.5 text-[11px] text-ink-muted transition hover:text-ink">
++            + {b}
++          </button>
++        ))}
++      </div>
++      <textarea name="notiz" value={text} rows={2} maxLength={1000}
++        onChange={(e) => { setText(e.target.value); setGespeichert(false); }}
++        placeholder="Warum? (optional)"
++        className="w-full rounded-lg border border-line bg-paper/60 px-2.5 py-1.5 text-xs text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none" />
++      <div className="flex items-center gap-2">
++        <button type="submit" disabled={!geaendert}
++          className="rounded-lg bg-accent px-3 py-1 text-xs font-medium text-ink-on transition disabled:opacity-40">
++          Speichern
++        </button>
++        {gespeichert && !geaendert && <span className="text-[11px] text-good-bright">gespeichert</span>}
++      </div>
++    </form>
++  );
++}
+diff --git a/src/components/nav.tsx b/src/components/nav.tsx
+index c5f020a..ee0a56f 100644
+--- a/src/components/nav.tsx
++++ b/src/components/nav.tsx
+@@ -68,6 +68,7 @@ const FUNDAMENTALS: NavConfig = {
+   primary: [
+     { href: "/trading/waehrungen", label: "Währungen" },
+     { href: "/trading/fundamentals/kalender", label: "Kalender" },
++    { href: "/trading/fundamentals/wochenideen", label: "Wochenaussicht" },
+   ],
+   secondary: [],
+ };
+diff --git a/src/components/trading/lage-anzeige.tsx b/src/components/trading/lage-anzeige.tsx
+index 8b4dc03..c34f0d1 100644
+--- a/src/components/trading/lage-anzeige.tsx
++++ b/src/components/trading/lage-anzeige.tsx
+@@ -48,6 +48,30 @@ export function LageAnzeige({ s }: { s: LageSnapshot }) {
+         )}
+       </div>
+ 
++      {s.urteilNeu && (
++        <div className="space-y-1.5 rounded-xl bg-sand/50 px-3 py-2.5">
++          <p className="text-[11px] uppercase tracking-wide text-ink-faint">
++            Urteil beim Einstieg
++            {s.urteilNeu.klasse && (
++              <span className="ml-2 normal-case tracking-normal text-ink-muted">
++                Klasse {s.urteilNeu.klasse} — {s.urteilNeu.klasse === "A" ? "stark gegen schwach" : "stark gegen neutral, mit Vorsicht"}
++              </span>
++            )}
++          </p>
++          {[s.urteilNeu.basis, s.urteilNeu.quote].map((u) => (
++            <div key={u.ccy}>
++              <p className="text-xs">
++                <span className="font-display font-bold text-ink">{u.ccy}</span>{" "}
++                <span className={cx(u.wort.includes("bullish") ? "text-good-bright"
++                  : u.wort.includes("bearish") ? "text-bad-bright" : "text-ink-soft")}>{u.wort}</span>
++              </p>
++              {u.gruende.map((g) => <p key={g} className="text-[11px] text-ink-muted">· {g}</p>)}
++            </div>
++          ))}
++          <p className="text-[10px] text-ink-faint">{s.urteilNeu.gewichtung}</p>
++        </div>
++      )}
++
+       <div>
+         <p className="text-[11px] uppercase tracking-wide text-ink-faint">COT</p>
+         <p className="text-xs text-ink-soft">{s.cotFehler ?? s.cotSatz}</p>
+diff --git a/src/lib/makro/laden.ts b/src/lib/makro/laden.ts
+index c5714fd..550679a 100644
+--- a/src/lib/makro/laden.ts
++++ b/src/lib/makro/laden.ts
+@@ -1,5 +1,6 @@
+ import "server-only";
+ import { createClient } from "@/lib/supabase/server";
++import type { SupabaseClient } from "@supabase/supabase-js";
+ import { G8 } from "@/lib/supabase/trading";
+ import { ladeFuerStichtag } from "@/lib/confluence/daten";
+ import { cotBildFuer } from "@/lib/confluence/cot-divergenz";
+@@ -59,9 +60,17 @@ export interface Ereignis {
+ const zahl = (v: unknown): number | null =>
+   v === null || v === undefined || v === "" ? null : Number(v);
+ 
+-export async function ladeMakro(): Promise<MakroBild> {
++/**
++ * `db`: ein Service-Role-Client für Läufe ohne Anmeldung (Cron, Lage-Aufnahme
++ * beim Trade-Import). Ohne ihn liest die Funktion als angemeldeter Benutzer —
++ * und im Cron hiesse das: die Makro-Tabellen geben nichts heraus (RLS), das
++ * Urteil wäre leer. So war es bis zum 29.09.2026 bei den automatischen
++ * Lage-Schnappschüssen. Kompass hat genau einen Benutzer, der Service-Client
++ * liest also dessen Zeilen.
++ */
++export async function ladeMakro(db?: SupabaseClient): Promise<MakroBild> {
+   const stichtag = heuteISO();
+-  const supabase = await createClient();
++  const supabase = db ?? await createClient();
+ 
+   const [markt, werteRes, reihenRes, syncRes, lageRes, ereignisRes] = await Promise.all([
+     ladeFuerStichtag(stichtag).catch(() => null),
+diff --git a/src/lib/makro/releases-laden.ts b/src/lib/makro/releases-laden.ts
+index 9af5b44..c3353db 100644
+--- a/src/lib/makro/releases-laden.ts
++++ b/src/lib/makro/releases-laden.ts
+@@ -1,5 +1,6 @@
+ import "server-only";
+ import { createClient } from "@/lib/supabase/server";
++import type { SupabaseClient } from "@supabase/supabase-js";
+ import { G8 } from "@/lib/supabase/trading";
+ import { istVeraltet, type HandWert, type WaehrungsBild } from "@/lib/makro/bewertung";
+ import { erwarteterSchritt, urteilFuer, type UrteilBild } from "./urteil";
+@@ -19,8 +20,10 @@ import {
+ 
+ const SEITE = 1000;
+ 
+-export async function ladeReleases(opt: { ccy?: string; ab?: string; bis?: string } = {}): Promise<Release[]> {
+-  const supabase = await createClient();
++export async function ladeReleases(
++  opt: { ccy?: string; ccys?: string[]; ab?: string; bis?: string; db?: SupabaseClient } = {},
++): Promise<Release[]> {
++  const supabase = opt.db ?? await createClient();
+   const out: Release[] = [];
+   for (let von = 0; ; von += SEITE) {
+     let q = supabase.from("makro_releases")
+@@ -28,6 +31,7 @@ export async function ladeReleases(opt: { ccy?: string; ab?: string; bis?: strin
+       .order("event_time", { ascending: true })
+       .range(von, von + SEITE - 1);
+     if (opt.ccy) q = q.eq("ccy", opt.ccy);
++    if (opt.ccys) q = q.in("ccy", opt.ccys);
+     if (opt.ab) q = q.gte("event_time", opt.ab);
+     if (opt.bis) q = q.lte("event_time", opt.bis);
+     const { data, error } = await q;
+@@ -82,6 +86,21 @@ export async function ladeUebersicht(zeilen: WaehrungsBild[]): Promise<{ termina
+   return { terminal: baueTerminal(releases), urteile };
+ }
+ 
++/**
++ * Das Urteil für ausgewählte Währungen — für Schnappschüsse (Journal,
++ * Wochenideen). `db` für Läufe ohne Anmeldung.
++ */
++export async function ladeUrteile(
++  zeilen: WaehrungsBild[], ccys: readonly string[], db?: SupabaseClient,
++): Promise<Record<string, UrteilBild>> {
++  const releases = await ladeReleases({ ab: tageZurueck(400), ccys: [...ccys], db });
++  const out: Record<string, UrteilBild> = {};
++  for (const ccy of ccys) {
++    out[ccy] = urteilFuer(zeilen.find((z) => z.ccy === ccy) ?? null, releases.filter((r) => r.ccy === ccy));
++  }
++  return out;
++}
++
+ function baueTerminal(releases: Release[]): Terminal {
+   const heute = new Date();
+   const grenze45 = Date.now() - 45 * 86_400_000;
+diff --git a/src/lib/makro/urteil.ts b/src/lib/makro/urteil.ts
+index 6c7c8d5..dba8e09 100644
+--- a/src/lib/makro/urteil.ts
++++ b/src/lib/makro/urteil.ts
+@@ -436,3 +436,35 @@ export function urteilFuer(zeile: WaehrungsBild | null, releases: Release[], jet
+     kern, nachricht, grosse, schritt,
+   };
+ }
++
++/* ------------------------------------------------------ Paar-Klasse */
++
++/**
++ * Wie gut ein Paar zur Regel „stark gegen schwach" passt (29.09.2026):
++ *   A  stark gegen schwach — beide Seiten ziehen in dieselbe Richtung.
++ *   B  stark gegen neutral (oder neutral gegen schwach) — nur eine Seite
++ *      zieht. Kerim: „meist keine so gute Idee" — wird nur mit Vorsicht
++ *      gezeigt, und die Wochenideen messen, ob B überhaupt trägt.
++ * Beide brauchen mindestens 0.40 Abstand; darunter ist es keine Idee.
++ */
++export type PaarKlasse = "A" | "B";
++export const PAAR_ABSTAND = 0.4;
++const NEUTRAL_BIS = 0.12;
++
++export function paarKlasse(scoreStark: number | null, scoreSchwach: number | null): PaarKlasse | null {
++  if (scoreStark === null || scoreSchwach === null) return null;
++  if (scoreStark - scoreSchwach < PAAR_ABSTAND) return null;
++  return scoreStark >= NEUTRAL_BIS && scoreSchwach <= -NEUTRAL_BIS ? "A" : "B";
++}
++
++/** Die Kurzform eines Urteils für Schnappschüsse (Journal, Wochenideen). */
++export interface UrteilKurz {
++  ccy: string;
++  wort: UrteilWort;
++  score: number | null;
++  gruende: string[];
++}
++
++export function kurzform(u: UrteilBild): UrteilKurz {
++  return { ccy: u.ccy, wort: u.wort, score: u.score, gruende: u.gruende.slice(0, 3).map((g) => g.text) };
++}
+diff --git a/src/lib/makro/wochenideen-rechnen.ts b/src/lib/makro/wochenideen-rechnen.ts
+new file mode 100644
+index 0000000..7818b98
+--- /dev/null
++++ b/src/lib/makro/wochenideen-rechnen.ts
+@@ -0,0 +1,63 @@
++/**
++ * Rechnen für die Wochenaussicht (29.09.2026) — rein, ohne Datenbank.
++ *
++ * Gemessen wird wie ein Swing-Trade auf Kerims Zeitrahmen: Einstieg zur
++ * Eröffnung der Montagskerze, Ausstieg zum Schluss der Freitagskerze nach
++ * 1, 2 oder 3 Wochen. Hauptmass sind 2 Wochen.
++ *
++ * Tageskerzen von OANDA beginnen um 17:00 New York — die Montagskerze öffnet
++ * also Sonntagabend (UTC). Deshalb der Versatz von 4 Stunden vor Mitternacht:
++ * so trifft die Grenze die richtige Kerze, egal ob der Zeitstempel ein Datum
++ * oder der genaue Öffnungszeitpunkt ist.
++ */
++export interface Tageskerze { zeit: string; open: number; close: number }
++
++export const HORIZONTE = [1, 2, 3] as const;
++export type Horizont = (typeof HORIZONTE)[number];
++
++const TAG = 86_400_000;
++const VERSATZ = 4 * 3_600_000;
++
++const zeitVon = (k: Tageskerze) => Date.parse(k.zeit.length === 10 ? `${k.zeit}T00:00:00Z` : k.zeit);
++
++/** Montag der Woche (UTC-Datum), in der `jetzt` liegt. */
++export function montagVon(jetzt: Date): string {
++  const d = new Date(Date.UTC(jetzt.getUTCFullYear(), jetzt.getUTCMonth(), jetzt.getUTCDate()));
++  const tag = (d.getUTCDay() + 6) % 7; // Montag = 0
++  d.setUTCDate(d.getUTCDate() - tag);
++  return d.toISOString().slice(0, 10);
++}
++
++/** Ab wann Horizont n messbar ist: Samstag nach Woche n. */
++export function messbarAb(woche: string, n: number): number {
++  return Date.parse(`${woche}T00:00:00Z`) + (7 * n - 2) * TAG;
++}
++
++export interface Messung {
++  einstieg: number | null;
++  kurse: Partial<Record<Horizont, number>>;
++  prozent: Partial<Record<Horizont, number>>;
++  pips: Partial<Record<Horizont, number>>;
++}
++
++export function messe(
++  kerzen: Tageskerze[], woche: string, seite: "long" | "short", paar: string, jetzt: number,
++): Messung {
++  const sortiert = [...kerzen].sort((a, b) => zeitVon(a) - zeitVon(b));
++  const start = Date.parse(`${woche}T00:00:00Z`) - VERSATZ;
++  const erste = sortiert.find((k) => zeitVon(k) >= start);
++  const out: Messung = { einstieg: erste?.open ?? null, kurse: {}, prozent: {}, pips: {} };
++  if (!erste) return out;
++  const richtung = seite === "long" ? 1 : -1;
++  const pipFaktor = /JPY/.test(paar) ? 100 : 10_000;
++  for (const n of HORIZONTE) {
++    if (jetzt < messbarAb(woche, n)) continue;
++    const grenze = Date.parse(`${woche}T00:00:00Z`) + 7 * n * TAG - VERSATZ;
++    const letzte = [...sortiert].reverse().find((k) => zeitVon(k) < grenze && zeitVon(k) >= start);
++    if (!letzte) continue;
++    out.kurse[n] = letzte.close;
++    out.prozent[n] = Math.round(((letzte.close / erste.open - 1) * 100 * richtung) * 1000) / 1000;
++    out.pips[n] = Math.round((letzte.close - erste.open) * pipFaktor * richtung * 10) / 10;
++  }
++  return out;
++}
+diff --git a/src/lib/makro/wochenideen.ts b/src/lib/makro/wochenideen.ts
+new file mode 100644
+index 0000000..9ad36f8
+--- /dev/null
++++ b/src/lib/makro/wochenideen.ts
+@@ -0,0 +1,141 @@
++import "server-only";
++import { createTradingClient, G8 } from "@/lib/supabase/trading";
++import { PAARE } from "@/lib/trading/journal";
++import { holeTageskerzen } from "@/lib/trading/kerzen";
++import { ladeMakro } from "./laden";
++import { paarIdeen } from "./bewertung";
++import { makroDb } from "./speichern";
++import { ladeUrteile } from "./releases-laden";
++import { kurzform, paarKlasse } from "./urteil";
++import { HORIZONTE, messbarAb, messe, montagVon } from "./wochenideen-rechnen";
++
++/**
++ * Die Wochenaussicht (29.09.2026).
++ *
++ * Einmal pro Woche — beim ersten Lauf ab Montag — werden die Paar-Ideen des
++ * Makro-Terminals festgehalten: Klasse A (stark gegen schwach) und B (stark
++ * gegen neutral), mit dem Urteil beider Währungen. Danach misst jeder Lauf
++ * nach, wie die Paare nach 1, 2 und 3 Wochen standen. Das ist der ehrliche
++ * Test des Urteils: niemand kannte beim Festhalten die Zukunft.
++ */
++
++export interface WochenIdee {
++  id: string;
++  woche: string;
++  paar: string;
++  seite: "long" | "short";
++  klasse: "A" | "B";
++  stark: string;
++  schwach: string;
++  score_stark: number | null;
++  score_schwach: number | null;
++  abstand: number | null;
++  urteil: { stark: { wort: string; gruende: string[] }; schwach: { wort: string; gruende: string[] } } | null;
++  einstieg: number | null;
++  prozent_1w: number | null; prozent_2w: number | null; prozent_3w: number | null;
++  pips_1w: number | null; pips_2w: number | null; pips_3w: number | null;
++  einschaetzung: "zustimmen" | "zweifel" | "dagegen" | null;
++  notiz: string | null;
++  erstellt_am: string;
++}
++
++const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
++
++export async function ladeWochenideen(abWoche?: string): Promise<WochenIdee[]> {
++  const db = createTradingClient();
++  if (!db) return [];
++  let q = db.from("makro_wochenideen").select("*").order("woche", { ascending: false }).order("klasse").order("abstand", { ascending: false });
++  if (abWoche) q = q.gte("woche", abWoche);
++  const { data, error } = await q.limit(1000);
++  if (error || !data) return [];
++  return (data as Record<string, unknown>[]).map((r) => ({
++    id: String(r.id), woche: String(r.woche), paar: String(r.paar),
++    seite: r.seite as WochenIdee["seite"], klasse: r.klasse as WochenIdee["klasse"],
++    stark: String(r.stark), schwach: String(r.schwach),
++    score_stark: num(r.score_stark), score_schwach: num(r.score_schwach), abstand: num(r.abstand),
++    urteil: (r.urteil as WochenIdee["urteil"]) ?? null,
++    einstieg: num(r.einstieg),
++    prozent_1w: num(r.prozent_1w), prozent_2w: num(r.prozent_2w), prozent_3w: num(r.prozent_3w),
++    pips_1w: num(r.pips_1w), pips_2w: num(r.pips_2w), pips_3w: num(r.pips_3w),
++    einschaetzung: (r.einschaetzung as WochenIdee["einschaetzung"]) ?? null,
++    notiz: (r.notiz as string | null) ?? null,
++    erstellt_am: String(r.erstellt_am),
++  }));
++}
++
++/** Legt die Ideen der laufenden Woche an, falls es noch keine gibt. */
++export async function erstelleWochenideen(jetzt = new Date()): Promise<string> {
++  const db = createTradingClient();
++  if (!db) return "Trading-DB nicht verbunden";
++  const woche = montagVon(jetzt);
++  const { count } = await db.from("makro_wochenideen").select("id", { count: "exact", head: true }).eq("woche", woche);
++  if ((count ?? 0) > 0) return `Woche ${woche}: schon ${count} Ideen`;
++
++  const dienst = makroDb() ?? undefined;
++  const makro = await ladeMakro(dienst);
++  const urteile = await ladeUrteile(makro.zeilen, G8, dienst);
++  const ideen = paarIdeen(makro.zeilen.map((z) => ({ ...z, gesamt: urteile[z.ccy]?.score ?? null })), PAARE);
++  const zeilen = ideen.map((i) => {
++    const s = urteile[i.stark], w = urteile[i.schwach];
++    const klasse = paarKlasse(s?.score ?? null, w?.score ?? null);
++    if (!klasse || !s || !w) return null;
++    const ks = kurzform(s), kw = kurzform(w);
++    return {
++      woche, paar: i.paar, seite: i.seite === "Long" ? "long" : "short", klasse,
++      stark: i.stark, schwach: i.schwach, score_stark: s.score, score_schwach: w.score, abstand: i.abstand,
++      urteil: { stark: { wort: ks.wort, gruende: ks.gruende }, schwach: { wort: kw.wort, gruende: kw.gruende } },
++    };
++  }).filter((z) => z !== null);
++  if (zeilen.length === 0) return `Woche ${woche}: keine Idee mit genug Abstand`;
++  const { error } = await db.from("makro_wochenideen").insert(zeilen);
++  if (error) {
++    return /makro_wochenideen/.test(error.message)
++      ? "Tabelle makro_wochenideen fehlt — supabase/trading/07_makro_wochenideen.sql ausführen"
++      : `Anlegen: ${error.message}`;
++  }
++  return `Woche ${woche}: ${zeilen.length} Ideen angelegt (${zeilen.filter((z) => z.klasse === "A").length} A)`;
++}
++
++/** Misst offene Ideen nach: Einstieg und die Stände nach 1, 2, 3 Wochen. */
++export async function werteWochenideenAus(jetzt = Date.now()): Promise<string> {
++  const db = createTradingClient();
++  if (!db) return "Trading-DB nicht verbunden";
++  const ab = new Date(jetzt - 35 * 86_400_000).toISOString().slice(0, 10);
++  const { data, error } = await db.from("makro_wochenideen")
++    .select("id, woche, paar, seite, einstieg, prozent_1w, prozent_2w, prozent_3w")
++    .gte("woche", ab).or("einstieg.is.null,prozent_3w.is.null");
++  if (error) return `Auswerten: ${error.message}`;
++  const offen = (data ?? []) as { id: string; woche: string; paar: string; seite: "long" | "short"; einstieg: number | null;
++    prozent_1w: number | null; prozent_2w: number | null; prozent_3w: number | null }[];
++  let gemessen = 0, ohneKerzen = 0;
++  const kerzenJePaar = new Map<string, Awaited<ReturnType<typeof holeTageskerzen>>>();
++  for (const idee of offen) {
++    // Nichts zu tun, solange die Montagskerze noch nicht da sein kann.
++    if (jetzt < Date.parse(`${idee.woche}T00:00:00Z`)) continue;
++    const seit = new Date(Date.parse(`${idee.woche}T00:00:00Z`) - 5 * 86_400_000).toISOString().slice(0, 10);
++    const schluessel = `${idee.paar}|${seit}`;
++    if (!kerzenJePaar.has(schluessel)) kerzenJePaar.set(schluessel, await holeTageskerzen(idee.paar, seit));
++    const kerzen = kerzenJePaar.get(schluessel)!;
++    if (kerzen.length === 0) { ohneKerzen++; continue; }
++    const m = messe(kerzen, idee.woche, idee.seite, idee.paar, jetzt);
++    const update: Record<string, number> = {};
++    if (m.einstieg !== null && idee.einstieg === null) update.einstieg = m.einstieg;
++    for (const n of HORIZONTE) {
++      if (jetzt < messbarAb(idee.woche, n)) continue;
++      if (m.prozent[n] === undefined) continue;
++      update[`kurs_${n}w`] = m.kurse[n]!;
++      update[`prozent_${n}w`] = m.prozent[n]!;
++      update[`pips_${n}w`] = m.pips[n]!;
++    }
++    if (Object.keys(update).length === 0) continue;
++    const { error: e } = await db.from("makro_wochenideen").update(update).eq("id", idee.id);
++    if (!e) gemessen++;
++  }
++  return `${gemessen} Ideen nachgemessen${ohneKerzen ? `, ${ohneKerzen} ohne Kerzen (Screener-Backend schläft?)` : ""}`;
++}
++
++export async function wochenideenLauf(): Promise<string> {
++  const a = await erstelleWochenideen().catch((e) => `Anlegen: ${e instanceof Error ? e.message : "Fehler"}`);
++  const b = await werteWochenideenAus().catch((e) => `Auswerten: ${e instanceof Error ? e.message : "Fehler"}`);
++  return `${a} · ${b}`;
++}
+diff --git a/src/lib/trading/hit-detail.ts b/src/lib/trading/hit-detail.ts
+index 5467baa..be78f56 100644
+--- a/src/lib/trading/hit-detail.ts
++++ b/src/lib/trading/hit-detail.ts
+@@ -2,6 +2,9 @@ import "server-only";
+ import { heuteISO } from "@/lib/time";
+ import { ladeMakro } from "@/lib/makro/laden";
+ import { paarUrteil, type PaarUrteil } from "@/lib/makro/bewertung";
++import { ladeUrteile } from "@/lib/makro/releases-laden";
++import { makroDb } from "@/lib/makro/speichern";
++import { kurzform, paarKlasse, URTEIL_GEWICHT, type PaarKlasse, type UrteilKurz } from "@/lib/makro/urteil";
+ import { ladeFuerStichtag, ladeKurse } from "@/lib/confluence/daten";
+ import { cotBildFuer, type CotBild } from "@/lib/confluence/cot-divergenz";
+ import { saisonZum, MONATS_KURZ, type MonatsBild } from "@/lib/confluence/saison";
+@@ -81,6 +84,19 @@ export interface HitLage {
+    */
+   fundamental: PaarUrteil;
+   fundamentalFehler: string | null;
++  /**
++   * Seit dem 29.09.2026: das Urteil je Währung mit Gewichtung Zentralbank
++   * 40 % · Wirtschaft 35 % · Überraschungen 25 % (lib/makro/urteil.ts) —
++   * dieselbe Zahl wie auf dem Makro-Terminal. `fundamental` oben rechnet
++   * seitdem mit diesen Scores. Fehlt bei älteren Schnappschüssen.
++   */
++  urteilNeu?: {
++    gewichtung: string;
++    basis: UrteilKurz;
++    quote: UrteilKurz;
++    /** A = stark gegen schwach, B = stark gegen neutral, null = keine Idee. */
++    klasse: PaarKlasse | null;
++  };
+   /**
+    * Der alte Q-Score-Block. Nur noch für Snapshots aus der Zeit davor: die
+    * liegen als JSON in `trades.fundamental_snapshot` und sollen weiter
+@@ -204,8 +220,13 @@ const alsSeite = (b: CotBild): CotSeite => ({
+ 
+ /* ---------------------------------------------------------------- Lage */
+ 
++/**
++ * `dienst`: ohne Anmeldung rechnen (Cron beim Trade-Import). Dann liest
++ * alles über den Service-Role-Schlüssel — sonst gäben die Makro-Tabellen
++ * nichts heraus und das Urteil wäre leer.
++ */
+ export async function baueHitLage(
+-  paar: string, seite: "long" | "short",
++  paar: string, seite: "long" | "short", dienst = false,
+ ): Promise<HitLage> {
+   const sauber = paar.replace(/[^A-Za-z]/g, "").toUpperCase();
+   const heute = heuteISO();
+@@ -214,15 +235,35 @@ export async function baueHitLage(
+ 
+   // `allSettled` statt `all`: eine hängende COT-Abfrage darf das Ranking nicht
+   // mitreissen. Jeder Teil scheitert für sich und sagt, warum.
++  const db = dienst ? makroDb() ?? undefined : undefined;
+   const [makroE, cotE, kurseE] = await Promise.allSettled([
+-    ladeMakro(),
++    ladeMakro(db),
+     ladeFuerStichtag(heute),
+     ladeKurse(sauber),
+   ]);
+ 
+-  const fundamental = makroE.status === "fulfilled"
+-    ? paarUrteil(makroE.value.zeilen, sauber, seite)
+-    : paarUrteil([], sauber, seite);
++  // Das Urteil (40/35/25) je Währung; die Paar-Rechnung läuft mit diesen
++  // Scores statt mit dem reinen Niveau.
++  let urteilNeu: HitLage["urteilNeu"];
++  let zeilenFuerPaar = makroE.status === "fulfilled" ? makroE.value.zeilen : [];
++  if (makroE.status === "fulfilled") {
++    try {
++      const u = await ladeUrteile(makroE.value.zeilen, [basisCode, kursCode], db);
++      zeilenFuerPaar = makroE.value.zeilen.map((z) => (u[z.ccy] ? { ...z, gesamt: u[z.ccy].score } : z));
++      const b = u[basisCode], q = u[kursCode];
++      if (b && q) {
++        const [stark, schwach] = (b.score ?? 0) >= (q.score ?? 0) ? [b, q] : [q, b];
++        urteilNeu = {
++          gewichtung: `Zentralbank ${URTEIL_GEWICHT.zentralbank * 100} % · Wirtschaft ${URTEIL_GEWICHT.wirtschaft * 100} % · Überraschungen ${URTEIL_GEWICHT.ueberraschung * 100} %`,
++          basis: kurzform(b), quote: kurzform(q),
++          klasse: paarKlasse(stark.score, schwach.score),
++        };
++      }
++    } catch (e) {
++      console.error("hit-lage Urteil:", e);
++    }
++  }
++  const fundamental = paarUrteil(zeilenFuerPaar, sauber, seite);
+   const fundamentalFehler = makroE.status === "rejected"
+     ? "Die fundamentale Lage konnte nicht geladen werden."
+     : null;
+@@ -254,7 +295,7 @@ export async function baueHitLage(
+ 
+   return {
+     paar: sauber, seite, stichtag: heute,
+-    fundamental, fundamentalFehler,
++    fundamental, fundamentalFehler, urteilNeu,
+     cotBasis, cotKurs, cotFehler,
+     cotSatz: cotText(cotBasis, cotKurs, seite),
+     saison, saisonFehler,
+diff --git a/src/lib/trading/lage-festhalten.ts b/src/lib/trading/lage-festhalten.ts
+index 365f216..f121f08 100644
+--- a/src/lib/trading/lage-festhalten.ts
++++ b/src/lib/trading/lage-festhalten.ts
+@@ -19,7 +19,9 @@ export async function lageFesthalten(
+ 
+   let lage;
+   try {
+-    lage = await baueHitLage(pair, richtung);
++    // Immer mit Service-Schlüssel: der Aufruf kommt meist aus dem Cron, wo
++    // niemand angemeldet ist.
++    lage = await baueHitLage(pair, richtung, true);
+   } catch (e) {
+     return `Lage liess sich nicht rechnen: ${e instanceof Error ? e.message : "unbekannt"}`;
+   }
+diff --git a/src/lib/wochenideen-actions.ts b/src/lib/wochenideen-actions.ts
+new file mode 100644
+index 0000000..526e83b
+--- /dev/null
++++ b/src/lib/wochenideen-actions.ts
+@@ -0,0 +1,35 @@
++"use server";
++
++import { revalidatePath } from "next/cache";
++import { createTradingClient } from "@/lib/supabase/trading";
++import { tradingUserId } from "@/lib/trading/journal";
++import { erstelleWochenideen, werteWochenideenAus } from "@/lib/makro/wochenideen";
++
++/**
++ * Schreibzugriffe der Wochenaussicht (29.09.2026): Kerims Einschätzung zu
++ * einer Idee, und „jetzt anlegen", falls der Montagslauf noch nicht war.
++ */
++
++const EINSCHAETZUNGEN = ["zustimmen", "zweifel", "dagegen"];
++
++export async function einschaetzungSpeichern(fd: FormData): Promise<void> {
++  if (!(await tradingUserId())) return;
++  const db = createTradingClient();
++  if (!db) return;
++  const id = String(fd.get("id") ?? "");
++  const e = String(fd.get("einschaetzung") ?? "");
++  const notiz = String(fd.get("notiz") ?? "").trim().slice(0, 1000);
++  if (!id) return;
++  await db.from("makro_wochenideen").update({
++    einschaetzung: EINSCHAETZUNGEN.includes(e) ? e : null,
++    notiz: notiz || null,
++  }).eq("id", id);
++  revalidatePath("/trading/fundamentals/wochenideen");
++}
++
++export async function wochenideenJetzt(): Promise<void> {
++  if (!(await tradingUserId())) return;
++  await erstelleWochenideen();
++  await werteWochenideenAus();
++  revalidatePath("/trading/fundamentals/wochenideen");
++}
+diff --git a/supabase/trading/07_makro_wochenideen.sql b/supabase/trading/07_makro_wochenideen.sql
+new file mode 100644
+index 0000000..2909ae1
+--- /dev/null
++++ b/supabase/trading/07_makro_wochenideen.sql
+@@ -0,0 +1,45 @@
++-- ============================================================================
++-- 07_makro_wochenideen.sql        29.09.2026
++--
++-- Projekt „Kompass", Schema trading. Die Wochenaussicht: jeden Montag die
++-- Paar-Ideen „stark gegen schwach" aus dem Makro-Terminal, festgehalten mit
++-- Urteil und Begründung — und nach 1, 2 und 3 Wochen, wie das Paar
++-- tatsächlich gelaufen ist. Dazu Kerims eigene Einschätzung, damit sich
++-- zeigt, ob sein Bauchgefühl oder das Urteil besser liegt.
++--
++-- Geschrieben vom Lauf /api/makro-sync (Job „wochenideen") und von der Seite
++-- /trading/fundamentals/wochenideen. Nur Service-Role: RLS an, keine Policy.
++-- Idempotent.
++-- ============================================================================
++create table if not exists trading.makro_wochenideen (
++  id              uuid primary key default gen_random_uuid(),
++  woche           date not null,              -- Montag der Woche
++  paar            text not null,              -- z.B. NZDCAD
++  seite           text not null check (seite in ('long','short')),
++  klasse          text not null check (klasse in ('A','B')),  -- A stark/schwach, B stark/neutral
++  stark           text not null,
++  schwach         text not null,
++  score_stark     numeric,
++  score_schwach   numeric,
++  abstand         numeric,
++  urteil          jsonb,                      -- Urteil beider Währungen mit Gründen
++  einstieg        numeric,                    -- Eröffnung der Montagskerze
++  kurs_1w         numeric,                    -- Schluss Freitag Woche 1
++  kurs_2w         numeric,
++  kurs_3w         numeric,
++  prozent_1w      numeric,                    -- in Richtung der Idee, + = aufgegangen
++  prozent_2w      numeric,
++  prozent_3w      numeric,
++  pips_1w         numeric,
++  pips_2w         numeric,
++  pips_3w         numeric,
++  einschaetzung   text check (einschaetzung in ('zustimmen','zweifel','dagegen')),
++  notiz           text,
++  erstellt_am     timestamptz not null default now(),
++  unique (woche, paar)
++);
++
++create index if not exists idx_makro_wochenideen_woche on trading.makro_wochenideen (woche desc);
++
++alter table trading.makro_wochenideen enable row level security;
++grant select, insert, update, delete on trading.makro_wochenideen to service_role;
+diff --git a/tools/checks/releases.mts b/tools/checks/releases.mts
+index bd50df2..b94b806 100644
+--- a/tools/checks/releases.mts
++++ b/tools/checks/releases.mts
+@@ -10,6 +10,8 @@ import {
+ } from "../../src/lib/makro/releases";
+ import { urteilFuer, urteilWort } from "../../src/lib/makro/urteil";
+ import { ersatzAusMt5 } from "../../src/lib/makro/pmi";
++import { messe, montagVon } from "../../src/lib/makro/wochenideen-rechnen";
++import { paarKlasse } from "../../src/lib/makro/urteil";
+ 
+ let fails = 0;
+ function check(name: string, actual: unknown, expected: unknown) {
+@@ -162,5 +164,29 @@ check("Deutsch: BIP", kategorieVon("BIP m/m"), "wachstum");
+ }
+ check("Notenbank-Ton erkannt", [istNotenbankTon("Fed Chair Powell Speaks"), istNotenbankTon("FOMC Meeting Minutes"), istNotenbankTon("CPI y/y")], [true, true, false]);
+ 
++/* Wochenaussicht */
++check("Montag von Mittwoch", montagVon(new Date("2026-09-30T10:00:00Z")), "2026-09-28");
++check("Montag von Sonntag", montagVon(new Date("2026-10-04T10:00:00Z")), "2026-09-28");
++{
++  // OANDA-Tageskerzen öffnen Sonntag 21:00 UTC für den Montag.
++  const k = (zeit: string, open: number, close: number) => ({ zeit, open, close });
++  const kerzen = [
++    k("2026-09-25T21:00:00Z", 1.1690, 1.1700), // Freitag davor — darf nicht zählen
++    k("2026-09-27T21:00:00Z", 1.1700, 1.1720), // Montag Woche 1
++    k("2026-10-01T21:00:00Z", 1.1750, 1.1760), // Freitag Woche 1
++    k("2026-10-08T21:00:00Z", 1.1640, 1.1650), // Freitag Woche 2
++  ];
++  const m = messe(kerzen, "2026-09-28", "long", "EURUSD", Date.parse("2026-10-11T12:00:00Z"));
++  check("Einstieg = Eröffnung Montag", m.einstieg, 1.17);
++  check("1W long", [m.prozent[1], m.pips[1]], [0.513, 60]);
++  check("2W long", [m.prozent[2], m.pips[2]], [-0.427, -50]);
++  check("3W noch nicht messbar", m.prozent[3], undefined);
++  const s = messe(kerzen, "2026-09-28", "short", "EURUSD", Date.parse("2026-10-11T12:00:00Z"));
++  check("2W short umgekehrt", s.pips[2], 50);
++}
++check("Klasse A", paarKlasse(0.4, -0.3), "A");
++check("Klasse B (gegen neutral)", paarKlasse(0.5, 0.05), "B");
++check("Keine Idee unter 0.40", paarKlasse(0.3, 0), null);
++
+ console.log(fails === 0 ? "\nAlles gut." : `\n${fails} Fehler.`);
+ process.exit(fails === 0 ? 0 : 1);
+-- 
+2.43.0
+

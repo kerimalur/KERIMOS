@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { holeAlles } from "@/lib/makro/quellen";
 import { makroDb, speichereReihe, bestehendeReihe, berichtErgaenzen } from "@/lib/makro/speichern";
 import { syncReleases } from "@/lib/makro/releases-sync";
+import { createTradingClient } from "@/lib/supabase/trading";
+import { updateCalendar } from "@/lib/marktdaten/jobs/updateCalendar";
+import { beobachterLauf } from "@/lib/beobachter/lauf";
 import { wochenideenLauf } from "@/lib/makro/wochenideen";
 import { rechneZurueck, rueckrechnungWennFaellig } from "@/lib/makro/rueckrechnung";
 
@@ -33,6 +36,7 @@ export const maxDuration = 300;
  *     &job=releases&voll=1    einmalig: JBlanked-Historie ab 2024 nachladen
  *     &job=reihen             nur die Monatsreihen
  *     &job=wochenideen        nur die Wochenaussicht (anlegen + nachmessen)
+ *     &job=beobachter         Fundamentaler Beobachter: neue Ereignisse nachmessen (läuft auch im Job releases)
  *     &job=rueckrechnung      Rückrechnung ab 2024 sofort neu rechnen
  *     &job=varianten          Varianten-Vergleich des Makro-Modells neu rechnen
  * Der volle Lauf rechnet die Rückrechnung einmal pro Woche mit.
@@ -65,6 +69,12 @@ export async function GET(request: NextRequest) {
     await berichtErgaenzen(db, { wochenideen: text });
     return NextResponse.json({ ok: true, wochenideen: text });
   }
+  if (job === "beobachter") {
+    const t = createTradingClient();
+    if (!t) return NextResponse.json({ ok: false, fehler: "Trading-DB nicht verbunden" }, { status: 503 });
+    const text = await beobachterLauf(db, t as unknown as Parameters<typeof beobachterLauf>[1]);
+    return NextResponse.json({ ok: !text.startsWith("Fehler"), beobachter: text });
+  }
   if (job === "varianten") {
     const { rechneVarianten } = await import("@/lib/makro/varianten");
     const text = await rechneVarianten();
@@ -82,9 +92,20 @@ export async function GET(request: NextRequest) {
   const voll = request.nextUrl.searchParams.get("voll") === "1";
 
   if (job === "releases") {
+    // Forex-Factory-Kalender höchstens alle 3 Stunden auffrischen (Sonntags rollt „thisweek“ auf die neue Woche;
+    // der Kalender der nächsten Woche kam sonst nie an). Fehler stoppen den Lauf nicht.
+    const kalender = await kalenderAuffrischen();
     const releases = await syncReleases(db, { voll });
-    await berichtErgaenzen(db, { releases: releasesZeile(releases) });
-    return NextResponse.json({ ok: releases.fehler.length === 0, releases });
+    // Die Wochenideen hängen am frischen Urteil und entstanden bisher nur im vollen
+    // Lauf — der läuft nicht per Cron. Darum hier mit (legt nur an, was fehlt, und misst nach).
+    const wochenideen = await wochenideenLauf().catch((e) => `Fehler: ${e instanceof Error ? e.message : "?"}`);
+    // Der Beobachter misst danach die neuen Ereignisse (passiv, im selben Takt).
+    const tb = createTradingClient();
+    const beobachter = tb
+      ? await beobachterLauf(db, tb as unknown as Parameters<typeof beobachterLauf>[1]).catch((e) => `Fehler: ${e instanceof Error ? e.message : "?"}`)
+      : "Trading-DB nicht verbunden";
+    await berichtErgaenzen(db, { releases: releasesZeile(releases), wochenideen, beobachter });
+    return NextResponse.json({ ok: releases.fehler.length === 0, releases, wochenideen, kalender, beobachter });
   }
 
   const [ergebnisse, releases] = await Promise.all([
@@ -114,6 +135,20 @@ export async function GET(request: NextRequest) {
   await db.from("makro_sync").upsert({ id: 1, gelaufen: new Date().toISOString(), bericht });
 
   return NextResponse.json({ ok: true, bericht, releases });
+}
+
+async function kalenderAuffrischen(): Promise<string> {
+  try {
+    const t = createTradingClient();
+    if (!t) return "Trading-DB nicht verbunden";
+    const { data } = await t.from("calendar_events").select("updated_at").order("updated_at", { ascending: false }).limit(1);
+    const letzte = (data as { updated_at: string }[] | null)?.[0]?.updated_at;
+    if (letzte && Date.now() - Date.parse(letzte) < 3 * 3_600_000) return "aktuell (jünger als 3 Std.)";
+    const r = await updateCalendar(t as unknown as Parameters<typeof updateCalendar>[0]);
+    return JSON.stringify(r);
+  } catch (e) {
+    return `Fehler: ${e instanceof Error ? e.message : "?"}`;
+  }
 }
 
 function releasesZeile(r: Awaited<ReturnType<typeof syncReleases>>): string {

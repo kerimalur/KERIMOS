@@ -234,6 +234,30 @@ export interface EconEvent {
   actual: string | null;
 }
 
+/**
+ * Fallback aus makro_releases (MT5 + Forex Factory), wenn calendar_events leer ist:
+ * der Forex-Factory-Import für die nächste Woche kommt nicht an (Prüfung 11.10.2026).
+ * Liefert auch das Ist, das calendar_events oft nicht hat.
+ */
+async function eventsAusReleases(vonIso: string, bisIso: string): Promise<EconEvent[]> {
+  try {
+    const { makroDb } = await import("@/lib/makro/speichern");
+    const db = makroDb();
+    if (!db) return [];
+    const { data } = await db.from("makro_releases")
+      .select("titel, ccy, event_time, impact, erwartung, vorwert, ist, einheit")
+      .gte("event_time", vonIso).lte("event_time", bisIso)
+      .ilike("impact", "high").order("event_time");
+    const f = (v: unknown, e: unknown) => (v === null || v === undefined ? null : `${v}${e ?? ""}`);
+    return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+      title: String(r.titel), currency: (r.ccy as string | null) ?? null, event_time: String(r.event_time),
+      impact: "High", forecast: f(r.erwartung, r.einheit), previous: f(r.vorwert, r.einheit), actual: f(r.ist, r.einheit),
+    }));
+  } catch {
+    return [];
+  }
+}
+
 /** High-Impact-Termine von heute. Leer, wenn nichts ansteht oder DB fehlt. */
 export async function fetchTodayEvents(): Promise<EconEvent[]> {
   const supabase = createTradingClient();
@@ -248,7 +272,8 @@ export async function fetchTodayEvents(): Promise<EconEvent[]> {
     .lte("event_time", end.toISOString())
     .eq("impact", "High")
     .order("event_time");
-  return (data ?? []) as EconEvent[];
+  const roh = (data ?? []) as EconEvent[];
+  return roh.length > 0 ? roh : eventsAusReleases(start.toISOString(), end.toISOString());
 }
 
 /** High-Impact-Termine der laufenden Woche (Mo-So). */
@@ -270,7 +295,8 @@ export async function fetchWeekEvents(): Promise<EconEvent[]> {
     .lte("event_time", end.toISOString())
     .eq("impact", "High")
     .order("event_time");
-  return (data ?? []) as EconEvent[];
+  const roh = (data ?? []) as EconEvent[];
+  return roh.length > 0 ? roh : eventsAusReleases(start.toISOString(), end.toISOString());
 }
 
 // ---------------------------------------------------------------------------
