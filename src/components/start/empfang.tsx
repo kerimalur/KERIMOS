@@ -29,7 +29,8 @@ export interface EmpfangProps {
   termin: { zeit: string; titel: string; waehrung: string | null; vorbei: boolean } | null;
   weitereTermine: number;
   routinen: { erledigt: number; gesamt: number };
-  hits: number;
+  /** Live-Trades in diesem Monat (Ziel 4–6). */
+  tradesMonat: number;
   laufende: number;
   ziele: { fertig: number; gesamt: number };
 }
@@ -123,7 +124,7 @@ export function Empfang(p: EmpfangProps) {
 
       <div className="mx-auto grid max-w-6xl grid-cols-3 border-t border-white/15 px-4 pb-8">
         {[
-          { v: String(p.hits), l: p.hits === 1 ? "offener Hit" : "offene Hits", href: "/trading" },
+          { v: String(p.tradesMonat), l: "Live-Trades im Monat (Ziel 4–6)", href: "/trading/journal" },
           { v: String(p.laufende), l: p.laufende === 1 ? "laufender Trade" : "laufende Trades", href: "/trading/journal" },
           { v: `${p.ziele.fertig}/${p.ziele.gesamt}`, l: "Wochenziele fertig", href: "/wochenziele" },
         ].map((s, i) => (

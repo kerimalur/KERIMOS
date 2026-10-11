@@ -11,10 +11,13 @@ import { ThemaSchalter } from "./thema-schalter";
  * Leiste, wo der Daumen liegt, auch am Computer:
  *
  *   Heute    die Startseite mit Empfang und Brett
- *   Markt    GVA: Übersicht, Cockpit, Alarme
- *   Makro    Fundamentals, Währungen, Kalender, Wochenaussicht, Makro-Backtest
+ *   Markt    Watchlist (eigene Linien, Entscheidungen) und Kalender
  *   Journal  Journal, Backtest
  *   Leben    Wochenziele, Routinen, Essen
+ *
+ * 11.10.2026: Makro ist aus der Navigation genommen, Cockpit, Screener und
+ * Radar ebenso. Die Makro-Seiten und der Beobachter laufen im Hintergrund
+ * weiter und sind über die kleinen Links unten auf /trading erreichbar.
  *
  * Oben steht je Bereich ein Titelbild — ein Ausschnitt aus der Collage — mit
  * den Seiten des Bereichs als Pillen darauf. Die Adressen unter /trading sind
@@ -24,7 +27,7 @@ import { ThemaSchalter } from "./thema-schalter";
  * 26.09.2026 und die Rücklinks „← Startseite“.
  */
 
-type Bereich = "heute" | "markt" | "makro" | "journal" | "leben";
+type Bereich = "heute" | "markt" | "journal" | "leben";
 
 interface Seite { href: string; label: string; auch?: string[] }
 
@@ -48,30 +51,13 @@ const BEREICHE: BereichDef[] = [
   },
   {
     key: "markt", label: "Markt", href: "/trading", pfade: ["/trading"],
-    kicker: "GVA: Hits, Cockpit, Alarme",
+    kicker: "Deine Linien und Entscheidungen",
     seiten: [
-      { href: "/trading", label: "Übersicht" },
-      { href: "/trading/cockpit", label: "Cockpit" },
-      { href: "/trading/einstellungen", label: "Alarme", auch: ["/trading/alarme"] },
+      { href: "/trading", label: "Watchlist" },
+      { href: "/trading/fundamentals/kalender", label: "Kalender" },
     ],
     bild: { x: 46.5, y: 35, zoom: 1.7 },
     icon: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8zM12 1v4M12 19v4M1 12h4M19 12h4",
-  },
-  {
-    key: "makro", label: "Makro", href: "/trading/fundamentals",
-    pfade: ["/trading/fundamentals", "/trading/waehrungen", "/trading/confluence"],
-    kicker: "Urteil, Währungen, Kalender",
-    seiten: [
-      { href: "/trading/fundamentals", label: "Fundamentals", auch: ["/trading/confluence"] },
-      { href: "/trading/waehrungen", label: "Währungen" },
-      { href: "/trading/fundamentals/kalender", label: "Kalender" },
-      { href: "/trading/fundamentals/wochenideen", label: "Wochenaussicht" },
-      { href: "/trading/fundamentals/rueckblick", label: "Wochenrückblick" },
-      { href: "/trading/fundamentals/beobachter", label: "Beobachter" },
-      { href: "/trading/fundamentals/rueckrechnung", label: "Makro-Backtest" },
-    ],
-    bild: { x: 69, y: 40, zoom: 1.7 },
-    icon: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9s1.3-6.4 3.8-9z",
   },
   {
     key: "journal", label: "Journal", href: "/trading/journal",
@@ -103,7 +89,7 @@ const passt = (path: string, p: string) => path === p || path.startsWith(p + "/"
 /** Spezifische Bereiche zuerst — alles Trading liegt unter /trading. */
 function bereichVon(path: string): BereichDef | null {
   if (path === "/") return BEREICHE[0];
-  for (const key of ["makro", "journal", "leben", "markt"] as const) {
+  for (const key of ["journal", "leben", "markt"] as const) {
     const b = BEREICHE.find((x) => x.key === key)!;
     if (b.pfade.some((p) => passt(path, p))) return b;
   }

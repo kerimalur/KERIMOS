@@ -78,7 +78,7 @@ export const KACHELN: Kachel[] = [
     x: 17, y: 59.5, w: 18.5, h: 40.5 },
 
   /* ── Spalte 3 (35.5–58) — das grösste Feld, was am häufigsten aufgeht ── */
-  { id: "gva", name: "GVA", unterzeile: "Übersicht · Cockpit · Alarme", art: "intern",
+  { id: "gva", name: "Markt", unterzeile: "Linien · Entscheidungen", art: "intern",
     ziel: "/trading", x: 35.5, y: 0, w: 22.5, h: 61.5 },
   { id: "journal", name: "Journal", unterzeile: "Trades & Konto", art: "intern",
     ziel: "/trading/journal", x: 35.5, y: 61.5, w: 22.5, h: 38.5 },
@@ -87,8 +87,8 @@ export const KACHELN: Kachel[] = [
   { id: "wirtschaftskalender", name: "Wirtschaftskalender", unterzeile: "Forex Factory",
     art: "extern", ziel: "https://www.forexfactory.com/calendar",
     x: 58, y: 0, w: 22.8, h: 23 },
-  { id: "fundamentals", name: "Fundamentals", unterzeile: "Fundamentals · Währungen", art: "intern",
-    ziel: "/trading/fundamentals", x: 58, y: 23, w: 22.8, h: 77 },
+  { id: "fundamentals", name: "Kalender", unterzeile: "Termine der Woche", art: "intern",
+    ziel: "/trading/fundamentals/kalender", x: 58, y: 23, w: 22.8, h: 77 },
 
   /* ── Spalte 5 (80.8–100) — „Be that one" ────────────────────────────── */
   { id: "wochenziele", name: "Wochenziele", unterzeile: "Was diese Woche zählt", art: "intern",

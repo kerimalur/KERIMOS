@@ -3,8 +3,6 @@ import { tradingConfigured } from "@/lib/supabase/trading";
 import { ladeAlarmBereitschaft, ladeMarkt, type MarktLinie } from "@/lib/markt/laden";
 import { ZUSTAND_RANG, fmtPreis } from "@/lib/markt/rechnen";
 import { ArchivZeile, LinienFormular, LinienZeile } from "@/components/markt/teile";
-import { KopierFeld } from "@/components/alarm/kopierfeld";
-import { WATCHLIST_MIGRATION_SQL } from "@/lib/trading/watchlist-migration";
 import { Badge, Card, CardTitle, Empty, cx } from "@/components/ui";
 import { dateLabel } from "@/lib/format";
 
@@ -105,8 +103,6 @@ export default async function MarktSeite({ searchParams }: { searchParams: Promi
   const pairsAnzahl = new Set(m.linien.map((l) => l.pair)).size;
   const ohnePreis = m.linien.filter((l) => l.line_level !== null && l.abstand === null).length;
 
-  const stand = m.zahlen.screenerStand ? Date.parse(m.zahlen.screenerStand) : null;
-  const standMin = stand ? Math.round((Date.now() - stand) / 60_000) : null;
 
   return (
     <div className="space-y-5">
@@ -120,7 +116,7 @@ export default async function MarktSeite({ searchParams }: { searchParams: Promi
           </div>
           <p className="mt-1 max-w-2xl text-sm text-ink-muted">
             Deine Linien mit Begründung, der Fundamental-Bias dazu und bei jedem Treffer eine Entscheidung:
-            Trade oder Skip. Der Auto-Screener läuft als Radar im Hintergrund.
+            Trade oder Skip.
           </p>
         </div>
         <Link href="/trading/einstellungen" className="text-xs text-accent-soft hover:underline">Alarme einstellen ↗</Link>
@@ -141,14 +137,6 @@ export default async function MarktSeite({ searchParams }: { searchParams: Promi
           läuft im Notbetrieb, Warum, Priorität, Check und Entscheidungen werden nicht gespeichert.
         </p></Card>
       )}
-      {(standMin === null || standMin > 30) && (
-        <Card><p className="text-sm text-warn">
-          {standMin === null
-            ? "Kein Live-Stand vom Screener (Render schläft oder ist nicht erreichbar) — Abstände und „erreicht“ stimmen so nicht."
-            : `Der Screener-Stand ist ${standMin} Minuten alt — Abstände können abweichen.`}
-        </p></Card>
-      )}
-
       {/* Kennzahlen */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Kachel titel="Fällig" wert={String(faellig.length)} hinweis="Treffer ohne Entscheidung" ton={faellig.length ? "bad" : undefined} />
@@ -246,30 +234,6 @@ export default async function MarktSeite({ searchParams }: { searchParams: Promi
         <LinienFormular kategorien={m.kategorien} knopf="Aufnehmen" />
       </Card>
 
-      {/* Radar */}
-      <details className="rounded-2xl border border-line/70 bg-card px-5 py-3 shadow-card">
-        <summary className="cursor-pointer text-sm font-medium text-ink">
-          Screener-Radar ({m.radar.length}) — nur zum Nachschlagen, entschieden wird auf deinen Linien
-        </summary>
-        {m.radar.length === 0 ? (
-          <p className="mt-3 text-sm text-ink-muted">Nichts im Radar (oder Screener nicht erreichbar).</p>
-        ) : (
-          <ul className="mt-3 grid gap-1.5 sm:grid-cols-2">
-            {m.radar.map((p) => (
-              <li key={p.pair} className="flex items-center gap-2 rounded-lg bg-sand/50 px-3 py-1.5 text-xs">
-                <span className="font-display font-bold text-ink">{p.pair}</span>
-                <Badge tone={p.status === "HIT" ? "bad" : "warn"}>{p.status}</Badge>
-                {p.near && <Badge tone={p.near === "LONG" ? "good" : "bad"}>{p.near === "LONG" ? "Long" : "Short"}</Badge>}
-                <span className="tabular text-ink-muted">{p.distance !== null ? `${Math.round(p.distance)} Pips` : "—"}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-        <p className="mt-3 text-[11px] text-ink-faint">
-          Treffer übernehmen geht im <Link href="/trading/cockpit" className="text-accent-soft hover:underline">Cockpit</Link>.
-        </p>
-      </details>
-
       {/* Entscheidungen */}
       <details className="rounded-2xl border border-line/70 bg-card px-5 py-3 shadow-card">
         <summary className="cursor-pointer text-sm font-medium text-ink">
@@ -304,15 +268,6 @@ export default async function MarktSeite({ searchParams }: { searchParams: Promi
         )}
       </details>
 
-      <details className="rounded-xl border border-line/60 bg-sand/40 px-4 py-3">
-        <summary className="cursor-pointer text-sm font-medium text-ink">Mehrere Linien je Pair — einmalige Migration</summary>
-        <p className="mt-2 text-[11px] leading-relaxed text-ink-faint">
-          Bis 21.08.2026 liess die Datenbank nur <strong>eine</strong> Zeile je Paar zu. Der Code legt jetzt mehrere an — die
-          Bedingung in der Datenbank muss aber einmal von Hand weg, sonst kommt beim Speichern ein Fehler. SQL kopieren,
-          im Supabase-SQL-Editor ausführen, fertig. Läuft die Migration ein zweites Mal, tut sie nichts.
-        </p>
-        <div className="mt-3"><KopierFeld text={WATCHLIST_MIGRATION_SQL} /></div>
-      </details>
 
       <Card>
         <CardTitle>So ist es gedacht</CardTitle>
@@ -321,13 +276,16 @@ export default async function MarktSeite({ searchParams }: { searchParams: Promi
           <li>Nach dem Aufstehen 15 Minuten auf diese Seite. Steht oben „fällig“, ist eine Linie erreicht.</li>
           <li>Drei Punkte prüfen — abgeholt, BOS, Confluences — und entscheiden: Trade oder Skip, mit Grund.</li>
           <li>Der SL gehört direkt ins Order-Ticket. Ohne SL kein Trade.</li>
-          <li>
-            Fundamental-Bias und{" "}
-            <Link href="/trading/fundamentals/rueckblick" className="text-accent-soft hover:underline">Wochenrückblick</Link>{" "}
-            sind Hintergrund, nicht der Auslöser.
-          </li>
         </ol>
       </Card>
+
+      {/* Im Hintergrund — bewusst klein: läuft weiter, wird aber im Moment nicht gebraucht. */}
+      <p className="flex flex-wrap gap-x-4 gap-y-1 px-1 text-xs text-ink-faint">
+        <span>Im Hintergrund:</span>
+        <Link href="/trading/fundamentals/kalender" className="hover:text-ink-soft">Kalender</Link>
+        <Link href="/trading/fundamentals/beobachter" className="hover:text-ink-soft">Beobachter</Link>
+        <Link href="/trading/alarme/einstellungen" className="hover:text-ink-soft">Alarm-Einstellungen</Link>
+      </p>
     </div>
   );
 }

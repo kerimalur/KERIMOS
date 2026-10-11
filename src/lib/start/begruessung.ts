@@ -47,16 +47,7 @@ export function begruessung(l: Lage, name = "Kerim"): Ansage {
   const gruss = `${anrede(l.stunde)}, ${name}.`;
 
   // Reihenfolge = Dringlichkeit. Das Erste, was zutrifft, gewinnt.
-  if (l.hits > 0) {
-    return {
-      gruss,
-      satz: l.hits === 1
-        ? "Ein GVA-Hit wartet auf eine Entscheidung."
-        : `${l.hits} GVA-Hits warten auf eine Entscheidung.`,
-      ziel: "/trading/cockpit",
-      zielText: "Ins Cockpit",
-    };
-  }
+  // Offene GVA-Hits zählen seit dem 11.10.2026 nicht mehr (Cockpit abgeschaltet).
 
   if (l.unvollstaendig > 0) {
     return {

@@ -38,7 +38,9 @@
     "check:releases": "npx -y tsx tools/checks/releases.mts",
     "check:einordnung": "npx -y tsx tools/checks/einordnung.mts",
     "check:varianten": "npx -y tsx tools/checks/varianten.mts",
-    "check:zweijahr": "npx -y tsx tools/checks/zweijahr.mts"
+    "check:zweijahr": "npx -y tsx tools/checks/zweijahr.mts",
+    "backtest:gva": "npx -y tsx tools/backtest/gva-backtest.mts",
+    "backtest:gva-liste": "npx -y tsx tools/backtest/gva-liste.mts"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.1.0",

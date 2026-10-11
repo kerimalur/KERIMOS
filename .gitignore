@@ -26,3 +26,6 @@ Thumbs.db
 # Liegen nur zum Nachschauen da und gehoeren nicht ins Repo.
 _to_delete/
 .env*
+
+# Backtest-Kerzen-Cache
+tools/backtest/.cache/

@@ -86,7 +86,7 @@ export async function meldeNeueHits(
       text: level !== null
         ? `Linie ${level.toFixed(nachkomma)} getroffen — im Cockpit entscheiden: aktiv nehmen oder verwerfen.`
         : "Linie getroffen — im Cockpit entscheiden: aktiv nehmen oder verwerfen.",
-      url: `/trading/cockpit?paar=${pair}`,
+      url: `/trading`,
       tag: `signal-${id}`,
       wichtig: true,
     }, einst, { jetztMinuten: lage.jetztMinuten, heute: lage.heute, bereitsGesendet: platz });

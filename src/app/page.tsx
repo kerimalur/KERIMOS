@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { Brett } from "@/components/start/brett";
 import { Empfang } from "@/components/start/empfang";
-import { ladeOffeneHits } from "@/lib/trading/offene-signale";
 import { fetchTrades } from "@/lib/trading/journal";
 import { tradingConfigured, fetchTodayEvents, fetchWeekEvents, type EconEvent } from "@/lib/supabase/trading";
 import { begruessung, type Lage } from "@/lib/start/begruessung";
@@ -42,8 +41,7 @@ export default async function Start() {
    * die ganze Historie — die Startseite ist die eine Seite, die immer schnell
    * sein muss.
    */
-  const [hits, trades, wetter, routinen, wochenziele, termineHeute, termineWoche] = await Promise.all([
-    ladeOffeneHits(),
+  const [trades, wetter, routinen, wochenziele, termineHeute, termineWoche] = await Promise.all([
     mitTrading ? fetchTrades({ von: addDays(heute, -90) }) : Promise.resolve([]),
     fetchWeather(),
     ladeRoutinen().catch(() => []),
@@ -61,7 +59,7 @@ export default async function Start() {
   const lage: Lage = {
     stunde: Number(new Intl.DateTimeFormat("de-CH", { hour: "numeric", hour12: false, timeZone: "Europe/Zurich" }).format(jetzt)),
     wochentag,
-    hits: hits.length,
+    hits: 0,
     laufende: trades.filter((t) => t.status === "open").length,
     // Abgeschlossen, aber ohne Ausgang: die nach dem Schliessen vergessenen.
     unvollstaendig: trades.filter((t) => t.status !== "open" && !t.result).length,
@@ -86,7 +84,7 @@ export default async function Start() {
         termin={t ? { zeit: ZEIT.format(new Date(t.event_time)), titel: t.title, waehrung: t.currency, vorbei: kommend.length === 0 } : null}
         weitereTermine={Math.max(0, (kommend.length || (t ? 1 : 0)) - 1)}
         routinen={{ erledigt: routinenErledigt, gesamt: routinenGesamt }}
-        hits={hits.length}
+        tradesMonat={trades.filter((x) => x.date >= `${heute.slice(0, 7)}-01`).length}
         laufende={lage.laufende}
         ziele={{ fertig: wochenziele.filter((z) => z.status === "fertig").length, gesamt: wochenziele.length }}
       />
@@ -117,10 +115,10 @@ export default async function Start() {
       </section>
 
       {termineWoche.length > 0 && (
-        <section className="mt-14">
-          <div className="mb-2 flex items-baseline justify-between gap-3">
-            <h2 className="font-display text-[30px] font-bold tracking-tight">Diese Woche</h2>
-            <Link href="/trading/fundamentals/kalender" className="text-sm text-ink-muted hover:text-ink-soft">
+        <section className="mt-10">
+          <div className="mb-1 flex items-baseline justify-between gap-3">
+            <h2 className="font-display text-base font-bold tracking-tight text-ink-soft">Diese Woche</h2>
+            <Link href="/trading/fundamentals/kalender" className="text-xs text-ink-muted hover:text-ink-soft">
               nur hohe Wirkung, Zeit Zürich →
             </Link>
           </div>
@@ -131,15 +129,15 @@ export default async function Start() {
               const vorbei = d.getTime() < jetzt.getTime();
               return (
                 <li key={`${e.event_time}-${e.title}-${i}`}
-                  className="grid grid-cols-1 gap-1 border-b border-line py-4 sm:grid-cols-[150px_minmax(0,1fr)] sm:gap-4">
-                  <span className={istHeute ? "text-sm font-semibold text-accent" : "text-sm text-ink-muted"}>
+                  className="grid grid-cols-1 gap-0.5 border-b border-line/60 py-1.5 text-sm sm:grid-cols-[110px_minmax(0,1fr)] sm:gap-3">
+                  <span className={istHeute ? "text-xs font-semibold text-accent" : "text-xs text-ink-muted"}>
                     {istHeute ? "Heute" : TAG.format(d)}, {ZEIT.format(d)}
                   </span>
                   <span className={vorbei ? "text-ink-muted" : ""}>
-                    <span className="mr-2 text-[13px] font-semibold text-accent">{e.currency}</span>
-                    <span className="text-[17px] font-medium">{e.title}</span>
+                    <span className="mr-2 text-xs font-semibold text-accent">{e.currency}</span>
+                    <span className="text-sm">{e.title}</span>
                     {(e.forecast || e.previous || e.actual) && (
-                      <span className="mt-0.5 block text-sm text-ink-muted">
+                      <span className="ml-2 text-xs text-ink-muted">
                         {e.actual ? `Ist ${e.actual}, ` : ""}
                         {e.forecast ? `Prognose ${e.forecast}` : ""}
                         {e.forecast && e.previous ? ", " : ""}

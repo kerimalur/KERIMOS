@@ -1,0 +1,430 @@
+//@version=5
+// ============================================================================
+// GVA LINIEN — PUR  v1.1
+// Reiner Indikator. Kein Break of Structure, keine State Machine, keine Setups.
+//
+// Regel: Eine GVA-Linie ENTSTEHT am Kerzenmuster und läuft von dort nach
+//        rechts. Irgendwann später - nach Tagen oder nach Jahren - kommt der
+//        Preis zurück und berührt sie das ERSTE Mal. DAS ist der Treffer, und
+//        erst dort beginnt das Setup (kleinerer Timeframe, BOS, Einstieg).
+//        Danach ist die Linie verbraucht.
+//
+//        Entstehung und Treffer sind also zwei verschiedene Zeitpunkte und
+//        dürfen nie vermischt werden - die bildende Kerze selbst zählt nicht
+//        als Treffer, obwohl das Level aus ihr abgeleitet ist.
+//
+// WICHTIG — behebt den Fehler aus der alten Version:
+//   Eine 3D-/Weekly-GVA wird erst erkannt, wenn die HTF-Kerze GESCHLOSSEN ist.
+//   Die Linie beginnt aber rückwirkend am Start dieser Kerze. Auf kleinen
+//   Chart-Timeframes (z.B. 30m) liegen dazwischen bis zu mehrere hundert
+//   Kerzen — und in denen wurde die Linie oft längst berührt. Die alte
+//   Touch-Prüfung lief erst ab der aktuellen Kerze und hat diese Treffer
+//   komplett übersehen; die Linie lief deshalb "durch" den Preis weiter.
+//   Dieser Indikator prüft beim Erstellen rückwirkend jede Kerze seit der
+//   Entstehung und beendet die Linie beim tatsächlich ersten Treffer.
+//
+// NEU in v1.1 — Nachbar-Filter (siehe Gruppe "🚫 Zu früher Treffer"):
+//   Wird eine GVA praktisch sofort wieder angelaufen - der Preis dreht in der
+//   direkt folgenden HTF-Kerze zurück ins Level - dann ist das kein
+//   eigenständiges Ereignis, sondern noch Teil derselben Bewegung, aus der
+//   die GVA überhaupt entstanden ist. Solche Treffer sind beim Backtesten
+//   Rauschen: sie sehen aus wie Trades, gehören aber zur Entstehung.
+//   Der Filter verlangt deshalb, dass zwischen der bildenden Kerze und der
+//   Treffer-Kerze mindestens eine HTF-Kerze KOMPLETT liegt (einstellbar).
+//   Ist das nicht der Fall, wird die GVA komplett verworfen - sie gilt nicht
+//   als Treffer und wartet auch nicht auf einen späteren Anlauf, denn ihr
+//   Level wurde ja bereits abgeräumt.
+//
+//   Gezählt wird in Kerzen des GVA-Timeframes (also 3D bzw. 1W), nicht in
+//   Chart-Kerzen. Der Filter verhält sich damit identisch, egal ob du den
+//   Chart auf 3T oder auf 30m stehen hast.
+// ============================================================================
+indicator("GVA Linien — Pur", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// ============================================================================
+// EINSTELLUNGEN
+// ============================================================================
+
+g_s1 = "① GVA-Set 1"
+s1_on   = input.bool(true,  "Set 1 aktiv", group=g_s1)
+s1_tf   = input.timeframe("3D", "→ Zeichnungs-Timeframe", group=g_s1)
+s1_bull = input.color(#00C851, "→ Farbe Bullish (Boden)", group=g_s1, inline="c1")
+s1_bear = input.color(#FF4444, "Bearish (Top)", group=g_s1, inline="c1")
+
+g_s2 = "② GVA-Set 2"
+s2_on   = input.bool(false, "Set 2 aktiv", group=g_s2, tooltip="Zweiter Timeframe im selben Indikator — z.B. Set 1 = 3D, Set 2 = 1W. Dann brauchst du den Indikator nur einmal.")
+s2_tf   = input.timeframe("1W", "→ Zeichnungs-Timeframe", group=g_s2)
+s2_bull = input.color(#4fd88a, "→ Farbe Bullish (Boden)", group=g_s2, inline="c2")
+s2_bear = input.color(#f0665c, "Bearish (Top)", group=g_s2, inline="c2")
+
+g_det = "🎯 GVA-Erkennung (gilt für beide Sets)"
+tol_pct     = input.float(5.0,  "Boden/Top-Toleranz (%)",         minval=0.1, maxval=50.0,  step=0.5, group=g_det)
+k2_pct      = input.float(40.0, "2. Kerze mindestens X% grösser", minval=0.0, maxval=500.0, step=5.0, group=g_det)
+tol_basis   = input.string("Body 1. Kerze", "Toleranz-Basis", options=["Body 1. Kerze", "ATR (HTF)"], group=g_det)
+atr_len     = input.int(14, "ATR-Periode (HTF)", minval=1, maxval=50, group=g_det)
+
+g_touch = "📍 Berührung"
+touch_wick = input.bool(true, "Docht zählt als Berührung", group=g_touch, tooltip="Aus = nur Kerzenkörper (Open/Close) zählt als Treffer.")
+touch_tol  = input.float(0.0, "Touch-Toleranz (x ATR HTF)", minval=0.0, maxval=0.5, step=0.005, group=g_touch)
+
+// ============================================================================
+// NACHBAR-FILTER: zu früher Treffer
+// Eine GVA, die schon in der direkt folgenden HTF-Kerze wieder angelaufen
+// wird, gehört noch zur Entstehungsbewegung und ist kein handelbares
+// Ereignis. Verlangt wird ein echter Abstand: mindestens X HTF-Kerzen müssen
+// zwischen der bildenden Kerze und der Treffer-Kerze KOMPLETT liegen.
+//
+//   Mindestabstand = 1 (Standard)
+//     bildende Kerze | 1 Kerze dazwischen | Treffer   -> gültig
+//     bildende Kerze | Treffer                        -> verworfen
+// ============================================================================
+g_flt = "🚫 Zu früher Treffer"
+flt_on   = input.bool(true, "Filter aktiv", group=g_flt, tooltip="Aus = Verhalten wie v1.0, jeder erste Treffer zählt.")
+flt_gap  = input.int(1, "Mindestens X HTF-Kerzen komplett dazwischen", minval=0, maxval=20, group=g_flt, tooltip="0 = kein Abstand verlangt (Filter praktisch aus). 1 = zwischen bildender Kerze und Treffer muss mindestens eine ganze Kerze des GVA-Timeframes liegen.")
+flt_show = input.bool(false, "Verworfene zur Kontrolle blass zeigen", group=g_flt, tooltip="Nur zum Prüfen, ob der Filter das Richtige greift: die verworfene GVA wird gepunktet und stark transparent bis zu ihrem zu frühen Treffer gezeichnet. Zählt weiterhin nicht als Treffer und kommt nicht in die Liste.")
+
+g_view = "👁️ Darstellung"
+after_hit   = input.string("Gestrichelt lassen", "Nach dem ersten Treffer", options=["Gestrichelt lassen", "Ganz ausblenden"], group=g_view)
+line_w      = input.int(2, "Linienbreite (aktiv)", minval=1, maxval=4, group=g_view)
+show_label  = input.bool(false, "Timeframe-Kürzel an der Linie", group=g_view)
+max_back    = input.int(1500, "Rückwirkende Prüfung (max. Kerzen)", minval=100, maxval=5000, group=g_view, tooltip="Wie weit beim Erstellen einer GVA zurückgeprüft wird, ob sie schon berührt wurde. Auf 30m mit Weekly-GVA sollten es mindestens ~400 sein. Höhere Werte kosten Rechenzeit.")
+
+// ============================================================================
+// BACKTEST-ZEITRAUM
+// Zum Durcharbeiten eines Jahres: es interessieren nur die Linien, die IN
+// diesem Zeitraum getroffen wurden - das sind die handelbaren Ereignisse.
+// Alles andere ist Rauschen auf dem Chart.
+//
+// Drei Sorten Linie im gewählten Fenster:
+//   Treffer im Zeitraum   -> normal, mit Marke am Trefferpunkt
+//   Treffer davor         -> weg (war vor dem Fenster erledigt)
+//   Treffer danach / nie  -> lag offen im Fenster, aber ohne Ereignis:
+//                            ausblenden oder blass, je nach Einstellung
+// ============================================================================
+g_per = "📅 Backtest-Zeitraum"
+per_on  = input.bool(false, "Nur Treffer im Zeitraum zeigen", group=g_per, tooltip="Aus = normaler Betrieb, alle Linien wie bisher.")
+per_von = input.time(timestamp("01 Jan 2023 00:00 +0000"), "Von", group=g_per)
+per_bis = input.time(timestamp("01 Jan 2024 00:00 +0000"), "Bis", group=g_per)
+per_rest = input.string("Grau gestrichelt", "Linien ohne Treffer im Zeitraum", options=["Grau gestrichelt", "Ausblenden"], group=g_per, tooltip="Diese Linien wurden im Zeitraum nie berührt - beim Durcharbeiten kannst du sie überspringen.")
+per_mark = input.bool(true, "Trefferpunkt markieren", group=g_per)
+per_grau = input.color(color.new(#808080, 45), "Farbe der unberührten Linien", group=g_per)
+
+// ============================================================================
+// TREFFER-LISTE
+// Der eigentliche Zeitfresser beim Backtesten ist nicht das Finden oder das
+// Beurteilen, sondern das Vorlaufenlassen im Wiedergabemodus: man weiss
+// nicht, wann die nächste Linie drankommt, lässt laufen und verliert die
+// Stelle. Diese Tabelle nennt die Trefferzeitpunkte im Voraus - damit
+// springt man im Replay direkt zum Datum, statt sich hinzuscrollen.
+// ============================================================================
+g_tab = "📋 Treffer-Liste"
+tab_on   = input.bool(true, "Liste anzeigen", group=g_tab, tooltip="Nur sichtbar, wenn der Backtest-Zeitraum aktiv ist.")
+tab_pos  = input.string("Oben rechts", "Position", options=["Oben rechts", "Oben links", "Unten rechts", "Unten links"], group=g_tab)
+tab_max  = input.int(25, "Maximale Zeilen", minval=5, maxval=60, group=g_tab)
+tab_size = input.string("Klein", "Schriftgrösse", options=["Winzig", "Klein", "Normal"], group=g_tab)
+
+// ============================================================================
+// HTF-DATEN
+// ============================================================================
+
+// time_close[1] ist der Abschluss der bildenden Kerze. Der wird gebraucht,
+// weil die Linie zwar AB dieser Kerze gezeichnet wird, aber erst DANACH
+// getroffen werden kann - siehe Kommentar bei f_firstTouchBack.
+//
+// bar_index[1] ist die laufende Nummer der bildenden Kerze IM GVA-TIMEFRAME,
+// bar_index die der gerade laufenden HTF-Kerze. Die Differenz dieser beiden
+// Nummern ist der Abstand in HTF-Kerzen - unabhängig davon, wie viele
+// Chart-Kerzen dazwischen liegen. Genau darauf baut der Nachbar-Filter.
+// hIdx1/hIdx2 bleiben als normale Chart-Serien erhalten, deshalb lässt sich
+// auch rückwirkend für jede vergangene Chart-Kerze fragen, in welcher
+// HTF-Kerze sie lag.
+[o1A, c1A, o1B, c1B, t1B, e1B, atr1, i1B, hIdx1] = request.security(syminfo.tickerid, s1_tf,
+     [open[2], close[2], open[1], close[1], time[1], time_close[1], ta.atr(atr_len)[1], bar_index[1], bar_index],
+     lookahead=barmerge.lookahead_off)
+
+[o2A, c2A, o2B, c2B, t2B, e2B, atr2, i2B, hIdx2] = request.security(syminfo.tickerid, s2_tf,
+     [open[2], close[2], open[1], close[1], time[1], time_close[1], ta.atr(atr_len)[1], bar_index[1], bar_index],
+     lookahead=barmerge.lookahead_off)
+
+// ============================================================================
+// AKTIVE LINIEN
+// Ein gemeinsamer Speicher für beide Sets — die Touch-Regel ist identisch.
+// ============================================================================
+
+var line[]  actLn  = array.new<line>()
+var float[] actLvl = array.new<float>()
+var bool[]  actBull = array.new<bool>()   // true = Boden-GVA (Treffer von unten)
+var float[] actTol = array.new<float>()   // Touch-Toleranz zum Erstellungszeitpunkt
+var color[] actCol = array.new<color>()   // Farbe, für Marke und Blass-Variante
+var string[] actTf = array.new<string>()  // Zeichnungs-Timeframe, für die Liste
+var int[]   actFIdx = array.new_int()     // HTF-Nummer der bildenden Kerze (Nachbar-Filter)
+var int[]   actSlot = array.new_int()     // 0 = Set 1, 1 = Set 2 (welche HTF-Zählung gilt)
+var label[] actLbl = array.new<label>()   // optionales TF-Kürzel, muss mitgelöscht werden
+
+// Treffer im Zeitraum, chronologisch gesammelt - Grundlage der Liste unten.
+var int[]   hitT    = array.new_int()
+var float[] hitLvl  = array.new<float>()
+var bool[]  hitBull = array.new<bool>()
+var string[] hitTf  = array.new<string>()
+var color[]  hitCol = array.new<color>()
+
+// Zähler der vom Nachbar-Filter verworfenen GVAs.
+// [0] = insgesamt, [1] = davon mit (verworfenem) Treffer im Backtest-Zeitraum.
+// Als Array, weil Pine keine Zuweisung an globale Skalare aus Funktionen
+// heraus erlaubt - Array-Inhalte dagegen schon.
+var int[] filtCnt = array.new_int(2, 0)
+
+// Tabellenobjekt auf oberster Ebene, damit es zwischen den Kerzen bestehen
+// bleibt und beim Neuzeichnen sauber ersetzt werden kann.
+var table tab = na
+
+// Letzte verarbeitete HTF-Kerze je Set (verhindert Mehrfach-Erstellung)
+var int[] lastTB = array.new_int(2, na)
+
+// ============================================================================
+// HILFSFUNKTIONEN
+// ============================================================================
+
+// Kerzen-Extreme für die Touch-Prüfung (je nach Docht-Einstellung)
+f_hi(int k) => touch_wick ? high[k] : math.max(open[k], close[k])
+f_lo(int k) => touch_wick ? low[k]  : math.min(open[k], close[k])
+
+// In welcher HTF-Kerze lag die Chart-Kerze mit Offset k?
+// (Greift wie f_hi/f_lo weit in die Historie zurück. Sollte TradingView je
+//  "historical buffer" bemängeln: im indicator()-Aufruf oben max_bars_back=5000
+//  ergänzen oder die "Rückwirkende Prüfung" kleiner stellen.)
+f_hIdxAt(int slot, int k) => slot == 0 ? hIdx1[k] : hIdx2[k]
+
+// Sucht rückwirkend ab Zeitpunkt startT die FRÜHESTE Kerze, die das Level
+// berührt hat. Rückgabe: Bar-Offset (0 = aktuelle Kerze) oder -1 = kein Treffer.
+//
+// WICHTIG: startT ist der ABSCHLUSS der bildenden Kerze, nicht ihr Beginn.
+// Das Level ist aus dieser Kerze selbst abgeleitet (bei einer Boden-GVA ist
+// es ihr Open), die Kerze handelt also zwangsläufig darauf. Würde man ab
+// ihrem Beginn suchen, gälte jede Linie sofort bei der Entstehung als
+// getroffen - sie wäre nie scharf und der Treffer läge auf dem
+// Entstehungspunkt statt dort, wo der Preis später zurückkommt.
+f_firstTouchBack(float lvl, bool isBull, int startT, float tol) =>
+    int found = -1
+    for k = max_back to 0
+        if k <= bar_index
+            int tk = time[k]
+            if not na(tk) and tk >= startT
+                bool hit = isBull ? f_lo(k) <= lvl + tol : f_hi(k) >= lvl - tol
+                if hit
+                    found := k
+                    break
+    found
+
+// Prüft den Nachbar-Filter: liegen zwischen bildender Kerze (fIdx) und
+// Treffer-Kerze (hIdx) genug ganze HTF-Kerzen? Bei Mindestabstand 1 muss die
+// Differenz also mindestens 2 betragen.
+f_zuFrueh(int fIdx, int hIdx) =>
+    flt_on and not na(fIdx) and not na(hIdx) and (hIdx - fIdx) < (flt_gap + 1)
+
+// Linie beenden: Verlängerung stoppen, gestrichelt setzen (oder löschen).
+// Mit aktivem Zeitraum-Filter entscheidet der Trefferzeitpunkt darüber, ob
+// die Linie überhaupt stehen bleibt.
+f_closeLine(line ln, int endT, float lvl, bool isBu, color col, string tfName) =>
+    bool imFenster = endT >= per_von and endT <= per_bis
+    bool davor     = endT < per_von
+    if per_on and davor
+        // Vor dem Fenster erledigt - für diesen Durchgang bedeutungslos.
+        line.delete(ln)
+    else if per_on and not imFenster
+        // Treffer erst nach dem Fenster: die Linie lag im Zeitraum offen da,
+        // ohne dass etwas passiert ist. Gleiche Behandlung wie die nie
+        // getroffenen - sonst sieht sie aus wie ein Ereignis, das sie im
+        // betrachteten Jahr nicht war.
+        if per_rest == "Ausblenden"
+            line.delete(ln)
+        else
+            line.set_extend(ln, extend.none)
+            line.set_x2(ln, endT)
+            line.set_color(ln, per_grau)
+            line.set_style(ln, line.style_dashed)
+            line.set_width(ln, 1)
+    else if after_hit == "Ganz ausblenden"
+        line.delete(ln)
+    else
+        line.set_extend(ln, extend.none)
+        line.set_x2(ln, endT)
+        line.set_style(ln, line.style_dashed)
+        line.set_width(ln, 1)
+        if per_on and imFenster
+            if per_mark
+                // Der Treffer ist das Ereignis, um das es beim Backtesten geht -
+                // deshalb bekommt er eine eigene Marke statt nur ein Strichende.
+                label.new(endT, lvl, xloc=xloc.bar_time, style=label.style_xcross,
+                     color=col, size=size.tiny,
+                     yloc=isBu ? yloc.belowbar : yloc.abovebar)
+            array.push(hitT, endT)
+            array.push(hitLvl, lvl)
+            array.push(hitBull, isBu)
+            array.push(hitTf, tfName)
+            array.push(hitCol, col)
+
+// Eine vom Nachbar-Filter verworfene GVA abschliessen: entweder ganz weg
+// oder - zur Kontrolle - blass gepunktet bis zum zu frühen Treffer.
+// Sie zählt in keinem Fall als Treffer und taucht nicht in der Liste auf.
+f_dropLine(line ln, label lb, int endT, color col) =>
+    if flt_show
+        line.set_extend(ln, extend.none)
+        line.set_x2(ln, endT)
+        line.set_color(ln, color.new(col, 78))
+        line.set_style(ln, line.style_dotted)
+        line.set_width(ln, 1)
+    else
+        if not na(lb)
+            label.delete(lb)
+        line.delete(ln)
+
+// Verworfene GVA in den Zählern vermerken.
+f_countDrop(int endT) =>
+    bool imFenster = endT >= per_von and endT <= per_bis
+    array.set(filtCnt, 0, array.get(filtCnt, 0) + 1)
+    array.set(filtCnt, 1, array.get(filtCnt, 1) + (imFenster ? 1 : 0))
+
+// GVA-Erkennung für ein Set. Legt die Linie an und prüft sofort rückwirkend,
+// ob sie seit ihrer Entstehung schon berührt wurde.
+f_detect(int slot, bool on, float oA, float cA, float oB, float cB, int tB, int eB, float atr,
+         int idxB, color bullC, color bearC, string tfName) =>
+    if on and not na(tB)
+        int prev = array.get(lastTB, slot)
+        float bodyA = math.abs(cA - oA)
+        if (na(prev) or tB != prev) and bodyA > 0
+            float bodyB = math.abs(cB - oB)
+            float matchTol = tol_basis == "Body 1. Kerze" ? bodyA * (tol_pct / 100.0) : nz(atr) * (tol_pct / 100.0)
+            float tTol     = nz(atr) * touch_tol
+            bool  larger   = bodyB >= bodyA * (1.0 + k2_pct / 100.0)
+            bool  bullGva  = cA < oA and cB > oB and larger and math.abs(math.min(oA, cA) - math.min(oB, cB)) <= matchTol
+            bool  bearGva  = cA > oA and cB < oB and larger and math.abs(math.max(oA, cA) - math.max(oB, cB)) <= matchTol
+
+            if bullGva or bearGva
+                array.set(lastTB, slot, tB)
+                float lvl  = bullGva ? math.min(oB, cB) : math.max(oB, cB)
+                bool  isBu = bullGva
+                color col  = isBu ? bullC : bearC
+                line ln = line.new(tB, lvl, time, lvl, xloc=xloc.bar_time,
+                     color=col, width=line_w, extend=extend.right)
+                label lb = na
+                if show_label
+                    lb := label.new(tB, lvl, tfName, xloc=xloc.bar_time, style=label.style_none,
+                         textcolor=col, size=size.tiny)
+                // 🔑 Rückwirkende Prüfung: wurde die Linie seit tB schon getroffen?
+                int hitK = f_firstTouchBack(lvl, isBu, nz(eB, tB), tTol)
+                if hitK >= 0
+                    // Nachbar-Filter: kam der Treffer zu dicht auf die
+                    // Entstehung, gehört er noch zur selben Bewegung.
+                    int hitH = f_hIdxAt(slot, hitK)
+                    if f_zuFrueh(idxB, hitH)
+                        f_countDrop(time[hitK])
+                        f_dropLine(ln, lb, time[hitK], col)
+                    else
+                        f_closeLine(ln, time[hitK], lvl, isBu, col, tfName)   // nie aktiv geführt
+                else
+                    array.push(actLn, ln)
+                    array.push(actLvl, lvl)
+                    array.push(actBull, isBu)
+                    array.push(actTol, tTol)
+                    array.push(actCol, col)
+                    array.push(actTf, tfName)
+                    array.push(actFIdx, nz(idxB, -1))
+                    array.push(actSlot, slot)
+                    array.push(actLbl, lb)
+
+// ============================================================================
+// ABLAUF
+// ============================================================================
+
+// 1) Neue GVAs erkennen
+f_detect(0, s1_on, o1A, c1A, o1B, c1B, t1B, e1B, atr1, i1B, s1_bull, s1_bear, s1_tf)
+f_detect(1, s2_on, o2A, c2A, o2B, c2B, t2B, e2B, atr2, i2B, s2_bull, s2_bear, s2_tf)
+
+// 2) Aktive Linien auf den ersten Treffer prüfen (rückwärts, wegen array.remove)
+if array.size(actLn) > 0
+    for i = array.size(actLn) - 1 to 0
+        float lvl = array.get(actLvl, i)
+        bool  isBu = array.get(actBull, i)
+        float tTol = array.get(actTol, i)
+        bool hit = isBu ? f_lo(0) <= lvl + tTol : f_hi(0) >= lvl - tTol
+        if hit
+            int   sl   = array.get(actSlot, i)
+            int   fIdx = array.get(actFIdx, i)
+            int   hNow = sl == 0 ? hIdx1 : hIdx2
+            color col  = array.get(actCol, i)
+            // Gleicher Nachbar-Filter wie bei der rückwirkenden Prüfung: ein
+            // Treffer ohne echten Abstand zur bildenden Kerze ist kein
+            // eigenes Ereignis, die GVA wird verworfen statt geschlossen.
+            if f_zuFrueh(fIdx, hNow)
+                f_countDrop(time)
+                f_dropLine(array.get(actLn, i), array.get(actLbl, i), time, col)
+            else
+                f_closeLine(array.get(actLn, i), time, lvl, isBu, col, array.get(actTf, i))
+            array.remove(actLn, i)
+            array.remove(actLvl, i)
+            array.remove(actBull, i)
+            array.remove(actTol, i)
+            array.remove(actCol, i)
+            array.remove(actTf, i)
+            array.remove(actFIdx, i)
+            array.remove(actSlot, i)
+            array.remove(actLbl, i)
+
+// 3) Am Chartende: was jetzt noch offen ist, wurde nie getroffen.
+//    Grau gestrichelt statt weg: so siehst du beim Durcharbeiten, dass die
+//    Linie zwar existiert, aber in diesem Zeitraum nie berührt wird - du
+//    musst sie also gar nicht erst anschauen.
+if per_on and barstate.islast and array.size(actLn) > 0
+    for i = array.size(actLn) - 1 to 0
+        line ln = array.get(actLn, i)
+        if per_rest == "Ausblenden"
+            line.delete(ln)
+        else
+            line.set_color(ln, per_grau)
+            line.set_style(ln, line.style_dashed)
+            line.set_width(ln, 1)
+
+// ============================================================================
+// 4) TREFFER-LISTE
+// Zeigt, wann im gewählten Zeitraum eine Linie getroffen wurde. Im
+// Wiedergabemodus lässt sich damit direkt auf das Datum springen, statt den
+// Chart vorlaufen zu lassen und die Stelle zu verlieren.
+// ============================================================================
+if per_on and tab_on and barstate.islast
+    int n = array.size(hitT)
+    table.delete(tab)
+    if n > 0
+        pos = tab_pos == "Oben rechts"  ? position.top_right
+             : tab_pos == "Oben links"   ? position.top_left
+             : tab_pos == "Unten rechts" ? position.bottom_right
+             :                             position.bottom_left
+        sz = tab_size == "Winzig" ? size.tiny : tab_size == "Normal" ? size.normal : size.small
+        int zeilen = math.min(n, tab_max)
+        tab := table.new(pos, 4, zeilen + 2, border_width=1,
+             frame_color=color.new(color.gray, 60), frame_width=1)
+
+        table.cell(tab, 0, 0, "Treffer", text_color=color.gray, text_size=sz)
+        table.cell(tab, 1, 0, str.tostring(n) + (n > zeilen ? " (erste " + str.tostring(zeilen) + ")" : ""), text_color=color.gray, text_size=sz)
+        // Wie viele Ereignisse der Nachbar-Filter im Zeitraum geschluckt hat -
+        // hilft beim Kalibrieren des Mindestabstands.
+        table.cell(tab, 2, 0, flt_on ? "gefiltert" : "", text_color=color.gray, text_size=sz)
+        table.cell(tab, 3, 0, flt_on ? str.tostring(array.get(filtCnt, 1)) : "", text_color=color.gray, text_size=sz)
+
+        table.cell(tab, 0, 1, "Datum", text_color=color.silver, text_size=sz)
+        table.cell(tab, 1, 1, "Zeit",  text_color=color.silver, text_size=sz)
+        table.cell(tab, 2, 1, "Seite", text_color=color.silver, text_size=sz)
+        table.cell(tab, 3, 1, "Level", text_color=color.silver, text_size=sz)
+
+        for i = 0 to zeilen - 1
+            int    t   = array.get(hitT, i)
+            bool   isB = array.get(hitBull, i)
+            color  c   = array.get(hitCol, i)
+            table.cell(tab, 0, i + 2, str.format_time(t, "dd.MM.yyyy", syminfo.timezone),
+                 text_color=color.white, text_size=sz)
+            table.cell(tab, 1, i + 2, str.format_time(t, "HH:mm", syminfo.timezone),
+                 text_color=color.silver, text_size=sz)
+            table.cell(tab, 2, i + 2, (isB ? "Long " : "Short ") + array.get(hitTf, i),
+                 text_color=c, text_size=sz)
+            table.cell(tab, 3, i + 2, str.tostring(array.get(hitLvl, i), format.mintick),
+                 text_color=color.white, text_size=sz)
